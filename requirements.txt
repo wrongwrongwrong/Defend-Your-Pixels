@@ -1,0 +1,4 @@
+opencv-python
+numpy
+django==5.0.0
+# Add any others you need for your robot or game
