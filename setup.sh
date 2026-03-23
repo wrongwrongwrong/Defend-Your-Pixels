@@ -1,13 +1,19 @@
 #!/bin/bash
+set -euo pipefail
 
-# 1. Create a virtual environment folder named 'venv'
-python3 -m venv venv
 
-# 2. Activate it
-source venv/bin/activate
+VENV_PY="./.venv/bin/python"
 
-# 3. Upgrade pip and install your list
-pip install --upgrade pip
-pip install -r requirements.txt
+if ! "$VENV_PY" -c "import cv2, numpy, django" >/dev/null 2>&1; then
+  "$VENV_PY" -m pip install --upgrade pip
+  "$VENV_PY" -m pip install -r requirements.txt
+else
+  echo "Dependencies already installed in .venv."
+fi
 
-echo "Environment is ready! Run 'source venv/bin/activate' to start."
+cat <<'EOF'
+Environment is ready.
+Use:
+  source .venv/bin/activate
+  python pixel_defense_tracker/main.py
+EOF
