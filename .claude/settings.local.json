@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(npm run:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(python generate_markers.py)"
+    ]
+  }
+}
