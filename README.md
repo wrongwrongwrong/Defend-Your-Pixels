@@ -1,6 +1,13 @@
 # Defend-Your-Pixels
 technical feasibility test
 
+Current repo structure
+- `python_tracker/`: camera, ArUco detection, board mapping, tracker experiments
+- `bridge/`: Python to frontend transport layer
+- `react_frontend/`: React visualization and test frontend
+- `docs/`: architecture and code provenance notes
+- `main.cpp`: preserved C++ reference implementation used during Python conversion
+
 Setup
 - This project uses `./.venv/`.
 
@@ -9,8 +16,14 @@ Install
 
 Run
 - `source .venv/bin/activate`
-- `python3 pixel_defense_tracker/main.py`
-- `python3 pixel_defense_tracker/detect_aruco.py`
+- `python3 python_tracker/experiments/main.py`
+- `python3 python_tracker/detection/detect_aruco.py`
+- `python3 bridge/websocket_server.py`
+
+Frontend
+- `cd react_frontend`
+- `npm install`
+- `npm run dev`
 
 If you see `ModuleNotFoundError: No module named 'cv2'`
 - Check interpreter:

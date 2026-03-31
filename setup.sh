@@ -15,5 +15,5 @@ cat <<'EOF'
 Environment is ready.
 Use:
   source .venv/bin/activate
-  python pixel_defense_tracker/main.py
+  python python_tracker/experiments/main.py
 EOF
