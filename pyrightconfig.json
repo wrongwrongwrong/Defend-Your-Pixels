@@ -1,0 +1,6 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["bridge", "python_tracker", "model_backend", "runner", "prototype_pygame"],
+  "exclude": ["**/node_modules", "**/dist", "**/__pycache__", "react_frontend"]
+}

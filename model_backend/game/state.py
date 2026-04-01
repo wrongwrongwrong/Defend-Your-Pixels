@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from random import Random
 from typing import Dict, List, Optional
 
+import heapq
+
 from .board import Board
 from .entities import Attacker, CommandTower, Defender, EtherDrill, Obstacle, Unit
 from .types import Direction, PlayerId, Pos, TerrainType
@@ -21,21 +23,19 @@ class GameState:
     Minimal rules engine for playability testing (no AR integration yet).
     """
 
-    def __init__(self, seed: int = 1):
+    def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
         self.rng = Random(seed)
         self.turn: int = 1
         self.active_player: PlayerId = PlayerId.P1
 
-        self.board = Board(12, 12)
+        self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
             PlayerId.P1: PlayerState(PlayerId.P1, ether=10, income_per_turn=0),
             PlayerId.P2: PlayerState(PlayerId.P2, ether=10, income_per_turn=0),
         }
 
-        self.towers: Dict[PlayerId, CommandTower] = {
-            PlayerId.P1: CommandTower(PlayerId.P1, pos=Pos(0, 0)),
-            PlayerId.P2: CommandTower(PlayerId.P2, pos=Pos(11, 11)),
-        }
+        # Filled by level loader (or demos); pygame prototype uses ASCII maps.
+        self.towers: Dict[PlayerId, CommandTower] = {}
 
         self.units: Dict[str, Unit] = {}
         self.drills: Dict[Pos, EtherDrill] = {}
@@ -113,6 +113,72 @@ class GameState:
         u.move_points -= cost
         u.pos = nxt
         if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
+            u.on_highway = True
+        return True
+
+    def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
+        """
+        Returns minimal move cost to reach each position this turn.
+        Includes the unit's current position with cost 0.
+        """
+        u = self.units[unit_id]
+        if u.owner != self.active_player or not u.can_act() or u.ap <= 0 or u.move_points <= 0:
+            return {u.pos: 0.0}
+
+        start = u.pos
+        budget = float(u.move_points)
+        best: Dict[Pos, float] = {start: 0.0}
+        pq: list[tuple[float, int, int]] = [(0.0, start.x, start.y)]
+
+        while pq:
+            cost, x, y = heapq.heappop(pq)
+            p = Pos(x, y)
+            if cost != best.get(p, float("inf")):
+                continue
+            if cost > budget:
+                continue
+
+            for d in (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT):
+                nxt = p + d.delta()
+                if self.is_blocked(nxt):
+                    continue
+                # Can't move through/onto other units (except our starting tile).
+                occ = self.unit_at(nxt)
+                if occ is not None and nxt != start:
+                    continue
+                step = self.move_cost(nxt)
+                ncost = cost + step
+                if ncost > budget:
+                    continue
+                if ncost < best.get(nxt, float("inf")):
+                    best[nxt] = ncost
+                    heapq.heappush(pq, (ncost, nxt.x, nxt.y))
+
+        return best
+
+    def move_unit_to(self, unit_id: str, dest: Pos) -> bool:
+        """
+        Commits a move to a chosen destination, consuming move_points based on
+        minimal reachable cost this turn.
+        """
+        u = self.units[unit_id]
+        if u.owner != self.active_player or not u.can_act():
+            return False
+        if u.ap <= 0 or u.move_points <= 0:
+            return False
+        if dest == u.pos:
+            return True
+        if not self.board.in_bounds(dest) or self.is_blocked(dest) or self.unit_at(dest) is not None:
+            return False
+
+        costs = self.reachable_positions(unit_id)
+        cost = costs.get(dest)
+        if cost is None or cost > u.move_points:
+            return False
+
+        u.move_points -= cost
+        u.pos = dest
+        if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         return True
 

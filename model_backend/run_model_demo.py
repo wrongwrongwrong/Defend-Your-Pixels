@@ -1,21 +1,11 @@
 """
 Minimal playability demo (rules-only, no AR).
 
-Run:
+Run (after `pip install -e .` from repo root):
   python3 -m model_backend.run_model_demo
-  # or:
-  python3 model_backend/run_model_demo.py
 """
 
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-# Allow running as a script (python3 model_backend/run_model_demo.py)
-_repo_root = Path(__file__).resolve().parent.parent
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
 
 from model_backend.game import Attacker, Defender, Direction, GameState, Pos
 

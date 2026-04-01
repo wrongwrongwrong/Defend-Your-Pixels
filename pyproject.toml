@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "defend-your-pixels"
+version = "0.1.0"
+description = "AR board game prototype (tracker, bridge, model)"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Runtime deps stay in requirements.txt for now; install with:
+#   pip install -r requirements.txt
+#   pip install -e .
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["python_tracker*", "bridge*", "model_backend*", "prototype_pygame*"]
+namespaces = true

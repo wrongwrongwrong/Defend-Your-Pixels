@@ -1,218 +1,75 @@
-// App.jsx
-// Root component. Hosts the game loop (requestAnimationFrame),
-// manages unit spawning, movement, combat, and resource collection.
-// Passes derived state down to Board and HUD components.
+// Turn-based shell aligned with model_backend + pitch: Ether, Command Tower, Attacker/Defender tokens.
 
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback } from "react";
 import Board from "../components/board/Board";
 import ResourceDisplay from "../components/hud/ResourceDisplay";
 import PhaseIndicator from "../components/hud/PhaseIndicator";
 import { useWebSocket } from "../hooks/bridge/useWebSocket";
-import {
-  SPAWN_COOLDOWNS,
-  UNIT_STATS,
-  getUnitTarget,
-  stepToward,
-  hasReachedTarget,
-  findNearestEnemy,
-  shouldTriggerPhase2,
-  REWARD_KILL_UNIT,
-  REWARD_HQ_HIT,
-} from "../game/gameLogic";
-
-let nextUnitId = 1000;
+import { endTurn, trySpendEther } from "../game/gameLogic";
 
 export default function App() {
   const { gameState, setGameState, connected } = useWebSocket();
 
-  const cooldownsRef = useRef({});
-  const lastTickRef  = useRef(null);
-  const rafRef       = useRef(null);
-  const gameOverRef  = useRef(false);
-  const elapsedRef   = useRef(0);
+  const handleEndTurn = useCallback(() => {
+    setGameState((prev) => endTurn(prev));
+  }, [setGameState]);
 
-  // ── Game loop ──────────────────────────────────────────────────────────────
-  const tick = useCallback((timestamp) => {
-    if (gameOverRef.current) return;
+  const handleUpgrade = useCallback(
+    (tokenId, upgradeType) => {
+      setGameState((prev) => {
+        const pid = prev.activePlayer;
+        const owns = prev.players.some(
+          (p) => p.id === pid && p.tokens.some((t) => t.id === tokenId)
+        );
+        if (!owns) return prev;
 
-    const dt = lastTickRef.current ? Math.min(timestamp - lastTickRef.current, 100) : 16;
-    lastTickRef.current = timestamp;
-    elapsedRef.current += dt;
+        const { ok, players: afterSpend } = trySpendEther(prev.players, pid, 5);
+        if (!ok) return prev;
 
-    setGameState((prev) => {
-      if (prev.gameOver) { gameOverRef.current = true; return prev; }
-
-      let hqHP    = prev.hqHP;
-      let units   = prev.units.filter((u) => !u.dying || u.dyingTimer > 0);
-      let players = prev.players;
-      const phase = shouldTriggerPhase2(hqHP, 100, elapsedRef.current) ? 2 : prev.phase;
-
-      // ── 1. Spawn units from tokens ─────────────────────────────────────
-      players = players.map((player) => ({
-        ...player,
-        tokens: player.tokens.map((token) => {
-          if (token.type === "def") return token;
-
-          const key = token.id;
-          if (cooldownsRef.current[key] === undefined) {
-            cooldownsRef.current[key] = SPAWN_COOLDOWNS[token.type];
-          }
-          cooldownsRef.current[key] -= dt;
-
-          if (cooldownsRef.current[key] <= 0) {
-            cooldownsRef.current[key] = SPAWN_COOLDOWNS[token.type];
-            const stats = UNIT_STATS[token.type];
-            const target = getUnitTarget(token.rotation, player.zone);
-            units = [...units, {
-              id: nextUnitId++,
-              playerId: player.id,
-              type: token.type,
-              hp: stats.hp, maxHp: stats.maxHp,
-              speed: stats.speed, atk: stats.atk, range: stats.range,
-              pos: { x: token.position.x + 0.5, y: token.position.y + 0.5 },
-              target,
-              fighting: false, dying: false, dyingTimer: 0, atkCooldown: 0,
-            }];
-          }
-          return token;
-        }),
-      }));
-
-      // ── 2. Phase 2: HQ spawns units ────────────────────────────────────
-      if (phase === 2) {
-        const hqKey = "hq_spawn";
-        if (cooldownsRef.current[hqKey] === undefined) cooldownsRef.current[hqKey] = 5000;
-        cooldownsRef.current[hqKey] -= dt;
-        if (cooldownsRef.current[hqKey] <= 0) {
-          cooldownsRef.current[hqKey] = 5000;
-          const tgt = Math.random() < 0.5 ? { x: 6, y: 11 } : { x: 6, y: 0 };
-          units = [...units, {
-            id: nextUnitId++, playerId: 0, type: "infantry",
-            hp: 25, maxHp: 25, speed: 1.0, atk: 7, range: 1,
-            pos: { x: 6, y: 6 }, target: tgt,
-            fighting: false, dying: false, dyingTimer: 0, atkCooldown: 0,
-          }];
-        }
-      }
-
-      // ── 3. Tick dying timers ────────────────────────────────────────────
-      units = units.map((u) => u.dying ? { ...u, dyingTimer: u.dyingTimer - dt } : u);
-
-      // ── 4. Move & find combat ───────────────────────────────────────────
-      const resourceDeltas = { 1: 0, 2: 0 };
-
-      units = units.map((unit) => {
-        if (unit.dying || unit.hp <= 0) return unit;
-
-        const enemy = findNearestEnemy(unit, units);
-        if (enemy) {
-          const newCd = unit.atkCooldown - dt;
+        const players = afterSpend.map((player) => {
+          if (player.id !== pid) return player;
           return {
-            ...unit, fighting: true,
-            atkCooldown: newCd <= 0 ? 800 : newCd,
-            pendingAtk: newCd <= 0 ? enemy.id : unit.pendingAtk,
-          };
-        }
-
-        const newPos  = stepToward(unit.pos, unit.target, unit.speed, dt);
-        const arrived = hasReachedTarget(newPos, unit.target);
-
-        if (arrived) {
-          const distToHQ = Math.sqrt((newPos.x - 6) ** 2 + (newPos.y - 6) ** 2);
-          if (distToHQ < 1.5) {
-            hqHP = Math.max(0, hqHP - unit.atk);
-            if (unit.playerId !== 0) resourceDeltas[unit.playerId] = (resourceDeltas[unit.playerId] ?? 0) + REWARD_HQ_HIT;
-            return { ...unit, dying: true, dyingTimer: 450, hp: 0 };
-          }
-          // Hit enemy player zone
-          const enemyPlayer = players.find(
-            (p) => p.id !== unit.playerId && p.id !== 0 &&
-              ((p.zone === "bottom" && unit.target.y >= 10) ||
-               (p.zone === "top"    && unit.target.y <= 1))
-          );
-          if (enemyPlayer) {
-            players = players.map((p) =>
-              p.id === enemyPlayer.id ? { ...p, hp: Math.max(0, p.hp - unit.atk) } : p
-            );
-            return { ...unit, dying: true, dyingTimer: 450, hp: 0 };
-          }
-        }
-
-        return { ...unit, pos: newPos, fighting: false, atkCooldown: Math.max(0, unit.atkCooldown - dt) };
-      });
-
-      // ── 5. Apply combat damage ──────────────────────────────────────────
-      const pendingMap = {};
-      units.forEach((u) => { if (u.pendingAtk) pendingMap[u.pendingAtk] = (pendingMap[u.pendingAtk] ?? 0) + u.atk; });
-      units = units.map((u) => ({ ...u, pendingAtk: undefined }));
-      units = units.map((u) => {
-        const dmg = pendingMap[u.id];
-        if (!dmg) return u;
-        const newHp = u.hp - dmg;
-        if (newHp <= 0) {
-          // Credit killer
-          const killerUnit = units.find((k) => k.pendingAtk === u.id);
-          if (killerUnit && killerUnit.playerId !== u.playerId && killerUnit.playerId !== 0) {
-            resourceDeltas[killerUnit.playerId] = (resourceDeltas[killerUnit.playerId] ?? 0) + REWARD_KILL_UNIT;
-          }
-          return { ...u, hp: 0, dying: true, dyingTimer: 450 };
-        }
-        return { ...u, hp: newHp };
-      });
-
-      // ── 6. Apply resources ──────────────────────────────────────────────
-      players = players.map((p) => ({
-        ...p,
-        resources: p.resources + (resourceDeltas[p.id] ?? 0),
-      }));
-
-      const gameOver = hqHP <= 0 || players.some((p) => p.hp <= 0);
-      return { ...prev, hqHP, units, players, phase, gameOver };
-    });
-
-    rafRef.current = requestAnimationFrame(tick);
-  }, [setGameState]);
-
-  useEffect(() => {
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [tick]);
-
-  // ── Upgrade handler ────────────────────────────────────────────────────────
-  const handleUpgrade = useCallback((tokenId, upgradeType) => {
-    setGameState((prev) => ({
-      ...prev,
-      players: prev.players.map((player) => {
-        const has = player.tokens.some((t) => t.id === tokenId);
-        if (!has || player.resources < 10) return player;
-        return {
-          ...player,
-          resources: player.resources - 10,
-          tokens: player.tokens.map((token) => {
-            if (token.id !== tokenId) return token;
-            if (upgradeType === "damage")   return { ...token, atk: (token.atk ?? 5) + 3 };
-            if (upgradeType === "cooldown") {
-              cooldownsRef.current[token.id] = Math.max(500, (SPAWN_COOLDOWNS[token.type] ?? 3000) * 0.7);
+            ...player,
+            tokens: player.tokens.map((token) => {
+              if (token.id !== tokenId) return token;
+              if (upgradeType === "damage" && token.kind === "attacker") {
+                return { ...token, atkBonus: (token.atkBonus ?? 0) + 2 };
+              }
+              if (upgradeType === "heatVent" && token.kind === "attacker") {
+                return { ...token, heatVent: true };
+              }
+              if (upgradeType === "shield" && token.kind === "defender") {
+                return { ...token, shieldBonus: (token.shieldBonus ?? 0) + 1 };
+              }
+              if (upgradeType === "hp") {
+                return {
+                  ...token,
+                  maxHp: (token.maxHp ?? 40) + 10,
+                  hp: (token.hp ?? 40) + 10,
+                };
+              }
               return token;
-            }
-            if (upgradeType === "hp")       return { ...token, hp: token.hp + 20, maxHp: (token.maxHp ?? token.hp) + 20 };
-            return token;
-          }),
-        };
-      }),
-    }));
-  }, [setGameState]);
+            }),
+          };
+        });
 
-  const { phase, hqHP, players, gameOver } = gameState;
+        return { ...prev, players };
+      });
+    },
+    [setGameState]
+  );
+
+  const { phase, players, gameOver, activePlayer, turn } = gameState;
   const p1 = players.find((p) => p.zone === "bottom");
   const p2 = players.find((p) => p.zone === "top");
+
+  const towerDown = players.find((p) => p.commandTowerHp <= 0);
 
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center gap-3 p-4"
       style={{ background: "linear-gradient(160deg, #050a14 0%, #0a0f1e 60%, #080d1a 100%)" }}
     >
-      {/* Title */}
       <h1
         className="text-2xl font-bold tracking-widest text-cyan-300 uppercase"
         style={{ textShadow: "0 0 16px rgba(34,211,238,0.5)" }}
@@ -220,23 +77,43 @@ export default function App() {
         ◈ Pixel Defense
       </h1>
 
-      {/* Connection badge */}
       <div className="flex items-center gap-2 text-xs">
         <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
         <span className={connected ? "text-green-400" : "text-slate-500"}>
-          {connected ? "Connected to backend" : "Running on mock data"}
+          {connected ? "Tracker connected" : "Mock board (no tracker)"}
         </span>
       </div>
 
-      {/* Phase */}
+      <div className="flex items-center gap-4 flex-wrap justify-center text-sm text-slate-300">
+        <span>
+          Turn <span className="text-cyan-300 font-mono">{turn}</span>
+        </span>
+        <span>
+          Active:{" "}
+          <span className="text-amber-300 font-semibold">Player {activePlayer}</span>
+        </span>
+        <button
+          type="button"
+          className="px-4 py-1.5 rounded-md bg-cyan-900/50 border border-cyan-600 text-cyan-200 text-sm font-semibold hover:bg-cyan-800/50 disabled:opacity-40"
+          onClick={handleEndTurn}
+          disabled={gameOver}
+        >
+          End turn
+        </button>
+      </div>
+
       <PhaseIndicator phase={phase} />
 
-      {/* P2 HUD (top) */}
-      {p2 && <ResourceDisplay player={p2} />}
+      {p2 && (
+        <ResourceDisplay player={p2} isActive={p2.id === activePlayer} />
+      )}
 
-      {/* Board */}
       <div className="relative">
-        <Board gameState={gameState} onUpgrade={handleUpgrade} />
+        <Board
+          gameState={gameState}
+          onUpgrade={handleUpgrade}
+          activePlayer={activePlayer}
+        />
 
         {gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center rounded bg-black/85 z-50">
@@ -247,9 +124,12 @@ export default function App() {
               GAME OVER
             </div>
             <p className="text-slate-400 text-sm mt-3">
-              {hqHP <= 0 ? "HQ has fallen." : "A player base was destroyed."}
+              {towerDown
+                ? `Player ${towerDown.id} Command Tower destroyed.`
+                : "Match ended."}
             </p>
             <button
+              type="button"
               className="mt-4 px-5 py-2 rounded border border-cyan-600 text-cyan-300 text-sm hover:bg-cyan-900/30"
               onClick={() => window.location.reload()}
             >
@@ -259,16 +139,21 @@ export default function App() {
         )}
       </div>
 
-      {/* P1 HUD (bottom) */}
-      {p1 && <ResourceDisplay player={p1} />}
+      {p1 && (
+        <ResourceDisplay player={p1} isActive={p1.id === activePlayer} />
+      )}
 
-      {/* Legend */}
-      <div className="flex gap-4 text-xs text-slate-500 mt-1 flex-wrap justify-center">
-        <span>⚔ Infantry — fast, low HP</span>
-        <span>🛡 Tank — slow, high HP</span>
-        <span>💣 Bomber — AoE, slow cooldown</span>
-        <span>🔒 DEF — stationary defender</span>
-        <span className="text-yellow-700">| Click token to upgrade (10 ⬡)</span>
+      <div className="flex gap-4 text-xs text-slate-500 mt-1 flex-wrap justify-center max-w-xl text-center">
+        <span>
+          <strong className="text-slate-400">Attacker</strong> — offensive marker
+        </span>
+        <span>
+          <strong className="text-slate-400">Defender</strong> — area denial / shield role
+        </span>
+        <span className="text-amber-700/90">
+          End turn → next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn,
+          your token).
+        </span>
       </div>
     </div>
   );

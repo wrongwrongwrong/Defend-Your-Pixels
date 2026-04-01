@@ -2,3 +2,4 @@ opencv-contrib-python
 websockets
 numpy
 django==5.0.0
+pygame>=2.5

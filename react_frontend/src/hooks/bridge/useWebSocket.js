@@ -1,49 +1,16 @@
-// useWebSocket.js
-// Connects to the Python/OpenCV backend at ws://localhost:8765.
-// Falls back to mock data automatically when no connection is available.
+// Connects to Python backend at ws://localhost:8765.
+// Merges marker positions into token state. Falls back to mock data if offline.
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createInitialGameState } from "../../game/turns";
 
 const WS_URL = "ws://localhost:8765";
 
-const mockGameState = {
-  phase: 1,
-  hqHP: 100,
-  players: [
-    {
-      id: 1,
-      color: "blue",
-      zone: "bottom",
-      resources: 0,
-      hp: 100,
-      tokens: [
-        { id: 10, type: "infantry", hp: 50, maxHp: 50, position: { x: 2, y: 10 }, rotation: "forward" },
-        { id: 11, type: "tank",     hp: 80, maxHp: 80, position: { x: 5, y: 10 }, rotation: "forward" },
-        { id: 12, type: "bomber",   hp: 60, maxHp: 60, position: { x: 8, y: 10 }, rotation: "forward" },
-        { id: 13, type: "def",      hp: 100, maxHp: 100, position: { x: 5, y: 11 }, rotation: "forward" },
-      ],
-    },
-    {
-      id: 2,
-      color: "red",
-      zone: "top",
-      resources: 0,
-      hp: 100,
-      tokens: [
-        { id: 14, type: "infantry", hp: 50, maxHp: 50, position: { x: 2, y: 1 }, rotation: "forward" },
-        { id: 15, type: "tank",     hp: 80, maxHp: 80, position: { x: 5, y: 1 }, rotation: "forward" },
-        { id: 16, type: "bomber",   hp: 60, maxHp: 60, position: { x: 8, y: 1 }, rotation: "forward" },
-        { id: 17, type: "def",      hp: 100, maxHp: 100, position: { x: 5, y: 0 }, rotation: "forward" },
-      ],
-    },
-  ],
-  units: [],
-};
+const mockGameState = createInitialGameState();
 
 /**
- * useWebSocket
- * Returns { gameState, connected, usingMock }
- * Merges incoming marker positions from Python into the base game state.
+ * Merge tracker payload into game state.
+ * Accepts tracker_frame (bridge) or legacy game_state shape.
  */
 export function useWebSocket() {
   const [gameState, setGameState] = useState(mockGameState);
@@ -52,12 +19,13 @@ export function useWebSocket() {
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
 
-  // Merge Python marker data into game state (updates token positions/rotations)
   const mergeMarkerData = useCallback((data) => {
     if (!data?.markers) return;
     setGameState((prev) => {
       const markerMap = {};
-      data.markers.forEach((m) => { markerMap[m.id] = m; });
+      data.markers.forEach((m) => {
+        markerMap[m.id] = m;
+      });
 
       return {
         ...prev,
@@ -66,7 +34,6 @@ export function useWebSocket() {
           tokens: player.tokens.map((token) => {
             const marker = markerMap[token.id];
             if (!marker) return token;
-            // Map raw rotation degrees → rotation string
             const rotDeg = marker.rotation ?? 0;
             const rotation = degreesToRotation(rotDeg, player.zone);
             return {
@@ -94,22 +61,21 @@ export function useWebSocket() {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === "game_state") {
+          if (msg.type === "game_state" && msg.data) {
+            mergeMarkerData(msg.data);
+          } else if (msg.type === "tracker_frame" && msg.data) {
             mergeMarkerData(msg.data);
           }
         } catch {
-          // ignore malformed messages
+          // ignore
         }
       };
 
-      ws.onerror = () => {
-        // silently fall through to onclose
-      };
+      ws.onerror = () => {};
 
       ws.onclose = () => {
         setConnected(false);
         setUsingMock(true);
-        // Attempt reconnect every 5 s
         reconnectTimer.current = setTimeout(connect, 5000);
       };
     } catch {
@@ -129,15 +95,8 @@ export function useWebSocket() {
   return { gameState, setGameState, connected, usingMock };
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Convert ArUco marker rotation (degrees, 0 = up in camera view)
- * into a game rotation string relative to the player's zone.
- */
 function degreesToRotation(deg, zone) {
   const norm = ((deg % 360) + 360) % 360;
-  // Bucket into 4 quadrants
   if (norm < 45 || norm >= 315) return zone === "bottom" ? "forward" : "backward";
   if (norm < 135) return "right";
   if (norm < 225) return zone === "bottom" ? "backward" : "forward";
