@@ -84,7 +84,17 @@ class BoardView:
                 if t == TerrainType.BLOCKED:
                     bg = COLOUR_BLOCKED
                 elif t == TerrainType.ETHER_DRILL:
-                    bg = COLOUR_DRILL
+                    drill = game.drills.get(pos)
+                    if drill is not None and drill.owner is not None:
+                        team = COLOUR_P1 if drill.owner == PlayerId.P1 else COLOUR_P2
+                        # Mix base drill green with team colour.
+                        bg = (
+                            int(COLOUR_DRILL[0] * 0.45 + team[0] * 0.55),
+                            int(COLOUR_DRILL[1] * 0.45 + team[1] * 0.55),
+                            int(COLOUR_DRILL[2] * 0.45 + team[2] * 0.55),
+                        )
+                    else:
+                        bg = COLOUR_DRILL
                 elif t == TerrainType.HIGHWAY:
                     bg = COLOUR_HIGHWAY
                 else:
@@ -141,6 +151,10 @@ class BoardView:
         if t == TerrainType.BLOCKED:
             return "#", COLOUR_TEXT
         if t == TerrainType.ETHER_DRILL:
+            drill = game.drills.get(pos)
+            if drill is not None and drill.owner is not None:
+                col = COLOUR_P1 if drill.owner == PlayerId.P1 else COLOUR_P2
+                return "E", col
             return "E", (180, 255, 160)
 
         return ".", (80, 90, 110)

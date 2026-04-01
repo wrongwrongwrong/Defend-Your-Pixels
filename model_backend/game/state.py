@@ -42,7 +42,7 @@ class GameState:
         self.obstacles: Dict[Pos, Obstacle] = {}
 
     # --- Setup helpers ---
-    def add_drill(self, pos: Pos, yield_per_turn: int = 5) -> None:
+    def add_drill(self, pos: Pos, yield_per_turn: int = 1) -> None:
         self.drills[pos] = EtherDrill(pos=pos, owner=None, yield_per_turn=yield_per_turn)
         self.board.set_terrain(pos, TerrainType.ETHER_DRILL)
 
@@ -195,6 +195,8 @@ class GameState:
         ps.ether -= 1
         u.ap -= 1
         drill.owner = u.owner
+        # Update income display immediately; ether is still granted on start_turn().
+        self.recompute_income()
         return True
 
     def push(self, unit_id: str, direction: Direction) -> bool:

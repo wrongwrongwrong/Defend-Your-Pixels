@@ -117,22 +117,30 @@ class PVPController:
             return True
         if key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
             uid = self._selected_id()
-            if uid and self._preview_dest is not None:
+            if uid:
                 u = self.model.units[uid]
-                prev = (u.pos, float(u.move_points), bool(u.on_highway))
-                if self.model.move_unit_to(uid, self._preview_dest):
-                    # Single-step undo for the last confirmed move this turn.
-                    self._undo_move = (
-                        int(self.model.turn),
-                        int(self.model.active_player),
-                        uid,
-                        prev[0],
-                        prev[1],
-                        prev[2],
-                    )
-                    self._any_action_this_turn = True
-            self._refresh_unit_list()
-            self._reset_preview()
+                if self._mode == "move" and self._preview_dest is not None:
+                    prev = (u.pos, float(u.move_points), bool(u.on_highway))
+                    if self.model.move_unit_to(uid, self._preview_dest):
+                        # Single-step undo for the last confirmed move this turn.
+                        self._undo_move = (
+                            int(self.model.turn),
+                            int(self.model.active_player),
+                            uid,
+                            prev[0],
+                            prev[1],
+                            prev[2],
+                        )
+                        self._any_action_this_turn = True
+                    # Keep selection on the same unit after moving.
+                    self._preview_dest = u.pos
+                elif self._mode == "attack" and self._preview_dest is not None:
+                    # Prototype: spending ether represents performing attack/shield.
+                    ps = self.model.players[self.model.active_player]
+                    if ps.ether >= 1 and u.owner == self.model.active_player and u.can_act() and u.ap > 0:
+                        ps.ether -= 1
+                        u.ap -= 1
+                        self._any_action_this_turn = True
             return True
         if key == pygame.K_TAB:
             # Undo (last confirmed move this turn).
@@ -165,7 +173,8 @@ class PVPController:
         if key == pygame.K_c:
             uid = self._selected_id()
             if uid:
-                self.model.capture(uid)
+                if self.model.capture(uid):
+                    self._any_action_this_turn = True
             return True
 
         if key in _KEY_TO_DIR:

@@ -58,7 +58,7 @@ def load_level_from_path(path: str | Path) -> GameState:
             elif ch in " .":
                 g.board.get(p).terrain = TerrainType.PLAIN
             elif ch == "E":
-                g.add_drill(p, yield_per_turn=5)
+                g.add_drill(p, yield_per_turn=1)
             elif ch == "H":
                 g.board.get(p).terrain = TerrainType.PLAIN
                 g.towers[PlayerId.P1] = CommandTower(PlayerId.P1, pos=p)
