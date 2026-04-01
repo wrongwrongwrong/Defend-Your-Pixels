@@ -23,10 +23,11 @@ This installs `requirements.txt`, then **editable** `pip install -e .` so `pytho
 
 Run
 - `source .venv/bin/activate`
-- **Pygame PVP prototype (level 1, left-edge spawns):** `python3 -m prototype_pygame.main`
-- `python3 python_tracker/experiments/main.py`
-- `python3 python_tracker/detection/detect_aruco.py`
-- `python3 bridge/websocket_server.py`
+- **Pygame PVP prototype:** `python3 -m prototype_pygame.main`
+- **Pygame single-player range/attack test:** `python3 -m prototype_pygame.single_player_main`
+- `python3 runner/run_camera_preview.py`
+- `python3 runner/run_marker_preview.py`
+- `python3 runner/run_live_tracker.py`
 
 Frontend
 - `cd react_frontend`

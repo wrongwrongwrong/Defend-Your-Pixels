@@ -1,6 +1,7 @@
 # React Frontend Structure
 
 - `app/`: app-level entry components
+- `bridge/`: tracker-frame translation and bridge-facing helpers
 - `components/board/`: board rendering layers
 - `components/entities/`: token and unit visuals
 - `components/hud/`: HUD and status UI

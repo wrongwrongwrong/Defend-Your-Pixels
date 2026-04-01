@@ -18,6 +18,10 @@ class Pos:
         return Pos(self.x + other.x, self.y + other.y)
 
 
+def manhattan_distance(a: Pos, b: Pos) -> int:
+    return abs(a.x - b.x) + abs(a.y - b.y)
+
+
 class Direction(Enum):
     UP = "up"
     DOWN = "down"

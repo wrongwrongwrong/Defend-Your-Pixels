@@ -54,6 +54,8 @@ class Unit:
     paralyzed_turns: int = 0
 
     on_highway: bool = False  # if moved onto highway this turn
+    hp: int = 3
+    max_hp: int = 3
 
     def new_turn(self) -> None:
         self.ap = 1
@@ -76,12 +78,12 @@ class Unit:
 
 class Attacker(Unit):
     def __init__(self, id: str, owner: PlayerId, pos: Pos, *, range_base: int = 3):
-        super().__init__(id=id, owner=owner, pos=pos, kind=UnitKind.ATTACKER)
+        super().__init__(id=id, owner=owner, pos=pos, kind=UnitKind.ATTACKER, hp=3, max_hp=3)
         self.range_base = range_base
 
 
 class Defender(Unit):
     def __init__(self, id: str, owner: PlayerId, pos: Pos, *, shield_range: int = 2):
-        super().__init__(id=id, owner=owner, pos=pos, kind=UnitKind.DEFENDER)
+        super().__init__(id=id, owner=owner, pos=pos, kind=UnitKind.DEFENDER, hp=4, max_hp=4)
         self.shield_range = shield_range
 

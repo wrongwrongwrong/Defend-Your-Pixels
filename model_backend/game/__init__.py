@@ -11,6 +11,7 @@ from .types import (
     Pos,
     TerrainType,
     Direction,
+    manhattan_distance,
 )
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     "Pos",
     "TerrainType",
     "Direction",
+    "manhattan_distance",
 ]
 

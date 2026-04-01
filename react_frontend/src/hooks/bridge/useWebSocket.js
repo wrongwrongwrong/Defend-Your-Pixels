@@ -2,6 +2,10 @@
 // Merges marker positions into token state. Falls back to mock data if offline.
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  applyTrackedTokens,
+  translateTrackerFrame,
+} from "../../bridge/translation/translateTrackerFrame";
 import { createInitialGameState } from "../../game/turns";
 
 const WS_URL = "ws://localhost:8765";
@@ -20,30 +24,9 @@ export function useWebSocket() {
   const reconnectTimer = useRef(null);
 
   const mergeMarkerData = useCallback((data) => {
-    if (!data?.markers) return;
     setGameState((prev) => {
-      const markerMap = {};
-      data.markers.forEach((m) => {
-        markerMap[m.id] = m;
-      });
-
-      return {
-        ...prev,
-        players: prev.players.map((player) => ({
-          ...player,
-          tokens: player.tokens.map((token) => {
-            const marker = markerMap[token.id];
-            if (!marker) return token;
-            const rotDeg = marker.rotation ?? 0;
-            const rotation = degreesToRotation(rotDeg, player.zone);
-            return {
-              ...token,
-              position: marker.position ?? token.position,
-              rotation,
-            };
-          }),
-        })),
-      };
+      const translation = translateTrackerFrame(data, prev);
+      return applyTrackedTokens(prev, translation);
     });
   }, []);
 
@@ -93,12 +76,4 @@ export function useWebSocket() {
   }, [connect]);
 
   return { gameState, setGameState, connected, usingMock };
-}
-
-function degreesToRotation(deg, zone) {
-  const norm = ((deg % 360) + 360) % 360;
-  if (norm < 45 || norm >= 315) return zone === "bottom" ? "forward" : "backward";
-  if (norm < 135) return "right";
-  if (norm < 225) return zone === "bottom" ? "backward" : "forward";
-  return "left";
 }

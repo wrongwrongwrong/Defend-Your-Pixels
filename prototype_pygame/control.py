@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pygame
 
-from model_backend.game import Direction, GameState
+from model_backend.game import Direction, GameState, PlayerId
 from model_backend.game.types import Pos
 
-from .levels import build_pvp_level1
+from .levels import build_pvp_level1, build_solo_range_test
 from .support_grid import compute_screen_size
 from .view import BoardView
 
@@ -24,12 +24,19 @@ _KEY_TO_DIR = {
 
 
 class PVPController:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        model: GameState | None = None,
+        title: str = "Pixel Defense — Pygame PVP (level1.txt)",
+        *,
+        single_player: bool = False,
+    ) -> None:
         pygame.init()
-        self.model: GameState = build_pvp_level1()
+        self.model: GameState = model or build_pvp_level1()
+        self.single_player = single_player
         sw, sh = compute_screen_size(self.model.board.width, self.model.board.height)
         self.screen = pygame.display.set_mode((sw, sh))
-        pygame.display.set_caption("Pixel Defense — Pygame PVP (level1.txt)")
+        pygame.display.set_caption(title)
         self.clock = pygame.time.Clock()
         self.view = BoardView()
         self._unit_ids: list[str] = []
@@ -64,17 +71,7 @@ class PVPController:
 
             uid = self._selected_id()
             reachable = self.model.reachable_positions(uid) if uid and self._mode == "move" else {}
-            attack_tiles: set[Pos] = set()
-            if uid and self._mode == "attack":
-                u = self.model.units[uid]
-                rng = getattr(u, "range_base", getattr(u, "shield_range", 1))
-                for dy in range(-rng, rng + 1):
-                    for dx in range(-rng, rng + 1):
-                        if abs(dx) + abs(dy) > rng or (dx == 0 and dy == 0):
-                            continue
-                        p = Pos(u.pos.x + dx, u.pos.y + dy)
-                        if self.model.board.in_bounds(p) and not self.model.is_blocked(p):
-                            attack_tiles.add(p)
+            attack_tiles: set[Pos] = self.model.valid_action_targets(uid) if uid and self._mode == "attack" else set()
             self.view.draw(
                 self.screen,
                 self.model,
@@ -91,6 +88,9 @@ class PVPController:
         pygame.quit()
 
     def _on_key(self, key: int) -> bool:
+        if self.model.game_over:
+            return key != pygame.K_ESCAPE
+
         if self._confirm_skip:
             if key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
                 self._confirm_skip = False
@@ -135,11 +135,7 @@ class PVPController:
                     # Keep selection on the same unit after moving.
                     self._preview_dest = u.pos
                 elif self._mode == "attack" and self._preview_dest is not None:
-                    # Prototype: spending ether represents performing attack/shield.
-                    ps = self.model.players[self.model.active_player]
-                    if ps.ether >= 1 and u.owner == self.model.active_player and u.can_act() and u.ap > 0:
-                        ps.ether -= 1
-                        u.ap -= 1
+                    if self.model.act_on_target(uid, self._preview_dest):
                         self._any_action_this_turn = True
             return True
         if key == pygame.K_TAB:
@@ -193,16 +189,7 @@ class PVPController:
                     if nxt in reachable:
                         self._preview_dest = nxt
                 else:
-                    # Attack/shield targeting: move the preview frame within valid (non-blocked) range tiles.
-                    rng = getattr(u, "range_base", getattr(u, "shield_range", 1))
-                    attack_tiles: set[Pos] = set()
-                    for dy in range(-rng, rng + 1):
-                        for dx in range(-rng, rng + 1):
-                            if abs(dx) + abs(dy) > rng:
-                                continue
-                            p = Pos(u.pos.x + dx, u.pos.y + dy)
-                            if self.model.board.in_bounds(p) and not self.model.is_blocked(p):
-                                attack_tiles.add(p)
+                    attack_tiles = self.model.valid_action_targets(uid)
                     if nxt in attack_tiles:
                         self._preview_dest = nxt
             return True
@@ -227,6 +214,9 @@ class PVPController:
 
     def _end_turn(self) -> None:
         self.model.end_turn()
+        if self.single_player:
+            while self.model.active_player != PlayerId.P1:
+                self.model.end_turn()
         self._refresh_unit_list()
         self._reset_preview()
         self._undo_move = None
@@ -237,3 +227,11 @@ class PVPController:
 
 def main() -> None:
     PVPController().run()
+
+
+def main_solo_range_test() -> None:
+    PVPController(
+        model=build_solo_range_test(),
+        title="Pixel Defense — Solo Range Test",
+        single_player=True,
+    ).run()

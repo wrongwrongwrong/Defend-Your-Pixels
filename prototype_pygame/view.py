@@ -170,7 +170,7 @@ class BoardView:
         p1 = game.players[PlayerId.P1]
         p2 = game.players[PlayerId.P2]
         lines = [
-            "Map: level1.txt",
+            "Map: prototype scenario",
             "# wall  E drill  H HQ",
             "A/D by colour: P1 blue, P2 red",
             "",
@@ -186,11 +186,20 @@ class BoardView:
 
         lines += [
             "",
+            f"Status: {game.last_action}",
+            "",
             "Q/E cycle | Tab undo | C capture",
             "1 attack/shield (red)  2 move (green)",
             "WASD preview move | Enter confirm",
             "Space end turn | Esc quit",
         ]
+
+        if game.game_over:
+            lines += [
+                "",
+                "Game Over",
+                f"Winner: {'Draw' if game.winner is None else f'P{int(game.winner)}'}",
+            ]
 
         for line in lines:
             surf.blit(self._font_small.render(line, True, COLOUR_TEXT), (hx, y))

@@ -27,6 +27,9 @@ class GameState:
         self.rng = Random(seed)
         self.turn: int = 1
         self.active_player: PlayerId = PlayerId.P1
+        self.game_over: bool = False
+        self.winner: PlayerId | None = None
+        self.last_action: str = "Ready"
 
         self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
@@ -62,14 +65,19 @@ class GameState:
                 self.players[d.owner].income_per_turn += d.yield_per_turn
 
     def start_turn(self) -> None:
+        if self.game_over:
+            return
         self.recompute_income()
         ps = self.players[self.active_player]
         ps.ether += ps.income_per_turn
         for u in self.units.values():
             if u.owner == self.active_player:
                 u.new_turn()
+        self.last_action = f"Player {int(self.active_player)} turn started"
 
     def end_turn(self) -> None:
+        if self.game_over:
+            return
         self.active_player = PlayerId.P1 if self.active_player == PlayerId.P2 else PlayerId.P2
         self.turn += 1
         self.start_turn()
@@ -80,6 +88,8 @@ class GameState:
             return True
         if self.board.get(p).terrain == TerrainType.BLOCKED:
             return True
+        if self.tower_at(p) is not None:
+            return True
         if p in self.obstacles:
             return True
         return False
@@ -89,6 +99,15 @@ class GameState:
             if u.pos == p:
                 return u
         return None
+
+    def tower_at(self, p: Pos) -> Optional[CommandTower]:
+        for tower in self.towers.values():
+            if tower.pos == p:
+                return tower
+        return None
+
+    def obstacle_at(self, p: Pos) -> Optional[Obstacle]:
+        return self.obstacles.get(p)
 
     def move_cost(self, p: Pos) -> float:
         t = self.board.get(p).terrain
@@ -114,6 +133,7 @@ class GameState:
         u.pos = nxt
         if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
+        self.last_action = f"{unit_id} moved to ({nxt.x}, {nxt.y})"
         return True
 
     def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
@@ -180,6 +200,7 @@ class GameState:
         u.pos = dest
         if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
+        self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
         return True
 
     def capture(self, unit_id: str) -> bool:
@@ -197,6 +218,7 @@ class GameState:
         drill.owner = u.owner
         # Update income display immediately; ether is still granted on start_turn().
         self.recompute_income()
+        self.last_action = f"{unit_id} captured drill at ({u.pos.x}, {u.pos.y})"
         return True
 
     def push(self, unit_id: str, direction: Direction) -> bool:
@@ -216,7 +238,138 @@ class GameState:
         ps.ether -= 1
         u.ap -= 1
         enemy.pos = behind
+        self.last_action = f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})"
         return True
+
+    def tiles_in_action_range(self, unit_id: str) -> set[Pos]:
+        u = self.units[unit_id]
+        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
+            return set()
+        if u.on_highway:
+            return set()
+
+        rng = getattr(u, "range_base", getattr(u, "shield_range", 1))
+        tiles: set[Pos] = set()
+        for dy in range(-rng, rng + 1):
+            for dx in range(-rng, rng + 1):
+                if abs(dx) + abs(dy) > rng or (dx == 0 and dy == 0):
+                    continue
+                p = Pos(u.pos.x + dx, u.pos.y + dy)
+                if self.board.in_bounds(p):
+                    tiles.add(p)
+        return tiles
+
+    def valid_action_targets(self, unit_id: str) -> set[Pos]:
+        u = self.units[unit_id]
+        targets: set[Pos] = set()
+        for pos in self.tiles_in_action_range(unit_id):
+            unit = self.unit_at(pos)
+            tower = self.tower_at(pos)
+            obstacle = self.obstacle_at(pos)
+
+            if isinstance(u, Attacker):
+                if unit is not None and unit.owner != u.owner:
+                    targets.add(pos)
+                    continue
+                if tower is not None and tower.owner != u.owner:
+                    targets.add(pos)
+                    continue
+                if obstacle is not None and obstacle.owner != u.owner:
+                    targets.add(pos)
+                    continue
+
+            if isinstance(u, Defender):
+                if unit is not None and unit.owner == u.owner and unit.hp < unit.max_hp:
+                    targets.add(pos)
+                    continue
+                if tower is not None and tower.owner == u.owner and tower.hp < tower.max_hp:
+                    targets.add(pos)
+                    continue
+
+        return targets
+
+    def act_on_target(self, unit_id: str, target: Pos) -> bool:
+        u = self.units[unit_id]
+        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
+            self.last_action = f"{unit_id} cannot act right now"
+            return False
+        if u.on_highway:
+            self.last_action = f"{unit_id} cannot act after moving onto a highway"
+            return False
+        if target not in self.valid_action_targets(unit_id):
+            self.last_action = f"{unit_id} has no valid action on ({target.x}, {target.y})"
+            return False
+
+        ps = self.players[self.active_player]
+        if ps.ether < 1:
+            self.last_action = f"Player {int(self.active_player)} needs 1 ether to act"
+            return False
+
+        success = False
+        action_text = None
+        if isinstance(u, Attacker):
+            enemy = self.unit_at(target)
+            if enemy is not None and enemy.owner != u.owner:
+                enemy.hp -= 2
+                if enemy.hp <= 0:
+                    action_text = f"{unit_id} defeated {enemy.id}"
+                    del self.units[enemy.id]
+                else:
+                    action_text = f"{unit_id} hit {enemy.id} ({enemy.hp}/{enemy.max_hp})"
+                success = True
+            else:
+                tower = self.tower_at(target)
+                if tower is not None and tower.owner != u.owner:
+                    tower.hp = max(0, tower.hp - 2)
+                    action_text = f"{unit_id} hit P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
+                    success = True
+                else:
+                    obstacle = self.obstacle_at(target)
+                    if obstacle is not None and obstacle.owner != u.owner:
+                        obstacle.hp -= 2
+                        if obstacle.hp <= 0:
+                            del self.obstacles[target]
+                            self.board.set_terrain(target, TerrainType.PLAIN)
+                            action_text = f"{unit_id} destroyed obstacle at ({target.x}, {target.y})"
+                        else:
+                            action_text = f"{unit_id} damaged obstacle at ({target.x}, {target.y})"
+                        success = True
+        elif isinstance(u, Defender):
+            ally = self.unit_at(target)
+            if ally is not None and ally.owner == u.owner:
+                ally.hp = min(ally.max_hp, ally.hp + 1)
+                action_text = f"{unit_id} repaired {ally.id} ({ally.hp}/{ally.max_hp})"
+                success = True
+            else:
+                tower = self.tower_at(target)
+                if tower is not None and tower.owner == u.owner:
+                    tower.hp = min(tower.max_hp, tower.hp + 1)
+                    action_text = f"{unit_id} repaired P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
+                    success = True
+
+        if not success:
+            return False
+
+        ps.ether -= 1
+        u.ap -= 1
+        self.last_action = action_text or f"{unit_id} acted on ({target.x}, {target.y})"
+        self._update_game_over_state()
+        return True
+
+    def _update_game_over_state(self) -> None:
+        defeated = [pid for pid, tower in self.towers.items() if tower.hp <= 0]
+        if not defeated:
+            return
+
+        self.game_over = True
+        if PlayerId.P1 in defeated and PlayerId.P2 in defeated:
+            self.winner = None
+            self.last_action = f"{self.last_action} | Draw"
+            return
+
+        loser = defeated[0]
+        self.winner = PlayerId.P1 if loser == PlayerId.P2 else PlayerId.P2
+        self.last_action = f"{self.last_action} | Player {int(self.winner)} wins"
 
     # Heat / overload resolution (prototype)
     def overload_check(self, unit: Unit) -> bool:
