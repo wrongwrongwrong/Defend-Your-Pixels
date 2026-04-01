@@ -1,4 +1,4 @@
-"""Legacy compatibility entrypoint for older websocket_server command paths."""
+"""Bridge-level entrypoint for the live tracker runtime."""
 
 import sys
 
