@@ -5,7 +5,7 @@ from python_tracker.marker_detection.aruco_detector import create_detector
 
 
 def main():
-    cap = open_camera(0)
+    cap = open_camera(1)
 
     if cap is None:
         print("Error: Cannot open camera")

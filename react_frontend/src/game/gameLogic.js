@@ -1,4 +1,5 @@
-// Visual + light math helpers. Rules live in turns.js / ether.js / constants.js
+// Visual + light math helpers. Authoritative rules live in model_backend (Python).
+// Call-site audit: docs/react_integration_step1_call_sites.md
 
 export { GRID_SIZE, CELL_SIZE, UNIT_KIND, COMMAND_TOWER_MAX_HP } from "./constants";
 export { getEther, addEther, trySpendEther } from "./ether";

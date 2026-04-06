@@ -1,12 +1,21 @@
 import cv2
 import numpy as np
 
-from python_tracker.calibration.homography import GRID_COLS, GRID_ROWS, build_homography, pixel_to_grid
+from python_tracker.calibration.homography import (
+    GRID_COLS,
+    GRID_ROWS,
+    build_homography,
+    pixel_to_grid,
+    pixel_to_grid_with_bounds,
+)
 from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
 TOKEN_IDS = set(range(10, 18))
+
+ATTACKER_IDS = {10, 12, 14, 16}
+DEFENDER_IDS = {11, 13, 15, 17}
 
 
 def build_tracker_snapshot(corners, ids):
@@ -86,16 +95,32 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
         rotation_deg = compute_rotation_deg(corners[i][0])
-        gx, gy = pixel_to_grid(px, py, H)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
 
-        if gx is not None:
-            label = f"ID:{mid} G({gx:.1f},{gy:.1f}) R:{rotation_deg:.0f}°"
-        else:
-            label = f"ID:{mid} (no corners)"
+        if gx is None or not in_bounds:
+            continue
 
-        cv2.putText(frame, label, (int(px) + 5, int(py) - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 255, 100), 1, cv2.LINE_AA)
+        label = token_label(int(mid))
+        cv2.putText(
+            frame,
+            label,
+            (int(px) + 5, int(py) - 12),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (100, 255, 100),
+            2,
+            cv2.LINE_AA,
+        )
 
     return snapshot, frame
+
+
+def token_label(marker_id: int) -> str:
+    if marker_id in ATTACKER_IDS:
+        return "ATK"
+    if marker_id in DEFENDER_IDS:
+        return "DEF"
+    return f"ID:{marker_id}"
 
 
 def draw_grid_overlay(frame, H):

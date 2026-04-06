@@ -10,8 +10,9 @@ export function buildTokenRegistry(gameState) {
 
   for (const player of gameState?.players ?? []) {
     for (const token of player.tokens ?? []) {
-      registry.set(token.id, {
-        tokenId: token.id,
+      const tokenId = String(token.id);
+      registry.set(tokenId, {
+        tokenId,
         playerId: player.id,
         zone: player.zone,
         kind: token.kind,
@@ -20,10 +21,11 @@ export function buildTokenRegistry(gameState) {
   }
 
   for (const markerId of [10, 11, 12, 13, 14, 15, 16, 17]) {
-    if (registry.has(markerId)) continue;
+    const tokenId = String(markerId);
+    if (registry.has(tokenId)) continue;
     const playerId = markerId >= 14 ? 2 : 1;
-    registry.set(markerId, {
-      tokenId: markerId,
+    registry.set(tokenId, {
+      tokenId,
       playerId,
       zone: playerId === 1 ? "bottom" : "top",
       kind: inferTokenKind(markerId),
