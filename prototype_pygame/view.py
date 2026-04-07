@@ -147,6 +147,11 @@ class BoardView:
                 col = COLOUR_P1 if pid == PlayerId.P1 else COLOUR_P2
                 return "H", col
 
+        pix = game.pixel_at(pos)
+        if pix is not None:
+            col = COLOUR_P1 if pix.owner == PlayerId.P1 else COLOUR_P2
+            return "*", col
+
         t = game.board.get(pos).terrain
         if t == TerrainType.BLOCKED:
             return "#", COLOUR_TEXT
@@ -169,15 +174,21 @@ class BoardView:
         y = 12
         p1 = game.players[PlayerId.P1]
         p2 = game.players[PlayerId.P2]
+        k1 = game.pixels_destroyed_by[PlayerId.P1]
+        k2 = game.pixels_destroyed_by[PlayerId.P2]
+        rem1 = sum(1 for px in game.pixels.values() if px.owner == PlayerId.P1)
+        rem2 = sum(1 for px in game.pixels.values() if px.owner == PlayerId.P2)
+        win_n = game.PIXELS_DESTROYED_TO_WIN
         lines = [
             "Map: prototype scenario",
-            "# wall  E drill  H HQ",
+            "# wall   * pixel   H HQ",
             "A/D by colour: P1 blue, P2 red",
             "",
             f"Turn {game.turn}  |  Active P{int(game.active_player)}",
             "",
-            f"Ether: P1={p1.ether}  P2={p2.ether}",
-            f"Income: P1={p1.income_per_turn}  P2={p2.income_per_turn}",
+            "Ether: # (disabled)   Income: #",
+            f"Pixels destroyed: P1→{k1}  P2→{k2}  (win {win_n})",
+            f"Pixels left: P1={rem1}  P2={rem2}",
             "",
             "Towers:",
         ]

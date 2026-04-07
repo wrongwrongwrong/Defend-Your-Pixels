@@ -5,6 +5,7 @@ from .entities import (
     CommandTower,
     EtherDrill,
     Obstacle,
+    Pixel,
 )
 from .types import (
     PlayerId,
@@ -21,6 +22,7 @@ __all__ = [
     "CommandTower",
     "EtherDrill",
     "Obstacle",
+    "Pixel",
     "PlayerId",
     "Pos",
     "TerrainType",

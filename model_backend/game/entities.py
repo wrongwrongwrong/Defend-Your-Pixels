@@ -41,6 +41,15 @@ class Obstacle:
 
 
 @dataclass(slots=True)
+class Pixel:
+    """Destructible objective tile; attackers destroy in one hit."""
+
+    id: str
+    owner: PlayerId
+    pos: Pos
+
+
+@dataclass(slots=True)
 class Unit:
     id: str
     owner: PlayerId

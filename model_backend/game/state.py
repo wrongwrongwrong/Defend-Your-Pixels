@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 import heapq
 
 from .board import Board
-from .entities import Attacker, CommandTower, Defender, EtherDrill, Obstacle, Unit
+from .entities import Attacker, CommandTower, Defender, EtherDrill, Obstacle, Pixel, Unit
 from .types import Direction, PlayerId, Pos, TerrainType
 
 
@@ -23,6 +23,9 @@ class GameState:
     Minimal rules engine for playability testing (no AR integration yet).
     """
 
+    PIXELS_PER_PLAYER_DEFAULT = 35
+    PIXELS_DESTROYED_TO_WIN = 20
+
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
         self.rng = Random(seed)
         self.turn: int = 1
@@ -33,8 +36,8 @@ class GameState:
 
         self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
-            PlayerId.P1: PlayerState(PlayerId.P1, ether=10, income_per_turn=0),
-            PlayerId.P2: PlayerState(PlayerId.P2, ether=10, income_per_turn=0),
+            PlayerId.P1: PlayerState(PlayerId.P1, ether=0, income_per_turn=0),
+            PlayerId.P2: PlayerState(PlayerId.P2, ether=0, income_per_turn=0),
         }
 
         # Filled by level loader (or demos); pygame prototype uses ASCII maps.
@@ -43,6 +46,9 @@ class GameState:
         self.units: Dict[str, Unit] = {}
         self.drills: Dict[Pos, EtherDrill] = {}
         self.obstacles: Dict[Pos, Obstacle] = {}
+        self.pixels: Dict[str, Pixel] = {}
+        # How many enemy pixels each player has destroyed (win at PIXELS_DESTROYED_TO_WIN).
+        self.pixels_destroyed_by: Dict[PlayerId, int] = {PlayerId.P1: 0, PlayerId.P2: 0}
 
     # --- Setup helpers ---
     def add_drill(self, pos: Pos, yield_per_turn: int = 1) -> None:
@@ -56,6 +62,55 @@ class GameState:
         self.obstacles[obs.pos] = obs
         self.board.set_terrain(obs.pos, TerrainType.BLOCKED)
 
+    def add_pixel(self, pixel: Pixel) -> None:
+        self.pixels[pixel.id] = pixel
+
+    def spawn_default_pixels(self, per_player: int | None = None) -> None:
+        """Place pixels on empty plain tiles; left half → P1, right half → P2."""
+        n = per_player if per_player is not None else self.PIXELS_PER_PLAYER_DEFAULT
+        candidates: list[Pos] = []
+        for y in range(self.board.height):
+            for x in range(self.board.width):
+                p = Pos(x, y)
+                if self.board.get(p).terrain != TerrainType.PLAIN:
+                    continue
+                if self.unit_at(p) is not None or self.tower_at(p) is not None:
+                    continue
+                if self.pixel_at(p) is not None:
+                    continue
+                candidates.append(p)
+        mid_x = self.board.width // 2
+        left = sorted([p for p in candidates if p.x < mid_x], key=lambda q: (q.y, q.x))
+        right = sorted([p for p in candidates if p.x >= mid_x], key=lambda q: (q.y, q.x))
+
+        p1_pos = left[:n]
+        p2_pos = right[:n]
+        short1 = n - len(p1_pos)
+        short2 = n - len(p2_pos)
+        used = set(p1_pos) | set(p2_pos)
+        spill = sorted([p for p in candidates if p not in used], key=lambda q: (q.y, q.x))
+        for p in spill:
+            if short1 > 0:
+                p1_pos.append(p)
+                short1 -= 1
+                used.add(p)
+            elif short2 > 0:
+                p2_pos.append(p)
+                short2 -= 1
+                used.add(p)
+            if short1 == 0 and short2 == 0:
+                break
+
+        pi = 0
+        for pos in p1_pos:
+            pid = f"px{pi}"
+            pi += 1
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P1, pos=pos))
+        for pos in p2_pos:
+            pid = f"px{pi}"
+            pi += 1
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P2, pos=pos))
+
     # --- Economy / turns ---
     def recompute_income(self) -> None:
         for p in self.players.values():
@@ -68,8 +123,7 @@ class GameState:
         if self.game_over:
             return
         self.recompute_income()
-        ps = self.players[self.active_player]
-        ps.ether += ps.income_per_turn
+        # Ether / drill income disabled for pixel-win mode.
         for u in self.units.values():
             if u.owner == self.active_player:
                 u.new_turn()
@@ -81,6 +135,7 @@ class GameState:
         self.active_player = PlayerId.P1 if self.active_player == PlayerId.P2 else PlayerId.P2
         self.turn += 1
         self.start_turn()
+        self.end_game()
 
     # --- Core rules ---
     def is_blocked(self, p: Pos) -> bool:
@@ -92,7 +147,15 @@ class GameState:
             return True
         if p in self.obstacles:
             return True
+        if self.pixel_at(p) is not None:
+            return True
         return False
+
+    def pixel_at(self, p: Pos) -> Optional[Pixel]:
+        for px in self.pixels.values():
+            if px.pos == p:
+                return px
+        return None
 
     def unit_at(self, p: Pos) -> Optional[Unit]:
         for u in self.units.values():
@@ -204,29 +267,12 @@ class GameState:
         return True
 
     def capture(self, unit_id: str) -> bool:
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
-            return False
-        ps = self.players[self.active_player]
-        if ps.ether < 1:
-            return False
-        drill = self.drills.get(u.pos)
-        if drill is None:
-            return False
-        ps.ether -= 1
-        u.ap -= 1
-        drill.owner = u.owner
-        # Update income display immediately; ether is still granted on start_turn().
-        self.recompute_income()
-        self.last_action = f"{unit_id} captured drill at ({u.pos.x}, {u.pos.y})"
-        return True
+        self.last_action = "Ether/drill capture disabled (#)"
+        return False
 
     def push(self, unit_id: str, direction: Direction) -> bool:
         u = self.units[unit_id]
         if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
-            return False
-        ps = self.players[self.active_player]
-        if ps.ether < 1:
             return False
         enemy_pos = u.pos + direction.delta()
         enemy = self.unit_at(enemy_pos)
@@ -235,7 +281,6 @@ class GameState:
         behind = enemy_pos + direction.delta()
         if self.is_blocked(behind) or self.unit_at(behind) is not None:
             return False
-        ps.ether -= 1
         u.ap -= 1
         enemy.pos = behind
         self.last_action = f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})"
@@ -268,6 +313,10 @@ class GameState:
             obstacle = self.obstacle_at(pos)
 
             if isinstance(u, Attacker):
+                pix = self.pixel_at(pos)
+                if pix is not None and pix.owner != u.owner:
+                    targets.add(pos)
+                    continue
                 if unit is not None and unit.owner != u.owner:
                     targets.add(pos)
                     continue
@@ -300,16 +349,17 @@ class GameState:
             self.last_action = f"{unit_id} has no valid action on ({target.x}, {target.y})"
             return False
 
-        ps = self.players[self.active_player]
-        if ps.ether < 1:
-            self.last_action = f"Player {int(self.active_player)} needs 1 ether to act"
-            return False
-
         success = False
         action_text = None
         if isinstance(u, Attacker):
+            pix = self.pixel_at(target)
+            if pix is not None and pix.owner != u.owner:
+                del self.pixels[pix.id]
+                self.pixels_destroyed_by[u.owner] += 1
+                action_text = f"{unit_id} destroyed enemy pixel at ({target.x}, {target.y})"
+                success = True
             enemy = self.unit_at(target)
-            if enemy is not None and enemy.owner != u.owner:
+            if not success and enemy is not None and enemy.owner != u.owner:
                 enemy.hp -= 2
                 if enemy.hp <= 0:
                     action_text = f"{unit_id} defeated {enemy.id}"
@@ -317,13 +367,13 @@ class GameState:
                 else:
                     action_text = f"{unit_id} hit {enemy.id} ({enemy.hp}/{enemy.max_hp})"
                 success = True
-            else:
+            if not success:
                 tower = self.tower_at(target)
                 if tower is not None and tower.owner != u.owner:
                     tower.hp = max(0, tower.hp - 2)
                     action_text = f"{unit_id} hit P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
                     success = True
-                else:
+                if not success:
                     obstacle = self.obstacle_at(target)
                     if obstacle is not None and obstacle.owner != u.owner:
                         obstacle.hp -= 2
@@ -350,13 +400,32 @@ class GameState:
         if not success:
             return False
 
-        ps.ether -= 1
         u.ap -= 1
         self.last_action = action_text or f"{unit_id} acted on ({target.x}, {target.y})"
-        self._update_game_over_state()
+        self.end_game()
         return True
 
-    def _update_game_over_state(self) -> None:
+    def check_game_over(self) -> None:
+        """Win when a player has destroyed PIXELS_DESTROYED_TO_WIN enemy pixels."""
+        if self.game_over:
+            return
+        for pid in (PlayerId.P1, PlayerId.P2):
+            if self.pixels_destroyed_by[pid] >= self.PIXELS_DESTROYED_TO_WIN:
+                self.game_over = True
+                self.winner = pid
+                self.last_action = (
+                    f"P{int(pid)} wins: destroyed {self.PIXELS_DESTROYED_TO_WIN} enemy pixels"
+                )
+                return
+
+    def end_game(self) -> None:
+        """Evaluate win/loss (pixel quota); call after a turn ends or after a decisive action."""
+        self.check_game_over()
+        self._update_game_over_towers()
+
+    def _update_game_over_towers(self) -> None:
+        if self.game_over:
+            return
         defeated = [pid for pid, tower in self.towers.items() if tower.hp <= 0]
         if not defeated:
             return

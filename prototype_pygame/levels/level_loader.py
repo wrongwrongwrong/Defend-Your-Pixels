@@ -7,7 +7,7 @@ Symbols
 -------
   #  wall / border (blocked)
   . or space  walkable floor
-  E  ether drill (capturable)
+  E  treated as wall (#) — ether/drill disabled
   H  Player 1 command tower (headquarters)
   h  Player 2 command tower
   A  Player 1 attacker      a  Player 2 attacker
@@ -58,7 +58,7 @@ def load_level_from_path(path: str | Path) -> GameState:
             elif ch in " .":
                 g.board.get(p).terrain = TerrainType.PLAIN
             elif ch == "E":
-                g.add_drill(p, yield_per_turn=1)
+                g.board.get(p).terrain = TerrainType.BLOCKED
             elif ch == "H":
                 g.board.get(p).terrain = TerrainType.PLAIN
                 g.towers[PlayerId.P1] = CommandTower(PlayerId.P1, pos=p)
@@ -89,5 +89,6 @@ def load_level_from_path(path: str | Path) -> GameState:
     if PlayerId.P1 not in g.towers or PlayerId.P2 not in g.towers:
         raise ValueError(f"Map must contain both H (P1 HQ) and h (P2 HQ): {path}")
 
+    g.spawn_default_pixels()
     g.start_turn()
     return g
