@@ -2,14 +2,19 @@ import asyncio
 
 import cv2
 
+from bridge.actions.model_action_dispatcher import apply_action
+from bridge.adapters.board_state_message_adapter import build_board_state_message
+from bridge.adapters.tracker_model_sync import build_tracker_move_actions
 from bridge.adapters.tracker_message_adapter import build_tracker_message
-from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, run_server
+from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
+from model_backend.serialization import serialize_game_state
+from prototype_pygame.levels import build_react_integration_level
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import build_tracker_preview
 
 
-CAMERA_ID = 0
+CAMERA_ID = 1
 SEND_FPS = 10
 
 
@@ -18,6 +23,8 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
     if cap is None:
         print(f"[Camera] ERROR: Cannot open camera (index {camera_id})")
         return
+
+    game = build_react_integration_level()
 
     configure_camera(cap)
     detector = create_detector()
@@ -33,11 +40,27 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
                 await asyncio.sleep(0.1)
                 continue
 
+            for action in await drain_actions():
+                apply_action(game, action)
+
             snapshot, annotated = build_tracker_preview(frame, detector)
+            tracker_actions, unit_metadata = build_tracker_move_actions(game, snapshot)
+            if not snapshot.get("calibration_ready"):
+                game.last_action = "Tracker waiting for board calibration"
+            elif tracker_actions:
+                moved_units = []
+                for action in tracker_actions:
+                    if apply_action(game, action):
+                        position = action["position"]
+                        moved_units.append(f"{action['unit_id']}->({position['x']},{position['y']})")
+                if moved_units:
+                    game.last_action = f"Tracker move intents: {', '.join(moved_units)}"
+            await broadcast(build_board_state_message(serialize_game_state(game, unit_metadata)))
             await broadcast(build_tracker_message(snapshot))
 
             cv2.imshow("Pixel Defense — Camera View  [Q to quit]", annotated)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), ord("Q"), 27):
                 print("[Camera] Quit signal received.")
                 break
 

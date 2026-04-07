@@ -3,7 +3,7 @@ import cv2
 from python_tracker.camera.camera_runtime import open_camera, release_camera
 
 
-def main(camera_id: int = 0):
+def main(camera_id: int = 1):
     cap = open_camera(camera_id)
     if cap is None:
         print(f"Error: Cannot open camera (index {camera_id})")

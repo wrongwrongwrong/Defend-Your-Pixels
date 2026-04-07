@@ -8,7 +8,6 @@ const KIND_ICONS = {
 export default function Unit({ unit, cellSize }) {
   const kind = unit.kind ?? "attacker";
   const isBlue = unit.playerId === 1;
-  const accent = isBlue ? "#60a5fa" : "#f87171";
   const glowClass = isBlue ? "glow-blue" : "glow-red";
   const borderColor = isBlue ? "border-blue-400" : "border-red-400";
 

@@ -32,8 +32,33 @@ def pixel_to_grid(px: float, py: float, H) -> tuple[float, float] | tuple[None, 
     if H is None:
         return None, None
 
-    pt = np.float32([[[px, py]]])
-    warped = cv2.perspectiveTransform(pt, H)[0][0]
+    warped = _warp_point(px, py, H)
+    if warped is None:
+        return None, None
+
     gx = float(np.clip(warped[0], 0, GRID_COLS - 1))
     gy = float(np.clip(warped[1], 0, GRID_ROWS - 1))
     return round(gx, 2), round(gy, 2)
+
+
+def pixel_to_grid_with_bounds(px: float, py: float, H) -> tuple[float, float, bool] | tuple[None, None, bool]:
+    if H is None:
+        return None, None, False
+
+    warped = _warp_point(px, py, H)
+    if warped is None:
+        return None, None, False
+
+    raw_x = float(warped[0])
+    raw_y = float(warped[1])
+    in_bounds = 0.0 <= raw_x < GRID_COLS and 0.0 <= raw_y < GRID_ROWS
+    gx = float(np.clip(raw_x, 0, GRID_COLS - 1))
+    gy = float(np.clip(raw_y, 0, GRID_ROWS - 1))
+    return round(gx, 2), round(gy, 2), in_bounds
+
+
+def _warp_point(px: float, py: float, H):
+    if H is None:
+        return None
+    pt = np.float32([[[px, py]]])
+    return cv2.perspectiveTransform(pt, H)[0][0]

@@ -29,6 +29,9 @@ export default function Token({
   onUpgrade,
   playerEther,
   isActivePlayer,
+  upgradesEnabled,
+  selected,
+  onSelect,
 }) {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const kind = token.kind ?? "attacker";
@@ -46,7 +49,12 @@ export default function Token({
   const dirAngle = DIR_ANGLE[token.rotation] ?? 0;
 
   const canAfford = playerEther >= UPGRADE_COST_ETHER;
-  const canUseMenu = isActivePlayer;
+  const canUseMenu = isActivePlayer && upgradesEnabled;
+  const upgradeDisabledReason = upgradesEnabled
+    ? !isActivePlayer
+      ? " (not your turn)"
+      : ""
+    : " (upgrade disabled in backend prototype)";
 
   return (
     <div
@@ -58,9 +66,16 @@ export default function Token({
         top: token.position.y * cellSize + 2,
         background: isBlue ? "rgba(10,20,60,0.9)" : "rgba(60,10,10,0.9)",
         opacity: isActivePlayer ? 1 : 0.85,
+        boxShadow: selected ? `0 0 0 2px ${accent}, 0 0 20px ${accent}88` : undefined,
       }}
-      onClick={() => setShowUpgrade((v) => !v)}
-      title={`${kind} — HP ${token.hp} | ${token.rotation}${!isActivePlayer ? " (not your turn)" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect?.(token.id);
+        if (upgradesEnabled) {
+          setShowUpgrade((v) => !v);
+        }
+      }}
+      title={`${kind} — HP ${token.hp} | ${token.rotation}${upgradeDisabledReason}`}
     >
       <div
         className="absolute rounded-full pointer-events-none"
@@ -97,7 +112,7 @@ export default function Token({
         />
       </div>
 
-      {showUpgrade && (
+      {showUpgrade && upgradesEnabled && (
         <UpgradeMenu
           kind={kind}
           canAfford={canAfford && canUseMenu}

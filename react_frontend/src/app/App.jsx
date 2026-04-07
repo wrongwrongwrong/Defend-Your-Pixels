@@ -1,21 +1,33 @@
 // Turn-based shell aligned with model_backend + pitch: Ether, Command Tower, Attacker/Defender tokens.
 
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Board from "../components/board/Board";
 import ResourceDisplay from "../components/hud/ResourceDisplay";
 import PhaseIndicator from "../components/hud/PhaseIndicator";
 import { useWebSocket } from "../hooks/bridge/useWebSocket";
 import { endTurn, trySpendEther } from "../game/gameLogic";
 
+const ACTION_MODE = {
+  MOVE: "move",
+  ACT: "act",
+};
+
 export default function App() {
-  const { gameState, setGameState, connected } = useWebSocket();
+  const { gameState, setGameState, connected, usingMock, sendAction } = useWebSocket();
+  const [selectedTokenId, setSelectedTokenId] = useState(null);
+  const [actionMode, setActionMode] = useState(ACTION_MODE.MOVE);
 
   const handleEndTurn = useCallback(() => {
+    if (!usingMock) {
+      sendAction({ action: "end_turn" });
+      return;
+    }
     setGameState((prev) => endTurn(prev));
-  }, [setGameState]);
+  }, [sendAction, setGameState, usingMock]);
 
   const handleUpgrade = useCallback(
     (tokenId, upgradeType) => {
+      if (!usingMock) return;
       setGameState((prev) => {
         const pid = prev.activePlayer;
         const owns = prev.players.some(
@@ -56,14 +68,58 @@ export default function App() {
         return { ...prev, players };
       });
     },
-    [setGameState]
+    [setGameState, usingMock]
   );
 
-  const { phase, players, gameOver, activePlayer, turn } = gameState;
+  const { phase, players, gameOver, activePlayer, turn, lastAction } = gameState;
   const p1 = players.find((p) => p.zone === "bottom");
   const p2 = players.find((p) => p.zone === "top");
+  const selectedToken = useMemo(
+    () => players.flatMap((player) => player.tokens ?? []).find((token) => token.id === selectedTokenId) ?? null,
+    [players, selectedTokenId]
+  );
+  const selectedPlayer = useMemo(
+    () => players.find((player) => player.tokens?.some((token) => token.id === selectedTokenId)) ?? null,
+    [players, selectedTokenId]
+  );
 
   const towerDown = players.find((p) => p.commandTowerHp <= 0);
+
+  const handleTokenSelect = useCallback((tokenId) => {
+    setSelectedTokenId((prev) => (prev === tokenId ? null : tokenId));
+  }, []);
+
+  const handleBoardCellAction = useCallback(
+    (position) => {
+      if (usingMock || !selectedToken || !sendAction) return;
+
+      if (actionMode === ACTION_MODE.ACT) {
+        sendAction({
+          action: "act_on_target",
+          unit_id: String(selectedToken.id),
+          target: position,
+        });
+        return;
+      }
+
+      sendAction({
+        action: "move_unit",
+        unit_id: String(selectedToken.id),
+        position,
+      });
+    },
+    [actionMode, selectedToken, sendAction, usingMock]
+  );
+
+  const handleCapture = useCallback(() => {
+    if (usingMock || !selectedToken) return;
+    sendAction({
+      action: "capture",
+      unit_id: String(selectedToken.id),
+    });
+  }, [selectedToken, sendAction, usingMock]);
+
+  const backendControlsEnabled = !usingMock && selectedToken && selectedPlayer?.id === activePlayer;
 
   return (
     <div
@@ -80,7 +136,7 @@ export default function App() {
       <div className="flex items-center gap-2 text-xs">
         <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
         <span className={connected ? "text-green-400" : "text-slate-500"}>
-          {connected ? "Tracker connected" : "Mock board (no tracker)"}
+          {connected ? "Python state connected" : "Mock board (no backend)"}
         </span>
       </div>
 
@@ -98,9 +154,57 @@ export default function App() {
           onClick={handleEndTurn}
           disabled={gameOver}
         >
-          End turn
+          {usingMock ? "End turn" : "Send end turn"}
         </button>
       </div>
+
+      {lastAction && (
+        <div className="max-w-2xl rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300 text-center">
+          <span className="text-slate-500">Status:</span>{" "}
+          <span className="text-cyan-200">{lastAction}</span>
+        </div>
+      )}
+
+      {!usingMock && (
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300">
+          <span className="text-slate-500">Manual controls:</span>
+          <button
+            type="button"
+            className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.MOVE ? "border-cyan-500 bg-cyan-950/60 text-cyan-200" : "border-slate-700 text-slate-400"}`}
+            onClick={() => setActionMode(ACTION_MODE.MOVE)}
+          >
+            Move mode
+          </button>
+          <button
+            type="button"
+            className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.ACT ? "border-rose-500 bg-rose-950/60 text-rose-200" : "border-slate-700 text-slate-400"}`}
+            onClick={() => setActionMode(ACTION_MODE.ACT)}
+          >
+            Act mode
+          </button>
+          <button
+            type="button"
+            className="rounded border border-amber-700 px-3 py-1 text-amber-200 disabled:opacity-40"
+            onClick={handleCapture}
+            disabled={!backendControlsEnabled}
+          >
+            Capture
+          </button>
+          <button
+            type="button"
+            className="rounded border border-slate-700 px-3 py-1 text-slate-300 disabled:opacity-40"
+            onClick={() => setSelectedTokenId(null)}
+            disabled={!selectedToken}
+          >
+            Clear selection
+          </button>
+          <span className="text-slate-500">
+            {selectedToken
+              ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x}, ${selectedToken.position.y})`
+              : "Select one of the active player's tokens, then click a grid cell."}
+          </span>
+        </div>
+      )}
 
       <PhaseIndicator phase={phase} />
 
@@ -113,6 +217,11 @@ export default function App() {
           gameState={gameState}
           onUpgrade={handleUpgrade}
           activePlayer={activePlayer}
+          upgradesEnabled={usingMock}
+          selectedTokenId={selectedTokenId}
+          onTokenSelect={handleTokenSelect}
+          onCellAction={handleBoardCellAction}
+          actionMode={actionMode}
         />
 
         {gameOver && (
@@ -151,8 +260,9 @@ export default function App() {
           <strong className="text-slate-400">Defender</strong> — area denial / shield role
         </span>
         <span className="text-amber-700/90">
-          End turn → next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn,
-          your token).
+          {usingMock
+            ? "End turn -> next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn, your token)."
+            : "Python board_state is authoritative. Select a token, choose move/act mode, then click a grid cell. Capture uses the selected token's current tile."}
         </span>
       </div>
     </div>

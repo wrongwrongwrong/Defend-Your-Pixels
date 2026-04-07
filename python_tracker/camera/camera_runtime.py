@@ -1,7 +1,7 @@
 import cv2
 
 
-def open_camera(camera_id: int = 0):
+def open_camera(camera_id: int = 1):
     cap = cv2.VideoCapture(camera_id)
     if not cap.isOpened():
         return None
