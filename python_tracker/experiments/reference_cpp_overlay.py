@@ -67,8 +67,12 @@ def load_next_overlay_frame(overlay_cap: cv2.VideoCapture, fallback_image: np.nd
     return fallback_image
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
 def main() -> int:
-    overlay_path = "/Users/yuxuanshi/Downloads/Defend-Your-Pixels/Board.jpg"
+    overlay_path = str(_repo_root() / "assets" / "Board.jpg")
    
     cap_in, cam_idx = open_first_available_camera(0, 4)
     if cap_in is None:

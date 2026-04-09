@@ -42,11 +42,13 @@ class Obstacle:
 
 @dataclass(slots=True)
 class Pixel:
-    """Destructible objective tile; attackers destroy in one hit."""
+    """Destructible objective tile. Guarded pixels need two attacker hits (strip guard, then destroy)."""
 
     id: str
     owner: PlayerId
     pos: Pos
+    # 0 = unguarded; 1 = guarded (max 1). Decrements when this pixel owner's opponent ends a turn.
+    guarded_turns: int = 0
 
 
 @dataclass(slots=True)

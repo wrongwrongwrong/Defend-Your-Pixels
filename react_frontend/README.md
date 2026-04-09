@@ -1,5 +1,17 @@
 # React + Vite
 
+## Live tracker + UI (one terminal)
+
+From this folder, after `npm install`:
+
+```bash
+npm run dev:live
+```
+
+Runs Vite and `../scripts/run-live-tracker.cjs` (Python live tracker + WebSocket). Requires a repo-root **`.venv`** with the Python deps installed. See the main [README](../README.md).
+
+---
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

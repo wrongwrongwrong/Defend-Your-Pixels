@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:live": "concurrently -k -n react,tracker -c cyan,magenta \"vite\" \"node ../scripts/run-live-tracker.cjs\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -18,6 +19,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.1.2",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
