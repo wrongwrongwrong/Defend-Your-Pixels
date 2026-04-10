@@ -1,3 +1,9 @@
+"""Camera runtime helpers (OpenCV VideoCapture).
+
+This module centralizes small utilities for opening/configuring/releasing a camera
+so multiple preview / live-tracker scripts behave consistently.
+"""
+
 import cv2
 
 

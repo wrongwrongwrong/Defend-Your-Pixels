@@ -1,3 +1,10 @@
+"""Reference overlay pipeline (experiment code).
+
+This is a Python adaptation of a C++ ArUco overlay tutorial (see link in file).
+It is not part of the primary runtime, but is useful as a reference for video/image
+overlay alignment using marker detections.
+"""
+
 import sys
 from pathlib import Path
 

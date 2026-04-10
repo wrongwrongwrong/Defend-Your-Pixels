@@ -1,3 +1,10 @@
+"""Miscellaneous Tkinter prototype / reference code.
+
+This file is not imported by the Defend-Your-Pixels runtime (as of today); it is kept
+in-repo as standalone reference code. It still has a module docstring so readers can
+quickly identify it as non-core to the authoritative game model.
+"""
+
 import tkinter as tk
 from tkinter import messagebox, filedialog
 from typing import Callable, Optional

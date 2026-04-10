@@ -1,3 +1,9 @@
+"""Token rotation helpers.
+
+Given a 4-corner ArUco marker polygon, compute a stable rotation angle in degrees
+for UI/telemetry purposes.
+"""
+
 import math
 
 

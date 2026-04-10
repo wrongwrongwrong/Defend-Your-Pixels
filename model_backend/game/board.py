@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+"""Grid board representation for the rules engine.
+
+The board stores per-tile terrain (movement/ability constraints) and provides
+lightweight bounds checking and accessors.
+"""
+
 from dataclasses import dataclass
 
 from .types import Pos, TerrainType

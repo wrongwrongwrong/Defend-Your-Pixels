@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+"""Authoritative game state and rules implementation.
+
+`GameState` is the rules engine used by:
+- prototypes (pygame runner)
+- the live tracker runtime (via the bridge layer)
+
+This module intentionally contains the validation and state transitions that define
+"what is legal" in the game. Adapters/transports should not replicate these rules;
+they should call into `GameState` methods and surface `last_action` to the UI.
+"""
+
 from dataclasses import dataclass, field
 from random import Random
+import time
 from typing import Dict, List, Optional
 
 import heapq
@@ -25,6 +37,7 @@ class GameState:
 
     PIXELS_PER_PLAYER_DEFAULT = 35
     PIXELS_DESTROYED_TO_WIN = 20
+    MOVE_COUNTDOWN_SECONDS = 10.0
 
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
         self.rng = Random(seed)
@@ -33,6 +46,8 @@ class GameState:
         self.game_over: bool = False
         self.winner: PlayerId | None = None
         self.last_action: str = "Ready"
+        self.move_countdown_deadline: float | None = None
+        self.move_countdown_unit_id: str | None = None
 
         self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
@@ -122,6 +137,7 @@ class GameState:
     def start_turn(self) -> None:
         if self.game_over:
             return
+        self.clear_move_countdown()
         self.recompute_income()
         # Ether / drill income disabled for pixel-win mode.
         for u in self.units.values():
@@ -132,10 +148,49 @@ class GameState:
     def end_turn(self) -> None:
         if self.game_over:
             return
+        self.clear_move_countdown()
         self.active_player = PlayerId.P1 if self.active_player == PlayerId.P2 else PlayerId.P2
         self.turn += 1
         self.start_turn()
         self.end_game()
+
+    @property
+    def move_countdown_active(self) -> bool:
+        return self.move_countdown_deadline is not None
+
+    def start_move_countdown(self, unit_id: str, now: float | None = None) -> None:
+        if self.game_over:
+            return
+        current = time.monotonic() if now is None else now
+        self.move_countdown_deadline = current + self.MOVE_COUNTDOWN_SECONDS
+        self.move_countdown_unit_id = unit_id
+
+    def clear_move_countdown(self) -> None:
+        self.move_countdown_deadline = None
+        self.move_countdown_unit_id = None
+
+    def move_countdown_seconds_remaining(self, now: float | None = None) -> float:
+        if self.move_countdown_deadline is None:
+            return 0.0
+        current = time.monotonic() if now is None else now
+        return round(max(0.0, self.move_countdown_deadline - current), 1)
+
+    def advance_timers(self, now: float | None = None) -> None:
+        if self.game_over or self.move_countdown_deadline is None:
+            return
+
+        current = time.monotonic() if now is None else now
+        if current < self.move_countdown_deadline:
+            return
+
+        unit_id = self.move_countdown_unit_id
+        self.end_turn()
+        if self.game_over:
+            return
+        if unit_id is not None:
+            self.last_action = f"{unit_id} move timer expired; {self.last_action}"
+        else:
+            self.last_action = f"Move timer expired; {self.last_action}"
 
     # --- Core rules ---
     def is_blocked(self, p: Pos) -> bool:
@@ -197,6 +252,7 @@ class GameState:
         if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         self.last_action = f"{unit_id} moved to ({nxt.x}, {nxt.y})"
+        self.start_move_countdown(unit_id)
         return True
 
     def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
@@ -264,6 +320,7 @@ class GameState:
         if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
+        self.start_move_countdown(unit_id)
         return True
 
     def capture(self, unit_id: str) -> bool:
@@ -401,6 +458,7 @@ class GameState:
             return False
 
         u.ap -= 1
+        self.clear_move_countdown()
         self.last_action = action_text or f"{unit_id} acted on ({target.x}, {target.y})"
         self.end_game()
         return True
@@ -422,6 +480,8 @@ class GameState:
         """Evaluate win/loss (pixel quota); call after a turn ends or after a decisive action."""
         self.check_game_over()
         self._update_game_over_towers()
+        if self.game_over:
+            self.clear_move_countdown()
 
     def _update_game_over_towers(self) -> None:
         if self.game_over:

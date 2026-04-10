@@ -1,3 +1,5 @@
+"""Simple camera preview window (no marker detection)."""
+
 import cv2
 
 from python_tracker.camera.camera_runtime import open_camera, release_camera

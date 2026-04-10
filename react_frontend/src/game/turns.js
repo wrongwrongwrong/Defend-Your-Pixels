@@ -18,6 +18,12 @@ export function createInitialGameState() {
     turn: 1,
     activePlayer: PLAYER_ID.P1,
     phase: 1,
+    moveCountdown: {
+      active: false,
+      secondsRemaining: 0,
+      durationSeconds: 0,
+      unitId: null,
+    },
     players: [
       {
         id: PLAYER_ID.P1,
@@ -105,6 +111,12 @@ export function endTurn(state) {
     activePlayer: nextPlayer,
     turn,
     phase,
+    moveCountdown: {
+      active: false,
+      secondsRemaining: 0,
+      durationSeconds: 0,
+      unitId: null,
+    },
     players,
     gameOver,
   };

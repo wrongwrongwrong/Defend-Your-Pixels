@@ -34,6 +34,7 @@ prototype_pygame/view.py
 prototype_pygame/levels/__init__.py
 prototype_pygame/levels/level_loader.py
 prototype_pygame/levels/pvp_level1.py
+prototype_pygame/levels/react_integration_level.py
 prototype_pygame/levels/solo_range_test.py
 python_tracker/board_mapping/coordinate_mapper.py
 python_tracker/calibration/homography.py

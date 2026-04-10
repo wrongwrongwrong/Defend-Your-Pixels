@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+"""Shared primitive types for the rules engine.
+
+This module keeps small, dependency-light definitions (enums, grid coordinates, helpers)
+that are imported widely across the model and bridge.
+"""
+
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 

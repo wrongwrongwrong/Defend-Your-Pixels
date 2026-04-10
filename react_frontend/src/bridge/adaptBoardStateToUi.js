@@ -1,32 +1,37 @@
 import { createInitialGameState } from "../game/turns";
 import { degreesToFacing } from "./translation/rotationMapping";
 
+const PLAYER_TWO_ID = 2;
+const DEFAULT_UNIT_KIND = "attacker";
+
 /**
  * Merge authoritative board_state from Python/bridge into the React UI game shape.
  * v1: snake_case payload from Python -> existing React UI shape.
  */
 export function adaptBoardStateToUi(raw) {
-  const base = createInitialGameState();
-  if (!raw || typeof raw !== "object") return base;
+  const baseState = createInitialGameState();
+  if (!isRecord(raw)) return baseState;
 
-  const players = adaptPlayers(raw.players, base.players);
+  const players = adaptPlayers(raw.players, baseState.players);
   const tokensByOwner = adaptTokensByOwner(raw.units, players);
 
   return {
-    ...base,
-    turn: numberOr(raw.turn, base.turn),
-    activePlayer: numberOr(raw.active_player, base.activePlayer),
-    phase: base.phase,
-    gameOver: booleanOr(raw.game_over, base.gameOver),
+    ...baseState,
+    turn: numberOr(raw.turn, baseState.turn),
+    activePlayer: numberOr(raw.active_player, baseState.activePlayer),
+    phase: baseState.phase,
+    gameOver: booleanOr(raw.game_over, baseState.gameOver),
     winner: raw.winner ?? null,
-    lastAction: typeof raw.last_action === "string" ? raw.last_action : base.lastAction,
+    moveCountdown: adaptMoveCountdown(raw.move_countdown, baseState.moveCountdown),
+    lastAction:
+      typeof raw.last_action === "string" ? raw.last_action : baseState.lastAction,
     players: players.map((player) => ({
       ...player,
       tokens: tokensByOwner.get(player.id) ?? [],
     })),
     // UI `units` is reserved for non-marker board entities. Authoritative `units[]`
     // currently maps to player tokens instead of these transient board units.
-    units: base.units,
+    units: baseState.units,
   };
 }
 
@@ -67,17 +72,18 @@ function adaptTokensByOwner(rawUnits, players) {
   if (!Array.isArray(rawUnits)) return tokensByOwner;
 
   for (const unit of rawUnits) {
-    if (!unit || typeof unit !== "object") continue;
+    if (!isRecord(unit)) continue;
+
     const owner = unit.owner;
     if (!tokensByOwner.has(owner)) continue;
 
     tokensByOwner.get(owner).push({
       id: String(unit.id),
-      kind: unit.kind ?? "attacker",
+      kind: unit.kind ?? DEFAULT_UNIT_KIND,
       hp: numberOr(unit.hp, 0),
       maxHp: numberOr(unit.max_hp, numberOr(unit.hp, 0)),
       position: adaptPosition(unit.position),
-      rotation: degreesToFacing(unit.rotation_deg ?? 0, owner === 2 ? "top" : "bottom"),
+      rotation: degreesToFacing(unit.rotation_deg ?? 0, zoneForOwner(owner)),
     });
   }
 
@@ -89,6 +95,34 @@ function adaptPosition(position) {
     x: numberOr(position?.x, 0),
     y: numberOr(position?.y, 0),
   };
+}
+
+function adaptMoveCountdown(rawCountdown, baseCountdown) {
+  if (!isRecord(rawCountdown)) return baseCountdown;
+
+  return {
+    active: booleanOr(rawCountdown.active, baseCountdown.active),
+    secondsRemaining: numberOr(
+      rawCountdown.seconds_remaining,
+      baseCountdown.secondsRemaining
+    ),
+    durationSeconds: numberOr(
+      rawCountdown.duration_seconds,
+      baseCountdown.durationSeconds
+    ),
+    unitId:
+      typeof rawCountdown.unit_id === "string" || rawCountdown.unit_id == null
+        ? rawCountdown.unit_id
+        : baseCountdown.unitId,
+  };
+}
+
+function zoneForOwner(owner) {
+  return owner === PLAYER_TWO_ID ? "top" : "bottom";
+}
+
+function isRecord(value) {
+  return value != null && typeof value === "object";
 }
 
 function numberOr(value, fallback) {

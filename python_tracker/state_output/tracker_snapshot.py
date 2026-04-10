@@ -1,3 +1,16 @@
+"""Build a tracker snapshot from detected ArUco markers.
+
+This module converts OpenCV marker detections (`corners`, `ids`) into a plain dict
+snapshot used by:
+- preview UIs (camera overlays)
+- the bridge layer (telemetry message + move-intent inference)
+
+The snapshot includes:
+- calibration readiness (homography built from corner markers)
+- per-marker grid positions when calibrated (else raw pixel positions)
+- marker rotation in degrees
+"""
+
 import cv2
 import numpy as np
 

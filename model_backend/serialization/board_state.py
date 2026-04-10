@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+"""Serialize the authoritative Python model into the board_state payload."""
+
 from model_backend.game import GameState, PlayerId
 
 
 def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None = None) -> dict:
+    """Return the snake_case payload consumed by the bridge and React adapter."""
     unit_metadata = unit_metadata or {}
 
     return {
@@ -12,12 +15,23 @@ def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None 
         "game_over": bool(game.game_over),
         "winner": int(game.winner) if game.winner is not None else None,
         "last_action": game.last_action,
+        "move_countdown": _serialize_move_countdown(game),
         "players": [_serialize_player(game, player_id) for player_id in (PlayerId.P1, PlayerId.P2)],
         "units": [_serialize_unit(unit, unit_metadata.get(unit.id, {})) for unit in game.units.values()],
     }
 
 
+def _serialize_move_countdown(game: GameState) -> dict:
+    return {
+        "active": game.move_countdown_active,
+        "seconds_remaining": game.move_countdown_seconds_remaining(),
+        "duration_seconds": float(game.MOVE_COUNTDOWN_SECONDS),
+        "unit_id": game.move_countdown_unit_id,
+    }
+
+
 def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
+    """Serialize one player's economy and tower summary."""
     player = game.players[player_id]
     tower = game.towers.get(player_id)
 
@@ -31,6 +45,7 @@ def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
 
 
 def _serialize_unit(unit, metadata: dict) -> dict:
+    """Serialize a unit plus any tracker-derived metadata such as rotation."""
     payload = {
         "id": str(unit.id),
         "owner": int(unit.owner),
