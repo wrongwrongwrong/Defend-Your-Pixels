@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+"""Authoritative game state and rules implementation.
+
+`GameState` is the rules engine used by:
+- prototypes (pygame runner)
+- the live tracker runtime (via the bridge layer)
+
+This module intentionally contains the validation and state transitions that define
+"what is legal" in the game. Adapters/transports should not replicate these rules;
+they should call into `GameState` methods and surface `last_action` to the UI.
+"""
+
 from dataclasses import dataclass, field
 from random import Random
+import time
 from typing import Dict, List, Optional
 
 import heapq
@@ -24,7 +36,8 @@ class GameState:
     """
 
     PIXELS_PER_PLAYER_DEFAULT = 35
-    PIXELS_DESTROYED_TO_WIN = 25
+    PIXELS_DESTROYED_TO_WIN = 20
+    MOVE_COUNTDOWN_SECONDS = 10.0
 
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
         self.rng = Random(seed)
@@ -33,6 +46,8 @@ class GameState:
         self.game_over: bool = False
         self.winner: PlayerId | None = None
         self.last_action: str = "Ready"
+        self.move_countdown_deadline: float | None = None
+        self.move_countdown_unit_id: str | None = None
 
         self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
@@ -105,11 +120,11 @@ class GameState:
         for pos in p1_pos:
             pid = f"px{pi}"
             pi += 1
-            self.add_pixel(Pixel(id=pid, owner=PlayerId.P1, pos=pos, guarded_turns=0))
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P1, pos=pos))
         for pos in p2_pos:
             pid = f"px{pi}"
             pi += 1
-            self.add_pixel(Pixel(id=pid, owner=PlayerId.P2, pos=pos, guarded_turns=0))
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P2, pos=pos))
 
     # --- Economy / turns ---
     def recompute_income(self) -> None:
@@ -122,6 +137,7 @@ class GameState:
     def start_turn(self) -> None:
         if self.game_over:
             return
+        self.clear_move_countdown()
         self.recompute_income()
         # Ether / drill income disabled for pixel-win mode.
         for u in self.units.values():
@@ -132,20 +148,49 @@ class GameState:
     def end_turn(self) -> None:
         if self.game_over:
             return
-        finished = self.active_player
-        # Guard decay: when player `finished` ends their turn, tick down guarded pixels on the *other* side.
-        self._tick_pixel_guard_decay(finished)
-        self.active_player = PlayerId.P1 if finished == PlayerId.P2 else PlayerId.P2
+        self.clear_move_countdown()
+        self.active_player = PlayerId.P1 if self.active_player == PlayerId.P2 else PlayerId.P2
         self.turn += 1
         self.start_turn()
         self.end_game()
 
-    def _tick_pixel_guard_decay(self, player_who_just_finished: PlayerId) -> None:
-        """Guard counters drop when the protected team's opponent finishes a turn."""
-        protected_owner = PlayerId.P2 if player_who_just_finished == PlayerId.P1 else PlayerId.P1
-        for pix in self.pixels.values():
-            if pix.owner == protected_owner and pix.guarded_turns > 0:
-                pix.guarded_turns -= 1
+    @property
+    def move_countdown_active(self) -> bool:
+        return self.move_countdown_deadline is not None
+
+    def start_move_countdown(self, unit_id: str, now: float | None = None) -> None:
+        if self.game_over:
+            return
+        current = time.monotonic() if now is None else now
+        self.move_countdown_deadline = current + self.MOVE_COUNTDOWN_SECONDS
+        self.move_countdown_unit_id = unit_id
+
+    def clear_move_countdown(self) -> None:
+        self.move_countdown_deadline = None
+        self.move_countdown_unit_id = None
+
+    def move_countdown_seconds_remaining(self, now: float | None = None) -> float:
+        if self.move_countdown_deadline is None:
+            return 0.0
+        current = time.monotonic() if now is None else now
+        return round(max(0.0, self.move_countdown_deadline - current), 1)
+
+    def advance_timers(self, now: float | None = None) -> None:
+        if self.game_over or self.move_countdown_deadline is None:
+            return
+
+        current = time.monotonic() if now is None else now
+        if current < self.move_countdown_deadline:
+            return
+
+        unit_id = self.move_countdown_unit_id
+        self.end_turn()
+        if self.game_over:
+            return
+        if unit_id is not None:
+            self.last_action = f"{unit_id} move timer expired; {self.last_action}"
+        else:
+            self.last_action = f"Move timer expired; {self.last_action}"
 
     # --- Core rules ---
     def is_blocked(self, p: Pos) -> bool:
@@ -207,6 +252,7 @@ class GameState:
         if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         self.last_action = f"{unit_id} moved to ({nxt.x}, {nxt.y})"
+        self.start_move_countdown(unit_id)
         return True
 
     def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
@@ -274,6 +320,7 @@ class GameState:
         if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
+        self.start_move_countdown(unit_id)
         return True
 
     def capture(self, unit_id: str) -> bool:
@@ -314,25 +361,9 @@ class GameState:
                     tiles.add(p)
         return tiles
 
-    def _apply_defender_shield_3x3(self, u: Defender) -> int:
-        """Set guarded_turns=1 (max) on friendly pixels in the 3×3 block centered on the defender."""
-        n = 0
-        for dy in (-1, 0, 1):
-            for dx in (-1, 0, 1):
-                p = Pos(u.pos.x + dx, u.pos.y + dy)
-                if not self.board.in_bounds(p):
-                    continue
-                pix = self.pixel_at(p)
-                if pix is not None and pix.owner == u.owner:
-                    pix.guarded_turns = 1
-                    n += 1
-        return n
-
     def valid_action_targets(self, unit_id: str) -> set[Pos]:
         u = self.units[unit_id]
         targets: set[Pos] = set()
-        if isinstance(u, Defender):
-            targets.add(u.pos)
         for pos in self.tiles_in_action_range(unit_id):
             unit = self.unit_at(pos)
             tower = self.tower_at(pos)
@@ -354,8 +385,12 @@ class GameState:
                     continue
 
             if isinstance(u, Defender):
-                # Current ruleset: defender action is shield-only (no healing).
-                continue
+                if unit is not None and unit.owner == u.owner and unit.hp < unit.max_hp:
+                    targets.add(pos)
+                    continue
+                if tower is not None and tower.owner == u.owner and tower.hp < tower.max_hp:
+                    targets.add(pos)
+                    continue
 
         return targets
 
@@ -376,13 +411,9 @@ class GameState:
         if isinstance(u, Attacker):
             pix = self.pixel_at(target)
             if pix is not None and pix.owner != u.owner:
-                if pix.guarded_turns > 0:
-                    pix.guarded_turns = 0
-                    action_text = f"{unit_id} stripped guard from pixel at ({target.x}, {target.y})"
-                else:
-                    del self.pixels[pix.id]
-                    self.pixels_destroyed_by[u.owner] += 1
-                    action_text = f"{unit_id} destroyed enemy pixel at ({target.x}, {target.y})"
+                del self.pixels[pix.id]
+                self.pixels_destroyed_by[u.owner] += 1
+                action_text = f"{unit_id} destroyed enemy pixel at ({target.x}, {target.y})"
                 success = True
             enemy = self.unit_at(target)
             if not success and enemy is not None and enemy.owner != u.owner:
@@ -411,18 +442,23 @@ class GameState:
                             action_text = f"{unit_id} damaged obstacle at ({target.x}, {target.y})"
                         success = True
         elif isinstance(u, Defender):
-            if target == u.pos:
-                n = self._apply_defender_shield_3x3(u)
-                action_text = f"{unit_id} 3×3 shield: {n} pixel(s) guarded (next enemy turn)"
+            ally = self.unit_at(target)
+            if ally is not None and ally.owner == u.owner:
+                ally.hp = min(ally.max_hp, ally.hp + 1)
+                action_text = f"{unit_id} repaired {ally.id} ({ally.hp}/{ally.max_hp})"
                 success = True
             else:
-                self.last_action = f"{unit_id} has no valid defender action on ({target.x}, {target.y})"
-                return False
+                tower = self.tower_at(target)
+                if tower is not None and tower.owner == u.owner:
+                    tower.hp = min(tower.max_hp, tower.hp + 1)
+                    action_text = f"{unit_id} repaired P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
+                    success = True
 
         if not success:
             return False
 
         u.ap -= 1
+        self.clear_move_countdown()
         self.last_action = action_text or f"{unit_id} acted on ({target.x}, {target.y})"
         self.end_game()
         return True
@@ -444,6 +480,8 @@ class GameState:
         """Evaluate win/loss (pixel quota); call after a turn ends or after a decisive action."""
         self.check_game_over()
         self._update_game_over_towers()
+        if self.game_over:
+            self.clear_move_countdown()
 
     def _update_game_over_towers(self) -> None:
         if self.game_over:

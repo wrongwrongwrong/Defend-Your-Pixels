@@ -1,3 +1,9 @@
+"""Board calibration via homography (pixel -> grid mapping).
+
+Given 4 detected board-corner markers in pixel coordinates, this module builds a
+homography matrix that maps camera pixels into board grid coordinates.
+"""
+
 import cv2
 import numpy as np
 

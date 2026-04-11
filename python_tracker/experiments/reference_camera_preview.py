@@ -1,3 +1,10 @@
+"""Reference camera preview (experiment code).
+
+This module lives under `python_tracker/experiments/` and is not part of the primary
+runtime path. It is kept as a standalone reference for camera enumeration and basic
+OpenCV preview behavior.
+"""
+
 import sys
 import cv2
 

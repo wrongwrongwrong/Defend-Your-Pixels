@@ -1,3 +1,9 @@
+"""Legacy coordinate-mapping helpers (marker corners -> grid).
+
+Note: Newer code paths use `python_tracker.calibration.homography` for a more robust
+pixel->grid transform. This module remains as a reference/prototype implementation.
+"""
+
 import cv2
 import numpy as np
 

@@ -1,3 +1,10 @@
+"""Reference overlay pipeline (experiment code).
+
+This is a Python adaptation of a C++ ArUco overlay tutorial (see link in file).
+It is not part of the primary runtime, but is useful as a reference for video/image
+overlay alignment using marker detections.
+"""
+
 import sys
 from pathlib import Path
 
@@ -67,12 +74,8 @@ def load_next_overlay_frame(overlay_cap: cv2.VideoCapture, fallback_image: np.nd
     return fallback_image
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def main() -> int:
-    overlay_path = str(_repo_root() / "assets" / "Board.jpg")
+    overlay_path = "/Users/yuxuanshi/Downloads/Defend-Your-Pixels/Board.jpg"
    
     cap_in, cam_idx = open_first_available_camera(0, 4)
     if cap_in is None:

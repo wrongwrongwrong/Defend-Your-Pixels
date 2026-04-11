@@ -1,3 +1,9 @@
+"""Reference label overlay for marker roles (experiment code).
+
+Detects markers and labels them as ATK/DEF/BOARD based on hard-coded ID sets.
+This is kept as an experiment/reference script rather than a production module.
+"""
+
 import cv2
 
 

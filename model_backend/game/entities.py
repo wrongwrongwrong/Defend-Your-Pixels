@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+"""Entity definitions used by the rules engine.
+
+This module defines the data structures for:
+- units (attackers/defenders) and their turn-to-turn mutable stats
+- map objects (command towers, drills, obstacles, pixels)
+
+Game rules are enforced in `model_backend.game.state.GameState`; these classes are
+kept relatively "dumb" so they remain easy to serialize and reason about.
+"""
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional

@@ -1,5 +1,7 @@
 """React/live integration level with P1 at bottom and P2 at top."""
 
+# Live tracker now uses model_backend.scenarios.react_integration_level.
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,21 +1,27 @@
+"""Reference ArUco preview (experiment code).
+
+This module is retained as an isolated reference implementation for detecting and
+visualizing ArUco markers with OpenCV.
+"""
+
 import cv2
 
 
 def main():
-    # 開啟預設攝影機
+    # Open default camera.
     cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
         print("Error: Cannot open camera")
         return
 
-    # 選擇 ArUco dictionary
+    # Select the ArUco dictionary.
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 
-    # 建立 detector parameters
+    # Create detector parameters.
     detector_params = cv2.aruco.DetectorParameters()
 
-    # 建立 ArUco detector
+    # Create ArUco detector.
     detector = cv2.aruco.ArucoDetector(aruco_dict, detector_params)
 
     print("Press 'q' to quit.")
@@ -26,7 +32,7 @@ def main():
             print("Error: Cannot read frame")
             break
 
-        # 偵測 marker
+        # Detect markers.
         corners, ids, rejected = detector.detectMarkers(frame)
 
         # 如果有偵測到 marker

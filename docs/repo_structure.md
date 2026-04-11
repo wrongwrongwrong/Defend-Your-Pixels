@@ -1,5 +1,24 @@
 # Repo Structure
 
+This file should help you distinguish between the folders that matter for the
+current runtime and the folders that are only historical or experimental.
+
+## Primary working set
+
+- `runner/`: start here for real runtime entrypoints
+- `python_tracker/`: camera, ArUco detection, calibration, board mapping
+- `model_backend/`: authoritative game rules and serialization
+- `bridge/`: adapters, schemas, WebSocket transport
+- `react_frontend/`: Vite/React UI that consumes `board_state`
+
+## Reference-only paths
+
+- `main.cpp`: preserved C++ reference, not a runtime entrypoint
+- `python_tracker/experiments/`: reference code, not primary runtime
+- `game-logic/`: legacy prototype; current rules live in `model_backend/`
+- `archive/`: historical material only
+- `dyp/`: local environment artifacts, not source
+
 ## Top-level folders
 
 - `python_tracker/`: Python tracking pipeline and experiments
@@ -35,6 +54,26 @@
 - `react_frontend/src/components/hud/`: HUD and status components
 - `react_frontend/src/hooks/bridge/`: backend connection hooks
 - `react_frontend/src/game/`: frontend-side game rules and constants
+
+## Suggested cleanup structure
+
+If you continue reorganizing for readability, this is the smallest clear target
+structure that matches the current architecture without changing behavior:
+
+```text
+defend-your-pixels/
+├─ runner/                 # runtime entrypoints only
+├─ python_tracker/         # vision pipeline only
+├─ model_backend/          # authoritative game model only
+├─ bridge/                 # message adapters + websocket transport only
+├─ react_frontend/         # UI only
+├─ docs/                   # contracts, architecture, migration notes
+├─ archive/                # old references kept out of runtime paths
+└─ main.cpp                # preserved C++ reference
+```
+
+Within that structure, keep the rule that `runner/` assembles modules but does
+not own business logic, and keep legacy/reference code out of new runtime work.
 
 ## Notes
 

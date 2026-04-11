@@ -1,3 +1,11 @@
+"""ArUco marker preview (camera -> detect -> overlay IDs).
+
+This script is a lightweight debug tool that:
+- opens the camera
+- runs ArUco detection
+- draws detected markers and their IDs onto the frame
+"""
+
 import cv2
 
 from python_tracker.camera.camera_runtime import open_camera, release_camera
@@ -23,12 +31,12 @@ def main():
 
         corners, ids, _ = detector.detectMarkers(frame)
 
-        # 如果有偵測到 marker
+        # If any markers were detected, draw them and annotate with IDs.
         if ids is not None and len(ids) > 0:
             cv2.aruco.drawDetectedMarkers(frame, corners, ids)
 
             for i, marker_id in enumerate(ids.flatten()):
-                # 取 marker 左上角座標來顯示文字
+                # Use the marker's top-left corner as an anchor for the label.
                 top_left = corners[i][0][0]
                 x = int(top_left[0])
                 y = int(top_left[1]) - 10
@@ -46,10 +54,10 @@ def main():
 
                 print(f"Detected marker ID: {marker_id}")
 
-        # 顯示畫面
+        # Show the annotated frame.
         cv2.imshow("ArUco Detection", frame)
 
-        # 按 q 離開
+        # Press 'q' to quit.
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break

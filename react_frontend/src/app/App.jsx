@@ -71,19 +71,30 @@ export default function App() {
     [setGameState, usingMock]
   );
 
-  const { phase, players, gameOver, activePlayer, turn, lastAction } = gameState;
+  const { phase, players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
   const p1 = players.find((p) => p.zone === "bottom");
   const p2 = players.find((p) => p.zone === "top");
   const selectedToken = useMemo(
     () => players.flatMap((player) => player.tokens ?? []).find((token) => token.id === selectedTokenId) ?? null,
     [players, selectedTokenId]
   );
-  const selectedPlayer = useMemo(
-    () => players.find((player) => player.tokens?.some((token) => token.id === selectedTokenId)) ?? null,
-    [players, selectedTokenId]
-  );
 
   const towerDown = players.find((p) => p.commandTowerHp <= 0);
+  const countdownActive = !usingMock && Boolean(moveCountdown?.active) && !gameOver;
+  const countdownSeconds = Number.isFinite(moveCountdown?.secondsRemaining)
+    ? Math.max(0, moveCountdown.secondsRemaining)
+    : 0;
+  const countdownDuration = Number.isFinite(moveCountdown?.durationSeconds)
+    ? Math.max(0, moveCountdown.durationSeconds)
+    : 0;
+  const countdownProgress = countdownDuration > 0
+    ? Math.max(0, Math.min(100, (countdownSeconds / countdownDuration) * 100))
+    : 0;
+  const endTurnLabel = countdownActive
+    ? `Turn ending in ${countdownSeconds.toFixed(1)}s`
+    : usingMock
+      ? "End turn"
+      : "Send end turn";
 
   const handleTokenSelect = useCallback((tokenId) => {
     setSelectedTokenId((prev) => (prev === tokenId ? null : tokenId));
@@ -119,8 +130,6 @@ export default function App() {
     });
   }, [selectedToken, sendAction, usingMock]);
 
-  const backendControlsEnabled = !usingMock && selectedToken && selectedPlayer?.id === activePlayer;
-
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center gap-3 p-4"
@@ -152,9 +161,9 @@ export default function App() {
           type="button"
           className="px-4 py-1.5 rounded-md bg-cyan-900/50 border border-cyan-600 text-cyan-200 text-sm font-semibold hover:bg-cyan-800/50 disabled:opacity-40"
           onClick={handleEndTurn}
-          disabled={gameOver}
+          disabled={gameOver || countdownActive}
         >
-          {usingMock ? "End turn" : "Send end turn"}
+          {endTurnLabel}
         </button>
       </div>
 
@@ -162,6 +171,28 @@ export default function App() {
         <div className="max-w-2xl rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300 text-center">
           <span className="text-slate-500">Status:</span>{" "}
           <span className="text-cyan-200">{lastAction}</span>
+        </div>
+      )}
+
+      {countdownActive && (
+        <div className="w-full max-w-2xl rounded border border-amber-700/70 bg-amber-950/50 px-4 py-3 text-center text-sm text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.12)]">
+          <div className="font-semibold tracking-wide uppercase text-amber-300">
+            Move countdown active
+          </div>
+          <div className="mt-1 text-slate-200">
+            {moveCountdown?.unitId
+              ? `Unit ${moveCountdown.unitId} finished moving. Turn will auto-end in ${countdownSeconds.toFixed(1)}s.`
+              : `Turn will auto-end in ${countdownSeconds.toFixed(1)}s.`}
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/80">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-amber-300 via-amber-500 to-rose-500 transition-[width] duration-100"
+              style={{ width: `${countdownProgress}%` }}
+            />
+          </div>
+          <div className="mt-2 text-xs text-slate-400">
+            Use another action before the timer ends if you want to cancel the auto end-turn.
+          </div>
         </div>
       )}
 
@@ -186,7 +217,8 @@ export default function App() {
             type="button"
             className="rounded border border-amber-700 px-3 py-1 text-amber-200 disabled:opacity-40"
             onClick={handleCapture}
-            disabled={!backendControlsEnabled}
+            disabled={true}
+            title="Capture is not implemented in the Python prototype yet"
           >
             Capture
           </button>

@@ -1,3 +1,5 @@
+"""Factory for the OpenCV ArUco detector used by the tracker."""
+
 import cv2
 
 
