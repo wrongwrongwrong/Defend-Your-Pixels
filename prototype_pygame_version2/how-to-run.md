@@ -2,7 +2,7 @@
 
 1. Open your terminal.
 2. Navigate to the project/repo folder.
-3. Go into the `game-logic` folder.
+3. Go into the folder.
 4. Create a Python virtual environment.
 5. Activate the environment.
 6. Install `pygame` in the env
@@ -13,8 +13,8 @@
 ## Commands
 
 ```bash
-cd path/to/your/repo
-cd "game-logic"
+cd path/to/your/repo/folder
+
 
 python -m venv venv
 source venv/bin/activate  #for MacOS
