@@ -51,6 +51,8 @@ def _apply_end_turn(game: GameState) -> bool:
     # The model updates: active_player, turn counter, income, per-unit new_turn, etc.
     game.end_turn()
     return True
+
+
 def _apply_move_unit(game: GameState, action: dict) -> bool:
     if game.move_countdown_active:
         return _reject(game, "Cannot move another unit while move countdown is active")

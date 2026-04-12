@@ -1,15 +1,9 @@
 import { hpColor, UNIT_STATS } from "../../game/gameLogic";
-
-const KIND_ICONS = {
-  attacker: "◎",
-  defender: "▣",
-};
+import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
 export default function Unit({ unit, cellSize }) {
   const kind = unit.kind ?? "attacker";
-  const isBlue = unit.playerId === 1;
-  const glowClass = isBlue ? "glow-blue" : "glow-red";
-  const borderColor = isBlue ? "border-blue-400" : "border-red-400";
+  const { glowClass, unitBorderColor, unitBackground } = getEntityVisuals(unit.playerId);
 
   const maxHp = unit.maxHp ?? UNIT_STATS[kind]?.maxHp ?? 30;
   const hpPct = Math.max(0, unit.hp) / maxHp;
@@ -20,7 +14,7 @@ export default function Unit({ unit, cellSize }) {
 
   return (
     <div
-      className={`absolute flex flex-col items-center justify-center rounded border ${borderColor} ${glowClass} unit-spawn pointer-events-none z-30
+      className={`absolute flex flex-col items-center justify-center rounded border ${unitBorderColor} ${glowClass} unit-spawn pointer-events-none z-30
         ${unit.fighting ? "pulse-bright" : ""}
         ${unit.dying ? "unit-die" : ""}
       `}
@@ -29,7 +23,7 @@ export default function Unit({ unit, cellSize }) {
         height: size,
         left: unit.pos.x * cellSize - half + cellSize / 2,
         top: unit.pos.y * cellSize - half + cellSize / 2,
-        background: isBlue ? "rgba(10,20,80,0.88)" : "rgba(80,10,10,0.88)",
+        background: unitBackground,
       }}
       title={`${kind} HP:${unit.hp}`}
     >

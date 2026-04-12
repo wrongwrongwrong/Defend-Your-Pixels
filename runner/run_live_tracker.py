@@ -48,6 +48,7 @@ def _merge_unit_metadata(
 
 
 async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_FPS):
+    # This coroutine owns the live loop. Everything else is an adapter/helper.
     cap = open_camera(camera_id)
     if cap is None:
         print(f"[Camera] ERROR: Cannot open camera (index {camera_id})")
@@ -74,21 +75,26 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
                 await asyncio.sleep(0.1)
                 continue
 
+            # First apply any explicit UI actions that arrived over WebSocket.
             for action in await drain_actions():
                 apply_action(game, action)
 
+            # Then derive tracker telemetry from the camera frame.
             snapshot, annotated = build_tracker_preview(frame, detector)
             if snapshot.get("calibration_ready"):
                 last_calibrated_snapshot = snapshot
             effective_snapshot = apply_calibration_fallback(snapshot, last_calibrated_snapshot)
 
             annotated = annotate_tracker_preview(frame.copy(), effective_snapshot)
+            # Tracker movement remains advisory; the model still validates every action.
             tracker_actions, current_unit_metadata = build_tracker_move_actions(game, effective_snapshot)
             last_unit_metadata = _merge_unit_metadata(last_unit_metadata, current_unit_metadata)
 
             if _snapshot_has_detected_markers(effective_snapshot):
                 last_visible_snapshot = effective_snapshot
 
+            # Prefer the last visible tracker snapshot so short dropouts do not cause
+            # the frontend markers to flicker off immediately.
             snapshot_for_ui = last_visible_snapshot or effective_snapshot
 
             if not effective_snapshot.get("calibration_ready"):

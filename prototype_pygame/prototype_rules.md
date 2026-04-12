@@ -59,4 +59,4 @@ This file is the gameplay contract for the current `prototype_pygame` + `model_b
 - Rules/state: `model_backend/game/state.py`, `model_backend/game/entities.py`
 - Input loop: `prototype_pygame/control.py`
 - Rendering/HUD: `prototype_pygame/view.py`
-- Level loading: `prototype_pygame/levels/level_loader.py`
+- Level loading: `model_backend/scenarios/level_loader.py`

@@ -23,18 +23,27 @@ export default function App() {
   const { gameState, setGameState, connected, usingMock, sendAction } = useWebSocket();
   const [selectedTokenId, setSelectedTokenId] = useState(null);
   const [actionMode, setActionMode] = useState(ACTION_MODE.MOVE);
+  const isLiveMode = !usingMock;
+
+  const sendBackendAction = useCallback(
+    (action) => {
+      if (!isLiveMode) return false;
+      return sendAction(action);
+    },
+    [isLiveMode, sendAction]
+  );
 
   const handleEndTurn = useCallback(() => {
-    if (!usingMock) {
-      sendAction({ action: "end_turn" });
+    if (isLiveMode) {
+      sendBackendAction({ action: "end_turn" });
       return;
     }
     setGameState((prev) => endTurn(prev));
-  }, [sendAction, setGameState, usingMock]);
+  }, [isLiveMode, sendBackendAction, setGameState]);
 
   const handleUpgrade = useCallback(
     (tokenId, upgradeType) => {
-      if (!usingMock) return;
+      if (isLiveMode) return;
       setGameState((prev) => {
         const pid = prev.activePlayer;
         const owns = prev.players.some(
@@ -75,7 +84,7 @@ export default function App() {
         return { ...prev, players };
       });
     },
-    [setGameState, usingMock]
+    [isLiveMode, setGameState]
   );
 
   const { phase, players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
@@ -87,7 +96,7 @@ export default function App() {
   );
 
   const towerDown = players.find((p) => p.commandTowerHp <= 0);
-  const countdownActive = !usingMock && Boolean(moveCountdown?.active) && !gameOver;
+  const countdownActive = isLiveMode && Boolean(moveCountdown?.active) && !gameOver;
   const countdownSeconds = Number.isFinite(moveCountdown?.secondsRemaining)
     ? Math.max(0, moveCountdown.secondsRemaining)
     : 0;
@@ -103,16 +112,24 @@ export default function App() {
       ? "End turn"
       : "Send end turn";
 
+  const selectionStatusText = selectedToken
+    ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
+    : "Select one of the active player's tokens, then click a grid cell.";
+
+  const footerHint = usingMock
+    ? "End turn -> next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn, your token)."
+    : "Python board_state is authoritative. Select a token, choose move/act mode, then click a grid cell.";
+
   const handleTokenSelect = useCallback((tokenId) => {
     setSelectedTokenId((prev) => (prev === tokenId ? null : tokenId));
   }, []);
 
   const handleBoardCellAction = useCallback(
     (position) => {
-      if (usingMock || !selectedToken || !sendAction) return;
+      if (!isLiveMode || !selectedToken || !sendAction) return;
 
       if (actionMode === ACTION_MODE.ACT) {
-        sendAction({
+        sendBackendAction({
           action: "act_on_target",
           unit_id: String(selectedToken.id),
           target: position,
@@ -120,22 +137,14 @@ export default function App() {
         return;
       }
 
-      sendAction({
+      sendBackendAction({
         action: "move_unit",
         unit_id: String(selectedToken.id),
         position,
       });
     },
-    [actionMode, selectedToken, sendAction, usingMock]
+    [actionMode, isLiveMode, selectedToken, sendAction, sendBackendAction]
   );
-
-  const handleCapture = useCallback(() => {
-    if (usingMock || !selectedToken) return;
-    sendAction({
-      action: "capture",
-      unit_id: String(selectedToken.id),
-    });
-  }, [selectedToken, sendAction, usingMock]);
 
   return (
     <div
@@ -203,45 +212,16 @@ export default function App() {
         </div>
       )}
 
-      {!usingMock && (
+      {isLiveMode && (
         <div className="flex flex-wrap items-center justify-center gap-2 rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300">
           <span className="text-slate-500">Manual controls:</span>
-          <button
-            type="button"
-            className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.MOVE ? "border-cyan-500 bg-cyan-950/60 text-cyan-200" : "border-slate-700 text-slate-400"}`}
-            onClick={() => setActionMode(ACTION_MODE.MOVE)}
-          >
-            Move mode
-          </button>
-          <button
-            type="button"
-            className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.ACT ? "border-rose-500 bg-rose-950/60 text-rose-200" : "border-slate-700 text-slate-400"}`}
-            onClick={() => setActionMode(ACTION_MODE.ACT)}
-          >
-            Act mode
-          </button>
-          <button
-            type="button"
-            className="rounded border border-amber-700 px-3 py-1 text-amber-200 disabled:opacity-40"
-            onClick={handleCapture}
-            disabled={true}
-            title="Capture is not implemented in the Python prototype yet"
-          >
-            Capture
-          </button>
-          <button
-            type="button"
-            className="rounded border border-slate-700 px-3 py-1 text-slate-300 disabled:opacity-40"
-            onClick={() => setSelectedTokenId(null)}
-            disabled={!selectedToken}
-          >
-            Clear selection
-          </button>
-          <span className="text-slate-500">
-            {selectedToken
-              ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
-              : "Select one of the active player's tokens, then click a grid cell."}
-          </span>
+          <BackendControls
+            actionMode={actionMode}
+            selectedToken={selectedToken}
+            onSetActionMode={setActionMode}
+            onClearSelection={() => setSelectedTokenId(null)}
+            selectionStatusText={selectionStatusText}
+          />
         </div>
       )}
 
@@ -299,11 +279,53 @@ export default function App() {
           <strong className="text-slate-400">Defender</strong> — area denial / shield role
         </span>
         <span className="text-amber-700/90">
-          {usingMock
-            ? "End turn -> next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn, your token)."
-            : "Python board_state is authoritative. Select a token, choose move/act mode, then click a grid cell. Capture uses the selected token's current tile."}
+          {footerHint}
         </span>
       </div>
     </div>
+  );
+}
+
+function BackendControls({
+  actionMode,
+  selectedToken,
+  onSetActionMode,
+  onClearSelection,
+  selectionStatusText,
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.MOVE ? "border-cyan-500 bg-cyan-950/60 text-cyan-200" : "border-slate-700 text-slate-400"}`}
+        onClick={() => onSetActionMode(ACTION_MODE.MOVE)}
+      >
+        Move mode
+      </button>
+      <button
+        type="button"
+        className={`rounded border px-3 py-1 ${actionMode === ACTION_MODE.ACT ? "border-rose-500 bg-rose-950/60 text-rose-200" : "border-slate-700 text-slate-400"}`}
+        onClick={() => onSetActionMode(ACTION_MODE.ACT)}
+      >
+        Act mode
+      </button>
+      <button
+        type="button"
+        className="rounded border border-amber-700 px-3 py-1 text-amber-200 opacity-40"
+        disabled
+        title="Capture is not implemented in the Python prototype yet"
+      >
+        Capture
+      </button>
+      <button
+        type="button"
+        className="rounded border border-slate-700 px-3 py-1 text-slate-300 disabled:opacity-40"
+        onClick={onClearSelection}
+        disabled={!selectedToken}
+      >
+        Clear selection
+      </button>
+      <span className="text-slate-500">{selectionStatusText}</span>
+    </>
   );
 }

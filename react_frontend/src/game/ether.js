@@ -3,17 +3,6 @@
  * Pure helpers: pass `players` array, get updated array back.
  */
 
-export function getEther(players, playerId) {
-  return players.find((p) => p.id === playerId)?.ether ?? 0;
-}
-
-export function addEther(players, playerId, amount) {
-  if (amount <= 0) return players;
-  return players.map((p) =>
-    p.id === playerId ? { ...p, ether: p.ether + amount } : p
-  );
-}
-
 /**
  * @returns {{ ok: boolean, players: typeof players }}
  */

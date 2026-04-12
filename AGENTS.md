@@ -37,7 +37,6 @@ cd react_frontend && npm install && npm run dev
 ## Architecture notes
 
 - `main.cpp` at root is a preserved C++ reference — do not use as runtime entry.
-- `python_tracker/experiments/` is reference-only, not a runtime path.
 - `game-logic/` is legacy; use `model_backend/` for game rules.
 - `archive/` and `dyp/` are not primary runtime paths.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
@@ -63,7 +62,6 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 | File | Purpose |
 |------|---------|
 | `runner/run_live_tracker.py` | Full live system: camera → tracker → model → bridge → WS |
-| `bridge/websocket_server.py` | Legacy compat wrapper → `runner/run_live_tracker` |
 | `bridge/actions/model_action_dispatcher.py` | Routes `action` messages to model methods |
 | `bridge/adapters/` | Tracker frame → WS message conversion |
 | `model_backend/game/` | Game state, rules, actions |

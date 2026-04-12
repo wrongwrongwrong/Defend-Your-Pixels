@@ -5,6 +5,8 @@ import { buildTokenRegistry } from "./tokenRegistry";
 
 export function translateTrackerFrame(payload, gameState) {
   const frame = normalizeTrackerFrame(payload);
+  // Build a lookup from current authoritative UI tokens -> tracker-facing metadata so
+  // raw marker IDs can be merged back onto the correct token.
   const registry = buildTokenRegistry(gameState);
 
   const trackedTokens = frame.markers
@@ -27,8 +29,6 @@ export function translateTrackerFrame(payload, gameState) {
     .filter(Boolean);
 
   return {
-    calibrationReady: frame.calibrationReady,
-    boardCorners: frame.boardCorners,
     trackedTokens,
   };
 }
@@ -36,21 +36,17 @@ export function translateTrackerFrame(payload, gameState) {
 
 export function applyTrackedTokens(gameState, translation) {
   if (!translation?.trackedTokens?.length) {
-    return {
-      ...gameState,
-      trackerCalibrationReady: translation?.calibrationReady ?? false,
-      trackerBoardCorners: translation?.boardCorners ?? [],
-    };
+    return gameState;
   }
 
+  // Tracker updates are intentionally partial: keep authoritative ownership / HP /
+  // turn state from board_state, and only overlay position + facing when available.
   const trackedById = new Map(
     translation.trackedTokens.map((token) => [String(token.tokenId), token])
   );
 
   return {
     ...gameState,
-    trackerCalibrationReady: translation.calibrationReady,
-    trackerBoardCorners: translation.boardCorners,
     players: gameState.players.map((player) => ({
       ...player,
       tokens: player.tokens.map((token) => {

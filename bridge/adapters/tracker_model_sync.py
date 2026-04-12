@@ -149,6 +149,8 @@ def _coerce_rotation(rotation: object) -> float:
 
 
 def _stabilize_marker_position(marker_id: int, position: Pos) -> Pos | None:
+    # Require the same cell to be observed for a few consecutive frames before
+    # emitting a move intent. This avoids accidental moves from noisy detections.
     previous = _MARKER_POSITION_HISTORY.get(marker_id)
     if previous is None or previous[0] != position:
         _MARKER_POSITION_HISTORY[marker_id] = (position, 1)
@@ -162,6 +164,8 @@ def _stabilize_marker_position(marker_id: int, position: Pos) -> Pos | None:
 
 
 def _resolve_axis(current: int, measured: float) -> int:
+    # Keep the current cell until the measured token center clearly crosses into the
+    # neighboring cell; this hysteresis reduces boundary jitter.
     if abs(measured - current) < _CELL_SWITCH_THRESHOLD:
         return current
     return int(round(measured))

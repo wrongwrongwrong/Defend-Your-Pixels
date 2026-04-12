@@ -1,12 +1,11 @@
-"""Single-player range/attack verification map."""
+"""Build the single-player range/attack verification level."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from model_backend.game import GameState
-
-from .level_loader import load_level_from_path
+from model_backend.scenarios import load_level_from_path
 
 
 def build_solo_range_test() -> GameState:

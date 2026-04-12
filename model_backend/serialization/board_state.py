@@ -6,7 +6,12 @@ from model_backend.game import GameState, PlayerId
 
 
 def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None = None) -> dict:
-    """Return the snake_case payload consumed by the bridge and React adapter."""
+    """Return the snake_case payload consumed by the bridge and React adapter.
+
+    This is the boundary between Python model internals and transport/UI code. The
+    payload is intentionally plain data so downstream layers never inspect model
+    objects directly.
+    """
     unit_metadata = unit_metadata or {}
 
     return {
@@ -45,7 +50,11 @@ def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
 
 
 def _serialize_unit(unit, metadata: dict) -> dict:
-    """Serialize a unit plus any tracker-derived metadata such as rotation."""
+    """Serialize a unit plus any tracker-derived metadata such as rotation.
+
+    Rotation is not authoritative gameplay state today, but keeping it here lets the
+    frontend render the physical token orientation next to authoritative positions.
+    """
     payload = {
         "id": str(unit.id),
         "owner": int(unit.owner),

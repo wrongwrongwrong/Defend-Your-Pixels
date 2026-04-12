@@ -6,8 +6,6 @@ Current contents
 - `schema/`: tracker message structure
 - `adapters/`: tracker snapshot to outbound message conversion
 - `transport/`: websocket server and client broadcast handling
-- `run_live_bridge.py`: bridge-level entrypoint that forwards to the live runner
-- `websocket_server.py`: legacy compatibility wrapper kept for old command paths
 
 Naming rules
 - `*_schema.py`: message contract builders
@@ -19,3 +17,6 @@ Runtime model
 - `bridge/` shapes and transports them
 - `react_frontend/` consumes them
 - `runner/` assembles the live application
+
+Canonical runtime entrypoint
+- `runner/run_live_tracker.py` is the only supported live entrypoint

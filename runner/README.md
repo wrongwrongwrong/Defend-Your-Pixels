@@ -3,7 +3,6 @@
 Purpose
 - provide a single, clear way to start each runtime mode
 - keep startup/orchestration separate from tracking and transport code
-- avoid using `python_tracker/experiments/` as accidental runtime entrypoints
 
 Naming convention
 - `run_<mode>.py`

@@ -2,11 +2,7 @@
 
 import { useState } from "react";
 import { hpColor, UNIT_STATS } from "../../game/gameLogic";
-
-const KIND_ICONS = {
-  attacker: "◎",
-  defender: "▣",
-};
+import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
 const KIND_RANGE = {
   attacker: 2,
@@ -36,10 +32,7 @@ export default function Token({
   const [showUpgrade, setShowUpgrade] = useState(false);
   const kind = token.kind ?? "attacker";
 
-  const isBlue = playerColor === "blue";
-  const accent = isBlue ? "#3b82f6" : "#ef4444";
-  const glowClass = isBlue ? "glow-blue" : "glow-red";
-  const borderColor = isBlue ? "border-blue-500" : "border-red-500";
+  const { accent, glowClass, tokenBorderColor, tokenBackground } = getEntityVisuals(playerColor);
 
   const maxHp = token.maxHp ?? UNIT_STATS[kind]?.maxHp ?? 30;
   const barColor = hpColor(token.hp, maxHp);
@@ -58,13 +51,13 @@ export default function Token({
 
   return (
     <div
-      className={`absolute flex flex-col items-center justify-center rounded border ${borderColor} ${glowClass} cursor-pointer select-none z-20`}
+      className={`absolute flex flex-col items-center justify-center rounded border ${tokenBorderColor} ${glowClass} cursor-pointer select-none z-20`}
       style={{
         width: cellSize - 4,
         height: cellSize - 4,
         left: token.position.x * cellSize + 2,
         top: token.position.y * cellSize + 2,
-        background: isBlue ? "rgba(10,20,60,0.9)" : "rgba(60,10,10,0.9)",
+        background: tokenBackground,
         opacity: isActivePlayer ? 1 : 0.85,
         boxShadow: selected ? `0 0 0 2px ${accent}, 0 0 20px ${accent}88` : undefined,
       }}

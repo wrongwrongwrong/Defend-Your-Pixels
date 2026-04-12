@@ -23,5 +23,4 @@ Environment is ready.
 Use:
   source .venv/bin/activate
   python3 runner/run_live_tracker.py
-  python3 bridge/websocket_server.py
 EOF

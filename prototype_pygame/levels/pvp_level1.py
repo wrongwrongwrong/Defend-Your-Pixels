@@ -1,12 +1,11 @@
-"""PVP level = ASCII file next to this module (level1.txt)."""
+"""Build the default pygame PVP level from the colocated ASCII map."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from model_backend.game import GameState
-
-from .level_loader import load_level_from_path
+from model_backend.scenarios import load_level_from_path
 
 
 def build_pvp_level1() -> GameState:

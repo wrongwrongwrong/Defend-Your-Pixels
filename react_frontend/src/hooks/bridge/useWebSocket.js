@@ -1,6 +1,6 @@
 // Connects to Python backend at ws://localhost:8765.
 // - board_state: authoritative snapshot → replace UI state (after adaptBoardStateToUi).
-// - tracker_frame / game_state (legacy): marker calibration + positions → merge into current state.
+// - tracker_frame: marker positions / facing → merge into current state.
 // Falls back to mock data if offline.
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -28,10 +28,6 @@ function scheduleReconnect(reconnectTimerRef, connect) {
   reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
 }
 
-/**
- * Merge tracker payload into game state (positions / facing only).
- * Accepts tracker_frame (bridge) or legacy game_state shape (same merge semantics).
- */
 export function useWebSocket() {
   const [gameState, setGameState] = useState(initialMockGameState);
   const [connected, setConnected] = useState(false);
@@ -40,10 +36,12 @@ export function useWebSocket() {
   const reconnectTimer = useRef(null);
 
   const applyAuthoritativeBoardState = useCallback((data) => {
+    // board_state replaces the UI snapshot wholesale because Python is authoritative.
     setGameState(adaptBoardStateToUi(data));
   }, []);
 
   const mergeMarkerData = useCallback((data) => {
+    // tracker_frame is only telemetry, so merge it on top of the current board_state.
     setGameState((prev) => {
       const translation = translateTrackerFrame(data, prev);
       return applyTrackedTokens(prev, translation);
@@ -73,10 +71,7 @@ export function useWebSocket() {
         return;
       }
 
-      if (
-        (message.type === "game_state" || message.type === "tracker_frame") &&
-        message.data
-      ) {
+      if (message.type === "tracker_frame" && message.data) {
         mergeMarkerData(message.data);
       }
     },
@@ -84,6 +79,8 @@ export function useWebSocket() {
   );
 
   useEffect(() => {
+    let reconnectTimeout = null;
+
     function connect() {
       try {
         const ws = new WebSocket(WS_URL);
@@ -92,7 +89,11 @@ export function useWebSocket() {
         ws.onopen = () => {
           setConnected(true);
           setUsingMock(false);
-          if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
+          reconnectTimer.current = null;
         };
 
         ws.onmessage = (event) => {
@@ -102,20 +103,25 @@ export function useWebSocket() {
         ws.onerror = () => {};
 
         ws.onclose = () => {
+          // Drop back to mock mode when the backend disappears, then keep retrying.
           setConnected(false);
           setUsingMock(true);
           scheduleReconnect(reconnectTimer, connect);
+          reconnectTimeout = reconnectTimer.current;
         };
       } catch {
         setUsingMock(true);
         scheduleReconnect(reconnectTimer, connect);
+        reconnectTimeout = reconnectTimer.current;
       }
     }
 
     connect();
     return () => {
-      if (wsRef.current) wsRef.current.close();
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      // Close any active socket and cancel the pending reconnect when unmounting.
+      const ws = wsRef.current;
+      if (ws) ws.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [handleSocketMessage]);
 

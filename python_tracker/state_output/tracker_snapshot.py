@@ -52,6 +52,8 @@ DEFENDER_IDS = {
 
 
 def build_tracker_snapshot(corners, ids):
+    # This payload is intentionally plain JSON-friendly data. Bridge and preview code
+    # should not need OpenCV arrays or detector-specific objects.
     markers_out = []
     board_corners_out = []
     board_corners_px = {}
@@ -76,6 +78,8 @@ def build_tracker_snapshot(corners, ids):
                 "position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
             })
 
+    # Corner markers define the board calibration. Token positions only become grid
+    # coordinates once this homography exists.
     H = build_homography(board_corners_px)
     playable_corners = build_playable_corners(board_corners_px)
 
@@ -113,6 +117,8 @@ def build_tracker_snapshot(corners, ids):
 
 
 def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -> dict:
+    # If corners drop out for a frame or two, keep using the last good homography so
+    # token positions remain stable enough for UI feedback and move-intent inference.
     if snapshot.get("calibration_ready"):
         return snapshot
     if not fallback_snapshot or not fallback_snapshot.get("calibration_ready"):
@@ -156,6 +162,8 @@ def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -
 
 
 def build_tracker_preview(frame, detector) -> tuple[dict, object]:
+    # Preview mode shares the same snapshot builder as the live bridge path so the
+    # on-screen diagnostics match the actual data sent to the frontend.
     corners, ids, _ = detector.detectMarkers(frame)
     snapshot = build_tracker_snapshot(corners, ids)
 
@@ -249,6 +257,7 @@ def token_label(marker_id: int) -> str:
 
 def draw_grid_overlay(frame, H):
     try:
+        # Draw grid lines back in camera space by inverting the board homography.
         H_inv = np.linalg.inv(H)
         for col in range(GRID_COLS + 1):
             grid_x = col - 0.5

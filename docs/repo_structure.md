@@ -6,7 +6,7 @@ current runtime and the folders that are only historical or experimental.
 ## Primary working set
 
 - `runner/`: start here for real runtime entrypoints
-- `python_tracker/`: camera, ArUco detection, calibration, board mapping
+- `python_tracker/`: camera, ArUco detection, calibration, tracker snapshot output
 - `model_backend/`: authoritative game rules and serialization
 - `bridge/`: adapters, schemas, WebSocket transport
 - `react_frontend/`: Vite/React UI that consumes `board_state`
@@ -14,14 +14,13 @@ current runtime and the folders that are only historical or experimental.
 ## Reference-only paths
 
 - `main.cpp`: preserved C++ reference, not a runtime entrypoint
-- `python_tracker/experiments/`: reference code, not primary runtime
 - `game-logic/`: legacy prototype; current rules live in `model_backend/`
 - `archive/`: historical material only
 - `dyp/`: local environment artifacts, not source
 
 ## Top-level folders
 
-- `python_tracker/`: Python tracking pipeline and experiments
+- `python_tracker/`: Python tracking pipeline
 - `bridge/`: transport layer from Python to frontend
 - `model_backend/`: Python game-model / rules prototype
 - `prototype_pygame/`: pygame prototype client for gameplay testing
@@ -37,10 +36,8 @@ current runtime and the folders that are only historical or experimental.
 - `python_tracker/debug/`: basic camera and preview scripts
 - `python_tracker/marker_detection/`: ArUco detection entry points
 - `python_tracker/calibration/`: calibration and homography helpers
-- `python_tracker/board_mapping/`: board-space mapping prototypes
 - `python_tracker/state_output/`: tracker snapshot and preview helpers
 - `python_tracker/markers/`: marker generation tools
-- `python_tracker/experiments/`: reference-only and exploratory tracker code
 - `bridge/schema/`: tracker frame contract
 - `bridge/adapters/`: tracker snapshot to transport message conversion
 - `bridge/transport/`: websocket transport runtime

@@ -1,12 +1,15 @@
-"""Minimal test level for alternating-turn verification."""
+"""Build a minimal level for alternating-turn verification.
+
+Unlike the default map builders, this variant clears spawned pixels so the prototype
+can focus on turn sequencing without pixel-win objectives affecting the test.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from model_backend.game import GameState
-
-from .level_loader import load_level_from_path
+from model_backend.scenarios import load_level_from_path
 
 
 def build_turn_cycle_test() -> GameState:

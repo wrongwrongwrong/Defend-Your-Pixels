@@ -7,6 +7,9 @@ const DEFAULT_UNIT_KIND = "attacker";
 /**
  * Merge authoritative board_state from Python/bridge into the React UI game shape.
  * v1: snake_case payload from Python -> existing React UI shape.
+ *
+ * The UI still uses a prototype-era state shape, so this adapter is the single place
+ * where authoritative backend payloads are translated into that frontend structure.
  */
 export function adaptBoardStateToUi(raw) {
   const baseState = createInitialGameState();
@@ -68,6 +71,8 @@ function adaptPlayers(rawPlayers, basePlayers) {
 }
 
 function adaptTokensByOwner(rawUnits, players) {
+  // Python serializes all units in a flat list; the existing UI expects them nested
+  // under each player as token-like objects.
   const tokensByOwner = new Map(players.map((player) => [player.id, []]));
   if (!Array.isArray(rawUnits)) return tokensByOwner;
 

@@ -32,7 +32,10 @@ class PlayerState:
 
 class GameState:
     """
-    Minimal rules engine for playability testing (no AR integration yet).
+    Authoritative rules engine shared by both runtime paths.
+
+    Bridge/tracker code may propose actions, but only this class decides whether an
+    action is legal and how it mutates turn state, unit state, and win conditions.
     """
 
     PIXELS_PER_PLAYER_DEFAULT = 35
@@ -193,6 +196,8 @@ class GameState:
         return round(max(0.0, self.move_countdown_deadline - current), 1)
 
     def advance_timers(self, now: float | None = None) -> None:
+        # The live tracker loop calls this every tick so turn-ending countdowns remain
+        # authoritative on the Python side rather than relying on the frontend timer.
         if self.game_over or self.move_countdown_deadline is None:
             return
 

@@ -38,6 +38,9 @@ def build_playable_corners(board_corners_px: dict) -> np.ndarray | None:
     if not all(k in board_corners_px for k in [0, 1, 2, 3]):
         return None
 
+    # The printed ArUco markers sit on the outer border of the board. We infer the
+    # actual playable-corner points by moving inward from each marker center by half
+    # a marker size along the two board edges that meet at that corner.
     return np.float32([
         _playable_corner_point(board_corners_px, 0),
         _playable_corner_point(board_corners_px, 1),
@@ -67,6 +70,8 @@ def pixel_to_grid_with_bounds(px: float, py: float, H) -> tuple[float, float, bo
     if warped is None:
         return None, None, False
 
+    # Keep both a clipped UI-friendly coordinate and a strict in-bounds flag so the
+    # caller can reject tokens that are only near the board rather than on it.
     raw_x = float(warped[0])
     raw_y = float(warped[1])
     in_bounds = GRID_MIN_X <= raw_x <= GRID_MAX_X and GRID_MIN_Y <= raw_y <= GRID_MAX_Y

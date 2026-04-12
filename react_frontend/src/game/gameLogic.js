@@ -2,7 +2,7 @@
 // Call-site audit: docs/react_integration_step1_call_sites.md
 
 export { GRID_SIZE, CELL_SIZE, UNIT_KIND, COMMAND_TOWER_MAX_HP } from "./constants";
-export { getEther, addEther, trySpendEther } from "./ether";
+export { trySpendEther } from "./ether";
 export { createInitialGameState, endTurn, phaseForTurn } from "./turns";
 
 /** Token / unit stat hints for rendering (pitch: Attacker vs Defender) */
@@ -10,10 +10,6 @@ export const UNIT_STATS = {
   attacker: { maxHp: 30, label: "ATK" },
   defender: { maxHp: 40, label: "DEF" },
 };
-
-export function distance(a, b) {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-}
 
 export function hpColor(current, max) {
   const pct = current / max;
