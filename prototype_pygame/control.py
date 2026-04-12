@@ -170,10 +170,14 @@ class PVPController:
             return True
         if key == pygame.K_q:
             self._sel -= 1
+            # Selecting a unit defaults to move range preview.
+            self._mode = "move"
             self._reset_preview()
             return True
         if key == pygame.K_e:
             self._sel += 1
+            # Selecting a unit defaults to move range preview.
+            self._mode = "move"
             self._reset_preview()
             return True
         if key == pygame.K_c:
@@ -221,6 +225,8 @@ class PVPController:
         ap = self.model.active_player
         self._unit_ids = sorted([uid for uid, u in self.model.units.items() if u.owner == ap])
         self._sel = 0
+        # When the active player changes, default back to move mode.
+        self._mode = "move"
 
     def _model_turn_changed(self, before_turn: int, before_player: int) -> bool:
         return int(self.model.turn) != before_turn or int(self.model.active_player) != before_player

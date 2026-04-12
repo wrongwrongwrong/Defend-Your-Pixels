@@ -27,7 +27,9 @@ current runtime and the folders that are only historical or experimental.
 - `prototype_pygame/`: pygame prototype client for gameplay testing
 - `react_frontend/`: Vite + React visualization client
 - `runner/`: runtime entrypoints for tracker preview/live flows
-- `docs/`: architecture and reference notes
+- `docs/`: architecture and reference notes (includes `testing marker.pdf`)
+- `docs/Reference/`: preserved `main.cpp` (C++ reference for the Python port)
+- `assets/`: reference imagery such as `Board.jpg` (physical board photo)
 
 ## Internal layout
 
@@ -75,6 +77,5 @@ not own business logic, and keep legacy/reference code out of new runtime work.
 
 ## Notes
 
-- `main.cpp` stays at the repository root on purpose.
-- It is retained as the original C++ reference that informed the Python conversion work.
+- `docs/Reference/main.cpp` is the preserved C++ reference that informed the Python conversion work.
 - This is useful both for implementation traceability and for explaining the code origin during interviews.

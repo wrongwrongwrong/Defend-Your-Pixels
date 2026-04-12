@@ -150,6 +150,8 @@ class BoardView:
         pix = game.pixel_at(pos)
         if pix is not None:
             col = COLOUR_P1 if pix.owner == PlayerId.P1 else COLOUR_P2
+            if pix.guarded_turns > 0:
+                col = (min(255, col[0] + 60), min(255, col[1] + 50), 120)
             return "*", col
 
         t = game.board.get(pos).terrain
@@ -181,7 +183,7 @@ class BoardView:
         win_n = game.PIXELS_DESTROYED_TO_WIN
         lines = [
             "Map: prototype scenario",
-            "# wall   * pixel   H HQ",
+            "# wall   * pixel (bright = guarded)   H HQ",
             "A/D by colour: P1 blue, P2 red",
             "",
             f"Turn {game.turn}  |  Active P{int(game.active_player)}",
@@ -199,10 +201,10 @@ class BoardView:
             "",
             f"Status: {game.last_action}",
             "",
-            "Q/E cycle | Tab undo | C capture",
-            "1 attack/shield (red)  2 move (green)",
-            "WASD preview move | Enter confirm",
-            "Space end turn | Esc quit",
+            "Q/E cycle | Tab undo move | C disabled",
+            "1 action (red)  2 move (green)",
+            "Atk: shoot pixels/units | Def: self=3×3 guard",
+            "WASD preview | Enter confirm | Space end turn | Esc quit",
         ]
 
         if game.game_over:
