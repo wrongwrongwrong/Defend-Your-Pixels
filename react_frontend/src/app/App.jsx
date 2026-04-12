@@ -12,6 +12,13 @@ const ACTION_MODE = {
   ACT: "act",
 };
 
+function formatDisplayCoordinates(text) {
+  if (typeof text !== "string") return text;
+  return text.replace(/\((\d+),\s*(\d+)\)/g, (_, x, y) => {
+    return `(${Number(x) + 1}, ${Number(y) + 1})`;
+  });
+}
+
 export default function App() {
   const { gameState, setGameState, connected, usingMock, sendAction } = useWebSocket();
   const [selectedTokenId, setSelectedTokenId] = useState(null);
@@ -170,7 +177,7 @@ export default function App() {
       {lastAction && (
         <div className="max-w-2xl rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300 text-center">
           <span className="text-slate-500">Status:</span>{" "}
-          <span className="text-cyan-200">{lastAction}</span>
+          <span className="text-cyan-200">{formatDisplayCoordinates(lastAction)}</span>
         </div>
       )}
 
@@ -232,7 +239,7 @@ export default function App() {
           </button>
           <span className="text-slate-500">
             {selectedToken
-              ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x}, ${selectedToken.position.y})`
+              ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
               : "Select one of the active player's tokens, then click a grid cell."}
           </span>
         </div>

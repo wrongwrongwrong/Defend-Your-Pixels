@@ -24,7 +24,11 @@ from model_backend.scenarios import build_react_integration_level
 from model_backend.serialization import serialize_game_state
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
-from python_tracker.state_output.tracker_snapshot import build_tracker_preview
+from python_tracker.state_output.tracker_snapshot import (
+    annotate_tracker_preview,
+    apply_calibration_fallback,
+    build_tracker_preview,
+)
 
 
 CAMERA_ID = 1
@@ -55,6 +59,7 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
     detector = create_detector()
     interval = 1.0 / send_fps
     last_visible_snapshot: dict | None = None
+    last_calibrated_snapshot: dict | None = None
     last_unit_metadata: dict[str, dict] = {}
 
     print(f"[Camera] Capturing at {send_fps} fps  (press Q to quit)")
@@ -73,16 +78,23 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
                 apply_action(game, action)
 
             snapshot, annotated = build_tracker_preview(frame, detector)
-            tracker_actions, current_unit_metadata = build_tracker_move_actions(game, snapshot)
+            if snapshot.get("calibration_ready"):
+                last_calibrated_snapshot = snapshot
+            effective_snapshot = apply_calibration_fallback(snapshot, last_calibrated_snapshot)
+
+            annotated = annotate_tracker_preview(frame.copy(), effective_snapshot)
+            tracker_actions, current_unit_metadata = build_tracker_move_actions(game, effective_snapshot)
             last_unit_metadata = _merge_unit_metadata(last_unit_metadata, current_unit_metadata)
 
-            if _snapshot_has_detected_markers(snapshot):
-                last_visible_snapshot = snapshot
+            if _snapshot_has_detected_markers(effective_snapshot):
+                last_visible_snapshot = effective_snapshot
 
-            snapshot_for_ui = last_visible_snapshot or snapshot
+            snapshot_for_ui = last_visible_snapshot or effective_snapshot
 
-            if not snapshot.get("calibration_ready"):
+            if not effective_snapshot.get("calibration_ready"):
                 game.last_action = "Tracker waiting for board calibration"
+            elif game.move_countdown_active:
+                pass
             elif tracker_actions:
                 moved_units = []
                 for action in tracker_actions:
@@ -123,8 +135,9 @@ async def async_main():
     print("    ID 2 = bottom-left  ID 3 = bottom-right")
     print()
     print("  Token markers:")
-    print("    ID 10=P1 Infantry  11=P1 Tank  12=P1 Bomber  13=P1 DEF")
-    print("    ID 14=P2 Infantry  15=P2 Tank  16=P2 Bomber  17=P2 DEF")
+    print("    ID 10=P1 ATK")
+    print("    ID 14=P2 ATK")
+    print("    Other token IDs are currently disabled for this prototype")
     print()
     print("[Server] Open http://localhost:5173 in your browser\n")
 

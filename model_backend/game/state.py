@@ -11,10 +11,10 @@ This module intentionally contains the validation and state transitions that def
 they should call into `GameState` methods and surface `last_action` to the UI.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from random import Random
 import time
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import heapq
 
@@ -154,6 +154,23 @@ class GameState:
         self.start_turn()
         self.end_game()
 
+    def _require_active_unit(self, unit_id: str, *, action_name: str) -> Unit | None:
+        if self.game_over:
+            self.last_action = f"Cannot {action_name}; game is already over"
+            return None
+
+        u = self.units[unit_id]
+        if u.owner != self.active_player:
+            self.last_action = (
+                f"{unit_id} belongs to Player {int(u.owner)}; "
+                f"waiting for Player {int(self.active_player)}"
+            )
+            return None
+        if not u.can_act():
+            self.last_action = f"{unit_id} cannot act this turn"
+            return None
+        return u
+
     @property
     def move_countdown_active(self) -> bool:
         return self.move_countdown_deadline is not None
@@ -236,16 +253,19 @@ class GameState:
         return 1.0
 
     def move_unit(self, unit_id: str, direction: Direction) -> bool:
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act():
+        u = self._require_active_unit(unit_id, action_name="move that unit")
+        if u is None:
             return False
         if u.ap <= 0:
+            self.last_action = f"{unit_id} has no actions left this turn"
             return False
         nxt = u.pos + direction.delta()
         if self.is_blocked(nxt) or self.unit_at(nxt) is not None:
+            self.last_action = f"{unit_id} could not move to ({nxt.x}, {nxt.y})"
             return False
         cost = self.move_cost(nxt)
         if u.move_points < cost:
+            self.last_action = f"{unit_id} does not have enough move points"
             return False
         u.move_points -= cost
         u.pos = nxt
@@ -300,19 +320,22 @@ class GameState:
         Commits a move to a chosen destination, consuming move_points based on
         minimal reachable cost this turn.
         """
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act():
+        u = self._require_active_unit(unit_id, action_name="move that unit")
+        if u is None:
             return False
         if u.ap <= 0 or u.move_points <= 0:
+            self.last_action = f"{unit_id} cannot move any farther this turn"
             return False
         if dest == u.pos:
             return True
         if not self.board.in_bounds(dest) or self.is_blocked(dest) or self.unit_at(dest) is not None:
+            self.last_action = f"{unit_id} could not move to ({dest.x}, {dest.y})"
             return False
 
         costs = self.reachable_positions(unit_id)
         cost = costs.get(dest)
         if cost is None or cost > u.move_points:
+            self.last_action = f"{unit_id} does not have a legal path to ({dest.x}, {dest.y})"
             return False
 
         u.move_points -= cost
@@ -328,19 +351,24 @@ class GameState:
         return False
 
     def push(self, unit_id: str, direction: Direction) -> bool:
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
+        u = self._require_active_unit(unit_id, action_name="push with that unit")
+        if u is None:
+            return False
+        if u.ap <= 0:
+            self.last_action = f"{unit_id} has no actions left this turn"
             return False
         enemy_pos = u.pos + direction.delta()
         enemy = self.unit_at(enemy_pos)
         if enemy is None or enemy.owner == u.owner:
+            self.last_action = f"{unit_id} has no enemy to push"
             return False
         behind = enemy_pos + direction.delta()
         if self.is_blocked(behind) or self.unit_at(behind) is not None:
+            self.last_action = f"{unit_id} cannot push {enemy.id} into ({behind.x}, {behind.y})"
             return False
         u.ap -= 1
         enemy.pos = behind
-        self.last_action = f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})"
+        self._finish_turn_after_action(f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})")
         return True
 
     def tiles_in_action_range(self, unit_id: str) -> set[Pos]:
@@ -395,8 +423,10 @@ class GameState:
         return targets
 
     def act_on_target(self, unit_id: str, target: Pos) -> bool:
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
+        u = self._require_active_unit(unit_id, action_name="act with that unit")
+        if u is None:
+            return False
+        if u.ap <= 0:
             self.last_action = f"{unit_id} cannot act right now"
             return False
         if u.on_highway:
@@ -458,9 +488,7 @@ class GameState:
             return False
 
         u.ap -= 1
-        self.clear_move_countdown()
-        self.last_action = action_text or f"{unit_id} acted on ({target.x}, {target.y})"
-        self.end_game()
+        self._finish_turn_after_action(action_text or f"{unit_id} acted on ({target.x}, {target.y})")
         return True
 
     def check_game_over(self) -> None:

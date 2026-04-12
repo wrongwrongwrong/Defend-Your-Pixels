@@ -18,6 +18,7 @@ from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
     build_homography,
+    build_playable_corners,
     pixel_to_grid,
     pixel_to_grid_with_bounds,
 )
@@ -25,10 +26,29 @@ from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
-TOKEN_IDS = set(range(10, 18))
+TOKEN_IDS = {
+    10,
+    14,
+    # 11,
+    # 12,
+    # 13,
+    # 15,
+    # 16,
+    # 17,
+}
 
-ATTACKER_IDS = {10, 12, 14, 16}
-DEFENDER_IDS = {11, 13, 15, 17}
+ATTACKER_IDS = {
+    10,
+    14,
+    # 11,
+    # 15,
+}
+DEFENDER_IDS = {
+    # 12,
+    # 13,
+    # 16,
+    # 17,
+}
 
 
 def build_tracker_snapshot(corners, ids):
@@ -45,14 +65,19 @@ def build_tracker_snapshot(corners, ids):
 
     for i, mid in enumerate(ids.flatten()):
         if mid in BOARD_CORNER_IDS:
-            center = corners[i][0].mean(axis=0)
-            board_corners_px[int(mid)] = center
+            marker_corners = corners[i][0]
+            center = marker_corners.mean(axis=0)
+            board_corners_px[int(mid)] = {
+                "center": center,
+                "size_px": _marker_size_px(marker_corners),
+            }
             board_corners_out.append({
                 "id": int(mid),
                 "position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
             })
 
     H = build_homography(board_corners_px)
+    playable_corners = build_playable_corners(board_corners_px)
 
     for i, mid in enumerate(ids.flatten()):
         if mid not in TOKEN_IDS:
@@ -67,12 +92,14 @@ def build_tracker_snapshot(corners, ids):
             markers_out.append({
                 "id": int(mid),
                 "position": {"x": gx, "y": gy},
+                "raw_position": {"x": round(px, 1), "y": round(py, 1)},
                 "rotation": round(rotation_deg, 1),
             })
         else:
             markers_out.append({
                 "id": int(mid),
                 "position": {"x": round(px, 1), "y": round(py, 1)},
+                "raw_position": {"x": round(px, 1), "y": round(py, 1)},
                 "rotation": round(rotation_deg, 1),
             })
 
@@ -80,7 +107,51 @@ def build_tracker_snapshot(corners, ids):
         "calibration_ready": H is not None,
         "markers": markers_out,
         "board_corners": board_corners_out,
+        "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
+    }
+
+
+def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -> dict:
+    if snapshot.get("calibration_ready"):
+        return snapshot
+    if not fallback_snapshot or not fallback_snapshot.get("calibration_ready"):
+        return snapshot
+
+    fallback_h = fallback_snapshot.get("homography")
+    if fallback_h is None:
+        return snapshot
+
+    remapped_markers = []
+    for marker in snapshot.get("markers", []):
+        raw_position = marker.get("raw_position")
+        if not isinstance(raw_position, dict):
+            remapped_markers.append(marker)
+            continue
+
+        raw_x = raw_position.get("x")
+        raw_y = raw_position.get("y")
+        if not isinstance(raw_x, (int, float)) or not isinstance(raw_y, (int, float)):
+            remapped_markers.append(marker)
+            continue
+
+        gx, gy = pixel_to_grid(float(raw_x), float(raw_y), fallback_h)
+        if gx is None or gy is None:
+            remapped_markers.append(marker)
+            continue
+
+        remapped_markers.append({
+            **marker,
+            "position": {"x": gx, "y": gy},
+        })
+
+    return {
+        **snapshot,
+        "calibration_ready": True,
+        "markers": remapped_markers,
+        "board_corners": snapshot.get("board_corners") or fallback_snapshot.get("board_corners", []),
+        "playable_corners": fallback_snapshot.get("playable_corners", []),
+        "homography": fallback_h,
     }
 
 
@@ -99,6 +170,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
 
     H = snapshot["homography"]
     if H is not None:
+        draw_playable_area(frame, snapshot.get("playable_corners", []))
         draw_grid_overlay(frame, H)
 
     for i, mid in enumerate(ids.flatten()):
@@ -128,6 +200,45 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
     return snapshot, frame
 
 
+def annotate_tracker_preview(frame, snapshot: dict) -> object:
+    if not snapshot.get("markers") and not snapshot.get("board_corners"):
+        cv2.putText(frame, "No markers detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
+        return frame
+
+    n_corners = len(snapshot.get("board_corners", []))
+    corner_color = (0, 255, 0) if n_corners == 4 else (0, 140, 255)
+    cv2.putText(frame, f"Board corners: {n_corners}/4", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, corner_color, 2)
+
+    H = snapshot.get("homography")
+    if H is not None:
+        draw_playable_area(frame, snapshot.get("playable_corners", []))
+        draw_grid_overlay(frame, H)
+
+    for marker in snapshot.get("markers", []):
+        raw_position = marker.get("raw_position")
+        if not isinstance(raw_position, dict):
+            continue
+
+        px = raw_position.get("x")
+        py = raw_position.get("y")
+        if not isinstance(px, (int, float)) or not isinstance(py, (int, float)):
+            continue
+
+        label = token_label(int(marker.get("id", -1)))
+        cv2.putText(
+            frame,
+            label,
+            (int(px) + 5, int(py) - 12),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (100, 255, 100),
+            2,
+            cv2.LINE_AA,
+        )
+
+    return frame
+
+
 def token_label(marker_id: int) -> str:
     if marker_id in ATTACKER_IDS:
         return "ATK"
@@ -139,17 +250,52 @@ def token_label(marker_id: int) -> str:
 def draw_grid_overlay(frame, H):
     try:
         H_inv = np.linalg.inv(H)
-        for col in range(1, GRID_COLS):
-            pts = np.float32([[[col, 0]], [[col, GRID_ROWS]]])
+        for col in range(GRID_COLS + 1):
+            grid_x = col - 0.5
+            pts = np.float32([[[grid_x, -0.5]], [[grid_x, GRID_ROWS - 0.5]]])
             src = cv2.perspectiveTransform(pts, H_inv)
             p1 = tuple(src[0][0].astype(int))
             p2 = tuple(src[1][0].astype(int))
             cv2.line(frame, p1, p2, (60, 60, 120), 1)
-        for row in range(1, GRID_ROWS):
-            pts = np.float32([[[0, row]], [[GRID_COLS, row]]])
+        for row in range(GRID_ROWS + 1):
+            grid_y = row - 0.5
+            pts = np.float32([[[-0.5, grid_y]], [[GRID_COLS - 0.5, grid_y]]])
             src = cv2.perspectiveTransform(pts, H_inv)
             p1 = tuple(src[0][0].astype(int))
             p2 = tuple(src[1][0].astype(int))
             cv2.line(frame, p1, p2, (60, 60, 120), 1)
     except Exception:
         pass
+
+
+def draw_playable_area(frame, playable_corners: list[dict]) -> None:
+    if len(playable_corners) != 4:
+        return
+    pts = np.array(
+        [[corner["position"]["x"], corner["position"]["y"]] for corner in playable_corners],
+        dtype=np.int32,
+    )
+    cv2.polylines(frame, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
+
+
+def _serialize_playable_corners(playable_corners) -> list[dict]:
+    if playable_corners is None:
+        return []
+    return [
+        {
+            "position": {
+                "x": round(float(point[0]), 1),
+                "y": round(float(point[1]), 1),
+            }
+        }
+        for point in playable_corners
+    ]
+
+
+def _marker_size_px(marker_corners) -> float:
+    edge_lengths = []
+    for index in range(4):
+        p1 = marker_corners[index]
+        p2 = marker_corners[(index + 1) % 4]
+        edge_lengths.append(float(np.linalg.norm(p2 - p1)))
+    return sum(edge_lengths) / len(edge_lengths)

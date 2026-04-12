@@ -33,14 +33,8 @@ def apply_action(game: GameState, action: dict) -> bool:
     # Each branch validates required fields and calls the corresponding model method.
     if action_type == "end_turn":
         return _apply_end_turn(game)
-    if action_type == "upgrade_unit":
-        return _apply_upgrade_unit(game, action)
     if action_type == "move_unit":
         return _apply_move_unit(game, action)
-    if action_type == "capture":
-        return _apply_capture(game, action)
-    if action_type == "act_on_target":
-        return _apply_act_on_target(game, action)
 
     # Unknown verbs are rejected to keep the model safe and make debugging explicit.
     return _reject(game, f"Unknown action: {action_type}")
@@ -57,20 +51,10 @@ def _apply_end_turn(game: GameState) -> bool:
     # The model updates: active_player, turn counter, income, per-unit new_turn, etc.
     game.end_turn()
     return True
-
-
-def _apply_upgrade_unit(game: GameState, action: dict) -> bool:
-    # Placeholder: the React UI currently has upgrade buttons, but the Python prototype
-    # hasn't implemented an upgrade system yet. Keep the action wired for future work.
-    unit_id = action.get("unit_id")
-    upgrade_type = action.get("upgrade_type")
-    return _reject(
-        game,
-        f"Upgrade not implemented in Python prototype: {unit_id} / {upgrade_type}",
-    )
-
-
 def _apply_move_unit(game: GameState, action: dict) -> bool:
+    if game.move_countdown_active:
+        return _reject(game, "Cannot move another unit while move countdown is active")
+
     # Move is a two-step validation:
     # 1) we must know which unit is being moved
     # 2) we must have a valid {x,y} grid position
@@ -86,41 +70,6 @@ def _apply_move_unit(game: GameState, action: dict) -> bool:
     ok = game.move_unit_to(unit_id, position)
     if not ok:
         return _reject(game, f"{unit_id} could not move to ({position.x}, {position.y})")
-    return True
-
-
-def _apply_capture(game: GameState, action: dict) -> bool:
-    # Capture is validated by the model (e.g. must be on a drill, must be allowed).
-    unit_id = _require_known_unit(game, action, "capture")
-    if unit_id is None:
-        return False
-
-    ok = game.capture(unit_id)
-    if ok:
-        # Quality-of-life: if capture succeeded, stop the "move countdown" state so
-        # that the UI can proceed without waiting for tracker stabilization.
-        game.clear_move_countdown()
-        return True
-
-    # If capture fails, we can include the unit's current position to help debugging.
-    unit = game.units[unit_id]
-    return _reject(game, f"{unit_id} could not capture at ({unit.pos.x}, {unit.pos.y})")
-
-
-def _apply_act_on_target(game: GameState, action: dict) -> bool:
-    # Act-on-target covers attacks and interactions that require a target grid cell.
-    unit_id = _require_known_unit(game, action, "act_on_target")
-    if unit_id is None:
-        return False
-
-    target = _require_pos(game, action, field_name="target", action_name="act_on_target")
-    if target is None:
-        return False
-
-    # The model decides whether this action is legal and applies damage/effects.
-    ok = game.act_on_target(unit_id, target)
-    if not ok:
-        return _reject(game, f"{unit_id} could not act on ({target.x}, {target.y})")
     return True
 
 

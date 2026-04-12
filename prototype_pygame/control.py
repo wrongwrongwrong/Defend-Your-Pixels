@@ -10,7 +10,7 @@ import pygame
 from model_backend.game import Direction, GameState, PlayerId
 from model_backend.game.types import Pos
 
-from .levels import build_pvp_level1, build_solo_range_test
+from .levels import build_pvp_level1, build_solo_range_test, build_turn_cycle_test
 from .support_grid import compute_screen_size
 from .view import BoardView
 
@@ -121,7 +121,12 @@ class PVPController:
                 u = self.model.units[uid]
                 if self._mode == "move" and self._preview_dest is not None:
                     prev = (u.pos, float(u.move_points), bool(u.on_highway))
+                    before_turn = int(self.model.turn)
+                    before_player = int(self.model.active_player)
                     if self.model.move_unit_to(uid, self._preview_dest):
+                        if self._model_turn_changed(before_turn, before_player):
+                            self._sync_after_turn_change()
+                            return True
                         # Single-step undo for the last confirmed move this turn.
                         self._undo_move = (
                             int(self.model.turn),
@@ -135,7 +140,12 @@ class PVPController:
                     # Keep selection on the same unit after moving.
                     self._preview_dest = u.pos
                 elif self._mode == "attack" and self._preview_dest is not None:
+                    before_turn = int(self.model.turn)
+                    before_player = int(self.model.active_player)
                     if self.model.act_on_target(uid, self._preview_dest):
+                        if self._model_turn_changed(before_turn, before_player):
+                            self._sync_after_turn_change()
+                            return True
                         self._any_action_this_turn = True
             return True
         if key == pygame.K_TAB:
@@ -212,10 +222,12 @@ class PVPController:
         self._unit_ids = sorted([uid for uid, u in self.model.units.items() if u.owner == ap])
         self._sel = 0
 
-    def _end_turn(self) -> None:
-        self.model.end_turn()
+    def _model_turn_changed(self, before_turn: int, before_player: int) -> bool:
+        return int(self.model.turn) != before_turn or int(self.model.active_player) != before_player
+
+    def _sync_after_turn_change(self) -> None:
         if self.single_player:
-            while self.model.active_player != PlayerId.P1:
+            while not self.model.game_over and self.model.active_player != PlayerId.P1:
                 self.model.end_turn()
         self._refresh_unit_list()
         self._reset_preview()
@@ -223,6 +235,10 @@ class PVPController:
         self._any_action_this_turn = False
         self._mode = "move"
         self._confirm_skip = False
+
+    def _end_turn(self) -> None:
+        self.model.end_turn()
+        self._sync_after_turn_change()
 
 
 def main() -> None:
@@ -234,4 +250,11 @@ def main_solo_range_test() -> None:
         model=build_solo_range_test(),
         title="Pixel Defense — Solo Range Test",
         single_player=True,
+    ).run()
+
+
+def main_turn_cycle_test() -> None:
+    PVPController(
+        model=build_turn_cycle_test(),
+        title="Pixel Defense — Turn Cycle Test",
     ).run()
