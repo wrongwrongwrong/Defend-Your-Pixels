@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ArUco Board</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body style="margin:0; background:#111;">
+<script>
+
+// ── Board settings — must match server.py ────────────────────────────────
+const COLS = 6;
+const ROWS = 4;
+const CELL = 90;          // pixel size of each grid cell
+const W    = COLS * CELL; // 540px
+const H    = ROWS * CELL; // 360px
+
+// Direction → fill colour (Phaser hex values)
+const DIR_COLORS = {
+  "ATTACK HQ":    0x00cc00,   // green
+  "ATTACK RIGHT": 0x0055ff,   // blue
+  "DEFEND":       0xff2222,   // red
+  "ATTACK LEFT":  0xffee00,   // yellow
+};
+
+// ── Phaser Scene ─────────────────────────────────────────────────────────
+class GameScene extends Phaser.Scene {
+
+  // Called once when the scene starts — build the board
+  create() {
+    this.drawGrid();
+
+    // Token store: marker ID → { shape, label }
+    // Tokens are created on-demand when first detected
+    this.tokens = {};
+
+    // Small status bar at the bottom
+    this.statusText = this.add.text(8, H + 6, "Waiting for connection...", {
+      fontSize: "13px", color: "#888888",
+    });
+
+    this.connectWebSocket();
+  }
+
+  // Draw the 6×4 grid lines
+  drawGrid() {
+    const g = this.add.graphics();
+    g.lineStyle(1, 0x444444);
+    for (let c = 0; c <= COLS; c++) g.lineBetween(c * CELL, 0, c * CELL, H);
+    for (let r = 0; r <= ROWS; r++) g.lineBetween(0, r * CELL, W, r * CELL);
+
+    // Label columns and rows for easy reference during testing
+    for (let c = 0; c < COLS; c++) {
+      this.add.text(c * CELL + 4, 4, `${c}`, { fontSize: "11px", color: "#555555" });
+    }
+    for (let r = 0; r < ROWS; r++) {
+      this.add.text(4, r * CELL + 4, `${r}`, { fontSize: "11px", color: "#555555" });
+    }
+  }
+
+  // Create a new token shape for a given marker ID and player
+  // Player 1 = circle,  Player 2 = rounded square
+  createToken(marker_id, player) {
+    const size = CELL - 20;
+    let shape;
+
+    if (player === 1) {
+      shape = this.add.circle(0, 0, size / 2, 0x888888);
+    } else {
+      shape = this.add.rectangle(0, 0, size, size, 0x888888);
+    }
+
+    // Player label inside the token (P1 / P2)
+    const playerLabel = this.add.text(0, 0, `P${player}`, {
+      fontSize: "14px", color: "#000000", fontStyle: "bold",
+    }).setOrigin(0.5);
+
+    // Direction label above the token
+    const dirLabel = this.add.text(0, 0, "", {
+      fontSize: "11px", color: "#ffffff", align: "center",
+    }).setOrigin(0.5);
+
+    this.tokens[marker_id] = { shape, playerLabel, dirLabel, player };
+  }
+
+  // Move a token to the correct grid cell and update its colour + labels
+  updateToken(marker_id, player, col, row, direction) {
+    // Create the token graphic on first detection
+    if (!this.tokens[marker_id]) {
+      this.createToken(marker_id, player);
+    }
+
+    const { shape, playerLabel, dirLabel } = this.tokens[marker_id];
+    const color = DIR_COLORS[direction] ?? 0x888888;
+
+    // Centre of the target grid cell
+    const px = col * CELL + CELL / 2;
+    const py = row * CELL + CELL / 2;
+
+    shape.setPosition(px, py);
+    shape.setFillStyle(color);
+
+    playerLabel.setPosition(px, py);
+
+    dirLabel.setPosition(px, py - CELL / 2 + 2);
+    dirLabel.setText(direction);
+  }
+
+  // Open WebSocket and handle incoming messages
+  connectWebSocket() {
+    const ws = new WebSocket("ws://localhost:8765");
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      this.statusText.setText("Connected ✓");
+    };
+
+    // Each message contains one token's updated state
+    ws.onmessage = (event) => {
+      const d = JSON.parse(event.data);
+      // Only update position if the server computed a valid grid cell
+      if (d.col !== null && d.row !== null) {
+        this.updateToken(d.id, d.player, d.col, d.row, d.direction);
+      }
+    };
+
+    ws.onclose = () => {
+      this.statusText.setText("Disconnected — reload to retry");
+    };
+  }
+}
+
+// ── Launch Phaser ─────────────────────────────────────────────────────────
+new Phaser.Game({
+  type:            Phaser.AUTO,
+  width:           W,
+  height:          H + 30,    // extra 30px for the status bar
+  backgroundColor: "#1a1a1a",
+  scene:           GameScene,
+});
+
+</script>
+</body>
+</html>

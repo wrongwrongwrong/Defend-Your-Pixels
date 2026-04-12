@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PixelWar</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body style="margin:0; background:#0b0d14;">
+<script>
+
+// ── Board settings ─────────────────────────────────────────────────────────
+const COLS   = 12;
+const ROWS   = 12;
+const CELL   = 56;          // pixel size per grid cell
+const PANEL  = 70;          // bottom panel height
+const W      = COLS * CELL; // total canvas width
+const H      = ROWS * CELL + PANEL;
+
+// ── Colours ────────────────────────────────────────────────────────────────
+const C = {
+  blue_cell:  0x1a3a7a,   // Blue territory
+  red_cell:   0x6b1a1a,   // Red territory
+  diag_cell:  0x1e2132,   // neutral diagonal strip
+  grid_line:  0x333344,
+  panel_bg:   0x0f1220,
+
+  atk_blue:   0x1e4edc,   // P1 attack token
+  atk_red:    0x991a1a,   // P2 attack token
+  def_blue:   0x22c55e,   // P1 defence token (green)
+  def_red:    0xf97316,   // P2 defence token (orange)
+};
+
+// ── Direction arrows per player ────────────────────────────────────────────
+// Blue fires toward lower-right, Red fires toward upper-left
+const ARROWS = {
+  p1: { HORIZONTAL: "→", VERTICAL: "↓", DIAGONAL: "↘" },
+  p2: { HORIZONTAL: "←", VERTICAL: "↑", DIAGONAL: "↖" },
+};
+
+
+// ── Phaser Scene ───────────────────────────────────────────────────────────
+class GameScene extends Phaser.Scene {
+
+  create() {
+    // tokenObjects maps a key like "p1_atk_a" → array of Phaser display objects
+    // so we can destroy and redraw them when the token moves
+    this.tokenObjects = {};
+
+    this.drawBoard();
+    this.createPanel();
+    this.connectWebSocket();
+  }
+
+  // ── Draw the static 12×12 board ──────────────────────────────────────────
+  drawBoard() {
+    const g = this.add.graphics();
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x   = c * CELL;
+        const y   = r * CELL;
+        const sum = r + c;
+
+        // Diagonal rule from game-logic:
+        //   r+c < 11  → Blue territory (upper-left triangle)
+        //   r+c > 11  → Red  territory (lower-right triangle)
+        //   r+c == 11 → neutral diagonal strip
+        let color;
+        if      (sum < 11) color = C.blue_cell;
+        else if (sum > 11) color = C.red_cell;
+        else               color = C.diag_cell;
+
+        g.fillStyle(color, 0.65);
+        g.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      }
+    }
+
+    // Grid lines
+    g.lineStyle(1, C.grid_line, 0.7);
+    for (let c = 0; c <= COLS; c++) g.lineBetween(c * CELL, 0, c * CELL, ROWS * CELL);
+    for (let r = 0; r <= ROWS; r++) g.lineBetween(0, r * CELL, W, r * CELL);
+
+    // Territory labels so players know which side is theirs
+    this.add.text(6, 6, "BLUE", {
+      fontSize: "13px", color: "#6699ff", fontStyle: "bold"
+    });
+    this.add.text(W - 52, ROWS * CELL - 22, "RED", {
+      fontSize: "13px", color: "#ff6666", fontStyle: "bold"
+    });
+  }
+
+
+  // ── Bottom panel: turn indicator + connection status ─────────────────────
+  createPanel() {
+    const py = ROWS * CELL;
+
+    const g = this.add.graphics();
+    g.fillStyle(C.panel_bg, 1);
+    g.fillRect(0, py, W, PANEL);
+
+    // Turn text (big, coloured by current player)
+    this.turnText = this.add.text(12, py + 10, "Waiting for turn marker...", {
+      fontSize: "17px", color: "#888888", fontStyle: "bold",
+    });
+
+    // Small status line: how many corner markers are visible
+    this.statusText = this.add.text(12, py + 38, "Corners: 0/4", {
+      fontSize: "12px", color: "#555566",
+    });
+  }
+
+
+  // ── Place / move a token on the board ────────────────────────────────────
+  updateToken(key, col, row, direction, player, role) {
+    // Destroy old graphics for this token (if any)
+    if (this.tokenObjects[key]) {
+      this.tokenObjects[key].forEach(obj => obj.destroy());
+      this.tokenObjects[key] = [];
+    }
+
+    // If no valid position, just clear
+    if (col === null || col === undefined) return;
+
+    const cx   = col * CELL + CELL / 2;   // pixel centre x
+    const cy   = row * CELL + CELL / 2;   // pixel centre y
+    const size = CELL - 18;               // token diameter / side
+
+    const isBlue = (player === "p1");
+    const isDef  = (role === "def");
+
+    const color = isDef
+      ? (isBlue ? C.def_blue  : C.def_red)
+      : (isBlue ? C.atk_blue  : C.atk_red);
+
+    const g = this.add.graphics();
+
+    if (isDef) {
+      // DEF token = diamond (two triangles)
+      const h = size / 2;
+      g.fillStyle(color, 0.9);
+      g.fillTriangle(cx, cy - h,  cx + h, cy,  cx - h, cy);
+      g.fillTriangle(cx, cy + h,  cx + h, cy,  cx - h, cy);
+    } else {
+      // ATK token = circle
+      g.fillStyle(color, 0.9);
+      g.fillCircle(cx, cy, size / 2);
+    }
+
+    // Short label inside the token: A1 / A2 / DF
+    const label = role === "atk_a" ? "A1"
+                : role === "atk_b" ? "A2"
+                :                    "DF";
+
+    const labelObj = this.add.text(cx, cy, label, {
+      fontSize: "12px", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5);
+
+    // Direction arrow above the token (ATK only)
+    let arrowObj = null;
+    if (direction && !isDef) {
+      const arrow = ARROWS[player][direction] ?? "?";
+      arrowObj = this.add.text(cx, cy - size / 2 - 2, arrow, {
+        fontSize: "15px",
+        color: isBlue ? "#88aaff" : "#ff8888",
+      }).setOrigin(0.5, 1);
+    }
+
+    // Store so we can clean up next update
+    this.tokenObjects[key] = [g, labelObj, arrowObj].filter(Boolean);
+  }
+
+
+  // ── Apply a full game state received from the server ─────────────────────
+  applyState(state) {
+    // Update every token for both players
+    for (const [role, info] of Object.entries(state.p1 || {})) {
+      this.updateToken(`p1_${role}`, info.col, info.row, info.direction, "p1", role);
+    }
+    for (const [role, info] of Object.entries(state.p2 || {})) {
+      this.updateToken(`p2_${role}`, info.col, info.row, info.direction, "p2", role);
+    }
+
+    // Turn indicator
+    if (state.turn === 1) {
+      this.turnText
+        .setText("🔵  P1 (Blue) — place your tokens")
+        .setColor("#6699ff");
+    } else if (state.turn === 2) {
+      this.turnText
+        .setText("🔴  P2 (Red) — place your tokens")
+        .setColor("#ff6666");
+    } else {
+      this.turnText
+        .setText("Flip the turn marker to begin")
+        .setColor("#888888");
+    }
+
+    // Corner status
+    this.statusText.setText(`Corners visible: ${state.corners_found}/4`);
+  }
+
+
+  // ── WebSocket connection to server.py ─────────────────────────────────────
+  connectWebSocket() {
+    const ws = new WebSocket("ws://localhost:8765");
+
+    ws.onopen = () => {
+      console.log("[WS] Connected");
+      this.statusText.setText("Connected — waiting for markers...");
+    };
+
+    ws.onmessage = (event) => {
+      const state = JSON.parse(event.data);
+      this.applyState(state);
+    };
+
+    ws.onclose = () => {
+      this.turnText.setText("Disconnected — reload to retry").setColor("#ff4444");
+    };
+  }
+}
+
+
+// ── Launch Phaser ──────────────────────────────────────────────────────────
+new Phaser.Game({
+  type:            Phaser.AUTO,
+  width:           W,
+  height:          H,
+  backgroundColor: "#0b0d14",
+  scene:           GameScene,
+});
+
+</script>
+</body>
+</html>

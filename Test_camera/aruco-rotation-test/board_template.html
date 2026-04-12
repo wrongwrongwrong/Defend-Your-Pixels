@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Board Template — Print Me</title>
+  <style>
+    /* A4 landscape for printing */
+    @page {
+      size: A4 landscape;
+      margin: 0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width:  297mm;
+      height: 210mm;
+      background: white;
+      position: relative;
+      font-family: sans-serif;
+    }
+
+    /* ── Corner marker boxes ───────────────────────────────────────────── */
+    /* Each corner box is 48mm × 48mm — place your printed marker inside   */
+    .corner {
+      position: absolute;
+      width:  48mm;
+      height: 48mm;
+      border: 1.5px dashed #aaa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9pt;
+      color: #bbb;
+    }
+
+    .corner.TL { top: 0;    left: 0; }
+    .corner.TR { top: 0;    right: 0; }
+    .corner.BL { bottom: 0; left: 0; }
+    .corner.BR { bottom: 0; right: 0; }
+
+    /* ── Playable grid area ────────────────────────────────────────────── */
+    /* Sits between the corner boxes: 48mm margin on each side             */
+    .grid-wrapper {
+      position: absolute;
+      top:    48mm;
+      left:   48mm;
+      width:  calc(297mm - 96mm);   /* 201mm */
+      height: calc(210mm - 96mm);   /* 114mm */
+    }
+
+    .grid {
+      width:   100%;
+      height:  100%;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      grid-template-rows:    repeat(4, 1fr);
+      border-top:  1px solid #999;
+      border-left: 1px solid #999;
+    }
+
+    .cell {
+      border-right:  1px solid #999;
+      border-bottom: 1px solid #999;
+    }
+
+    /* Shade the first two rows (Player 1 side) very lightly */
+    .cell.p1 { background: rgba(0, 180, 0, 0.04); }
+
+    /* Shade the last two rows (Player 2 side) very lightly */
+    .cell.p2 { background: rgba(0, 80, 255, 0.04); }
+
+    /* ── Zone labels ───────────────────────────────────────────────────── */
+    .zone-label {
+      position: absolute;
+      font-size: 8pt;
+      color: #bbb;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .zone-p1 { top: 48mm; left: 50mm; }
+    .zone-p2 { bottom: 48mm; left: 50mm; }
+
+    /* ── Print hint (hidden when printing) ────────────────────────────── */
+    .hint {
+      position: absolute;
+      bottom: 1mm;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7pt;
+      color: #ccc;
+    }
+
+    @media print { .hint { display: none; } }
+  </style>
+</head>
+<body>
+
+  <!-- Corner placeholders -->
+  <div class="corner TL">ID 0<br>TL</div>
+  <div class="corner TR">ID 1<br>TR</div>
+  <div class="corner BL">ID 2<br>BL</div>
+  <div class="corner BR">ID 3<br>BR</div>
+
+  <!-- Zone labels -->
+  <div class="zone-label zone-p1">Player 1</div>
+  <div class="zone-label zone-p2">Player 2</div>
+
+  <!-- 6 × 4 grid -->
+  <div class="grid-wrapper">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="hint">Open in browser → File → Print → A4 Landscape, No margins</div>
+
+  <script>
+    // Generate 6×4 = 24 cells, shade top 2 rows for P1, bottom 2 for P2
+    const grid = document.getElementById("grid");
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 6; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell" + (r < 2 ? " p1" : " p2");
+        grid.appendChild(cell);
+      }
+    }
+  </script>
+</body>
+</html>
