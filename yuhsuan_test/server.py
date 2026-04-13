@@ -78,7 +78,7 @@ def open_camera():
 # ── ArUco helpers ─────────────────────────────────────────────────────────────
 
 def build_detector():
-    d = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_ID)
+    d = cv2.aruco.getPredefinedDictionary(int(ARUCO_DICT_ID))
     p = cv2.aruco.DetectorParameters()
     if hasattr(cv2.aruco, "ArucoDetector"):
         return cv2.aruco.ArucoDetector(d, p), d, p, "modern"
