@@ -14,7 +14,7 @@ SOFT_TERRAIN_HP      = 2
 # Display
 CELL_SIZE            = 42
 GAP                  = 1
-MARGIN               = 14
+MARGIN               = 22
 PANEL_HEIGHT         = 348
 
 SCREEN_W = MARGIN * 2 + COLS * (CELL_SIZE + GAP)

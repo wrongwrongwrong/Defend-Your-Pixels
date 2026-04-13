@@ -45,15 +45,15 @@ def _place_token(state: GameState, r: int, c: int) -> None:
 # ---------------------------------------------------------------------------
 
 def cell_click(state: GameState, r: int, c: int) -> None:
-    if state.phase == 'setup_king_b':
+    if state.phase == 'setup_hq_b':
         if state.g[r][c].own == 'b' and state.g[r][c].alive:
-            state.king['b'] = (r, c)
+            state.hq['b'] = (r, c)
             state.phase = 'setup_pass'
         return
 
-    if state.phase == 'setup_king_r':
+    if state.phase == 'setup_hq_r':
         if state.g[r][c].own == 'r' and state.g[r][c].alive:
-            state.king['r'] = (r, c)
+            state.hq['r'] = (r, c)
             state.phase = 'init_place_b'
             state.turn  = 'b'
         return
@@ -110,11 +110,11 @@ def done_init_place(state: GameState) -> None:
 
 
 def start_setup(state: GameState) -> None:
-    state.phase = 'setup_king_b'
+    state.phase = 'setup_hq_b'
 
 
 def cont_setup_r(state: GameState) -> None:
-    state.phase = 'setup_king_r'
+    state.phase = 'setup_hq_r'
 
 
 def cont_init_r(state: GameState) -> None:

@@ -28,7 +28,7 @@ def main():
 
     while True:
         screen.fill(C_BG)
-        draw_grid(screen, state, font_sm)
+        draw_grid(screen, state, font_sm, font_xs)
         resolve_btn, nuke_btn, left_btns, right_btns, dir_btns, done_btn = draw_panel(
             screen, state, font, font_sm, font_xs
         )

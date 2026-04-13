@@ -35,7 +35,7 @@ class Token:
 @dataclass
 class GameState:
     g:           list          = field(default_factory=list)   # Cell[ROWS][COLS]
-    king:        dict          = field(default_factory=dict)   # {'b': (r,c), 'r': (r,c)}
+    hq:          dict          = field(default_factory=dict)   # {'b': (r,c), 'r': (r,c)}
     tok:         dict          = field(default_factory=dict)   # {'b': {'a1','a2','df'}, 'r': ...}
     kills:       dict          = field(default_factory=dict)   # {'b': int, 'r': int}
     upg:         dict          = field(default_factory=dict)   # {'b': set, 'r': set}
@@ -142,7 +142,7 @@ def init_state() -> GameState:
     """Return a fresh GameState ready for the intro screen."""
     return GameState(
         g=gen_grid(),
-        king={'b': None, 'r': None},
+        hq={'b': None, 'r': None},
         tok={
             'b': {'a1': Token(), 'a2': Token(), 'df': Token()},
             'r': {'a1': Token(), 'a2': Token(), 'df': Token()},

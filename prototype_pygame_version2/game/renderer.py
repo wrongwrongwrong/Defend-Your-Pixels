@@ -12,10 +12,10 @@ from .constants import (
     C_DOT_B_ATK, C_DOT_R_ATK, C_DOT_B_DEF, C_DOT_R_DEF,
     C_SEL, C_GOLD, C_WHITE, C_GREY, C_DIM, C_GREEN, C_PANEL,
     C_TERRAIN_HARD, C_TERRAIN_SOFT,
-    AOE_PATH, AOE_TARGET, AOE_BLOCKED, AOE_SHIELD,
+    AOE_SHIELD,
 )
 from .state import GameState, opp
-from .logic import get_ray_cells, adj_own
+from .logic import get_ray_cells, adj_own, def_shield_cells
 
 
 # ---------------------------------------------------------------------------
@@ -37,11 +37,48 @@ def _alpha_blit(surf: pygame.Surface, rect: pygame.Rect, rgba: tuple) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Grid axis labels
+# ---------------------------------------------------------------------------
+
+def draw_grid_labels(surf: pygame.Surface, font_xs: pygame.font.Font) -> None:
+    """
+    Draw column letters (A–L) above the grid and row numbers (1–12) to the left.
+    """
+    label_col = (80, 90, 110)   # muted blue-grey, unobtrusive
+
+    for c in range(COLS):
+        rect  = cell_rect(0, c)
+        label = COL_LABELS[c]
+        txt   = font_xs.render(label, True, label_col)
+        # Horizontally centred over each column; vertically centred in top margin
+        lx = rect.centerx - txt.get_width() // 2
+        ly = (MARGIN - txt.get_height()) // 2
+        surf.blit(txt, (lx, ly))
+
+    for r in range(ROWS):
+        rect  = cell_rect(r, 0)
+        label = str(r + 1)
+        txt   = font_xs.render(label, True, label_col)
+        # Vertically centred next to each row; right-aligned against the grid edge
+        lx = rect.left - txt.get_width() - 3
+        ly = rect.centery - txt.get_height() // 2
+        surf.blit(txt, (lx, ly))
+
+
+# ---------------------------------------------------------------------------
 # Grid
 # ---------------------------------------------------------------------------
 
-def draw_grid(surf: pygame.Surface, state: GameState, font_sm: pygame.font.Font) -> None:
+def draw_grid(
+    surf: pygame.Surface,
+    state: GameState,
+    font_sm: pygame.font.Font,
+    font_xs: pygame.font.Font,
+) -> None:
     p = state.turn
+
+    # ── Axis labels ─────────────────────────────────────────────────────────
+    draw_grid_labels(surf, font_xs)
 
     # ── Base cells ──────────────────────────────────────────────────────────
     for r in range(ROWS):
@@ -75,34 +112,104 @@ def draw_grid(surf: pygame.Surface, state: GameState, font_sm: pygame.font.Font)
             else:
                 pygame.draw.rect(surf, C_EMPTY, rect)
 
+            # Shield highlight (active shield applied during resolve)
             if cell.shld:
                 pygame.draw.rect(surf, C_SHIELD, rect, 2)
-            if state.king.get(cell.own) == (r, c):
-                k = font_sm.render('K', True, C_WHITE)
-                surf.blit(k, k.get_rect(center=rect.center))
+
+            # HQ marker
+            if state.hq.get(cell.own) == (r, c):
+                txt = font_xs.render('HQ', True, C_WHITE)
+                surf.blit(txt, txt.get_rect(center=rect.center))
+
             if state.nuke_mode and cell.own == opp(p) and cell.alive:
                 pygame.draw.rect(surf, C_NUKE_TGT, rect, 2)
 
-    # ── AoE overlays ────────────────────────────────────────────────────────
+    # ── DEF token area-of-effect (shield preview) ───────────────────────────
+    #  Base DEF  — 3×3 bubble (Chebyshev r=1): token cell + up to 8 neighbours
+    #  DEF+ upg  — 5×5 bubble (Chebyshev r=2): adds the 16-cell outer ring
+    #
+    #  Inner ring cells (r≤1): bright green border 3 px
+    #  Outer ring cells (r=2, DEF+ only): dim green border 1 px
+    #  Own-alive cells get a "DEF" or "DEF+" chip; empty/other cells just the border.
+    C_DEF_INNER = (34, 197, 94)    # bright green  — 3×3 core
+    C_DEF_OUTER = (22, 120, 55)    # dim green     — 5×5 outer ring
+
+    for pl in ('b', 'r'):
+        df = state.tok[pl]['df']
+        if not df.pos:
+            continue
+        tr, tc = df.pos
+        radius = 2 if 'dt2' in state.upg[pl] else 1
+
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                nr, nc = tr + dr, tc + dc
+                if not (0 <= nr < ROWS and 0 <= nc < COLS):
+                    continue
+                dist   = max(abs(dr), abs(dc))   # Chebyshev distance
+                rect   = cell_rect(nr, nc)
+                is_own = state.g[nr][nc].own == pl and state.g[nr][nc].alive
+
+                if dist <= 1:
+                    # Inner 3×3 — always shown
+                    pygame.draw.rect(surf, C_DEF_INNER, rect, 3 if dist == 0 else 2)
+                    if is_own:
+                        lbl = font_xs.render('DEF', True, C_DEF_INNER)
+                        surf.blit(lbl, (rect.x + 2, rect.y + 2))
+                else:
+                    # Outer ring (DEF+ only)
+                    pygame.draw.rect(surf, C_DEF_OUTER, rect, 1)
+                    if is_own:
+                        lbl = font_xs.render('DEF+', True, C_DEF_OUTER)
+                        surf.blit(lbl, (rect.x + 2, rect.y + 2))
+
+    # ── Attack token ray path labels ─────────────────────────────────────────
+    #  Instead of opaque colour fills, each cell on a ray gets a small
+    #  "A1>" / "A2^" label and a thin coloured border — one per token.
+    #  When two rays share a cell the labels stack so both are visible.
+    #
+    #  ray_map: {(r,c): [(player, token_key, kind), ...]}
+    ray_map: dict = {}
     for pl in ('b', 'r'):
         for key, tok in state.tok[pl].items():
-            if not tok.pos:
+            if key == 'df' or not tok.pos or not tok.dir:
                 continue
             tr, tc = tok.pos
-            if key == 'df':
-                _alpha_blit(surf, cell_rect(tr, tc), AOE_SHIELD)
-                if 'dt2' in state.upg[pl]:
-                    for ar, ac in adj_own(state, pl, tr, tc):
-                        _alpha_blit(surf, cell_rect(ar, ac), (*AOE_SHIELD[:3], 28))
-            elif tok.dir:
-                for rr, rc, kind in get_ray_cells(state, tr, tc, pl, tok.dir):
-                    rgba = {
-                        'target':      AOE_TARGET,
-                        'terrain_hit': AOE_BLOCKED,
-                        'blocked':     AOE_BLOCKED,
-                        'path':        AOE_PATH,
-                    }.get(kind, AOE_PATH)
-                    _alpha_blit(surf, cell_rect(rr, rc), rgba)
+            for rr, rc, kind in get_ray_cells(state, tr, tc, pl, tok.dir):
+                coord = (rr, rc)
+                ray_map.setdefault(coord, []).append((pl, key, kind))
+
+    # Severity order for border colour selection when multiple rays overlap
+    _sev = {'target': 3, 'terrain_hit': 2, 'blocked': 2, 'path': 1}
+
+    for (rr, rc), entries in ray_map.items():
+        rect = cell_rect(rr, rc)
+
+        # Choose border colour from worst-case kind
+        worst = max(entries, key=lambda e: _sev.get(e[2], 0))[2]
+        if worst == 'target':
+            border_col = (220, 60, 60)     # red — will be hit
+        elif worst in ('terrain_hit', 'blocked'):
+            border_col = (220, 140, 30)    # orange — blocked
+        else:
+            border_col = (160, 160, 80)    # dim yellow — passing through
+
+        pygame.draw.rect(surf, border_col, rect, 1)
+
+        # Stack labels bottom-up: first entry at bottom, second above it
+        for i, (pl, key, kind) in enumerate(entries[:3]):
+            dot_col = C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK
+            arrow   = DIR_ARROW[pl][state.tok[pl][key].dir or 'h']
+            lbl     = f"{key.upper()}{arrow}"
+            rendered = font_xs.render(lbl, True, dot_col)
+
+            lx = rect.x + 2
+            ly = rect.bottom - 12 - i * 13   # stack from bottom upward
+
+            # Dark background chip for readability
+            bg = pygame.Rect(lx - 1, ly - 1, rendered.get_width() + 2, rendered.get_height() + 1)
+            _alpha_blit(surf, bg, (0, 0, 0, 170))
+            surf.blit(rendered, (lx, ly))
 
     # ── Token dots + direction arrows ────────────────────────────────────────
     for pl in ('b', 'r'):
@@ -119,9 +226,11 @@ def draw_grid(surf: pygame.Surface, state: GameState, font_sm: pygame.font.Font)
             ox, oy  = {'a1': (-7, -5), 'a2': (4, -5), 'df': (-2, 5)}[key]
             surf.blit(s, (rect.centerx + ox, rect.centery + oy))
 
+            # Direction arrow is now embedded in the ray label; skip here to avoid
+            # doubling up. Keep it only on the token's own cell for quick reference.
             if key != 'df' and tok.dir:
-                arrow = font_sm.render(DIR_ARROW[pl][tok.dir], True, dot_col)
-                surf.blit(arrow, (rect.centerx + ox - 2, rect.centery + oy - 13))
+                arrow = font_xs.render(DIR_ARROW[pl][tok.dir], True, dot_col)
+                surf.blit(arrow, (rect.centerx + ox - 2, rect.centery + oy - 12))
 
             if state.sel and state.tok[state.turn].get(state.sel) is tok:
                 pygame.draw.rect(surf, C_SEL, rect, 2)
@@ -251,12 +360,12 @@ def draw_panel(
     # ── Banner ────────────────────────────────────────────────────────────
     PHASE_LABELS = {
         'intro':        'Welcome to PixelWar',
-        'setup_king_b': 'Blue: click a cell to place your King',
+        'setup_hq_b':   'Blue: click one of your pixels to mark as HQ',
         'setup_pass':   'Blue: look away  |  Red: press SPACE',
-        'setup_king_r': 'Red: click a cell to place your King',
-        'init_place_b': 'SETUP  Blue: place all tokens, then Done',
+        'setup_hq_r':   'Red: click one of your pixels to mark as HQ',
+        'init_place_b': 'SETUP — Blue: place all tokens, then Done',
         'init_pass':    'Blue: look away  |  Red: press SPACE',
-        'init_place_r': 'SETUP  Red: place all tokens, then Done',
+        'init_place_r': 'SETUP — Red: place all tokens, then Done',
         'pass_turn':    'Pass device  |  press SPACE when ready',
         'over':         'GAME OVER',
     }
@@ -350,17 +459,19 @@ def draw_panel(
 
 def draw_legend(surf: pygame.Surface, y: int, font_xs: pygame.font.Font) -> None:
     items = [
-        (C_BLUE,         "Blue cell"),
-        (C_RED,          "Red cell"),
-        (C_TERRAIN_HARD, "Hard terrain (indestr.)"),
-        (C_TERRAIN_SOFT, "Soft terrain (2 hits)"),
-        (C_SHIELD,       "Shield"),
-        (C_NUKE_TGT,     "Nuke target"),
-        (C_DIAG,         "Neutral strip"),
+        (C_BLUE,              "Blue pixels"),
+        (C_RED,               "Red pixels"),
+        (C_TERRAIN_HARD,      "Hard terrain (indestr.)"),
+        (C_TERRAIN_SOFT,      "Soft terrain (2 hits)"),
+        (C_SHIELD,            "Active shield"),
+        ((34, 197, 94),       "DEF 3×3 shield area"),
+        ((22, 120, 55),       "DEF+ 5×5 outer ring"),
+        (C_NUKE_TGT,          "Nuke target"),
+        (C_DIAG,              "Neutral strip"),
     ]
     x = MARGIN
     for color, label in items:
-        if x + 100 > SCREEN_W:
+        if x + 110 > SCREEN_W:
             y += 14
             x  = MARGIN
         pygame.draw.rect(surf, color, (x, y + 2, 9, 9))
@@ -371,7 +482,7 @@ def draw_legend(surf: pygame.Surface, y: int, font_xs: pygame.font.Font) -> None
 
 
 # ---------------------------------------------------------------------------
-# Full-screen overlay (intro / pass / game-over)
+# Full-screen overlay (rules / pass screens / game-over)
 # ---------------------------------------------------------------------------
 
 def draw_overlay(
@@ -381,42 +492,141 @@ def draw_overlay(
     font_sm: pygame.font.Font,
 ) -> None:
     ov = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-    ov.fill((0, 0, 0, 215))
+    ov.fill((0, 0, 0, 220))
     surf.blit(ov, (0, 0))
     cx, cy = SCREEN_W // 2, SCREEN_H // 2
 
+    # ------------------------------------------------------------------
+    # Intro — full rules card
+    # ------------------------------------------------------------------
     if state.phase == 'intro':
+        # Each entry: (style, text)
+        #   'title'  → big font, gold
+        #   'head'   → small font, white
+        #   'body'   → small font, grey
+        #   'note'   → small font, dim gold
+        #   'cta'    → small font, bright white + box
+        #   ''       → blank spacer (half line)
         lines = [
-            "PIXELWAR", "",
-            "Diagonal board  |  24 cells each  |  Terrain",
-            "Place tokens  >  pick direction  >  resolve",
-            "Destroy all enemy cells or their King", "",
-            "SPACE to start",
+            ('title', "P I X E L W A R"),
+            ('',      ''),
+            ('body',  "Battle on a diagonal pixel grid — 24 pixels each."),
+            ('body',  "Destroy ALL enemy pixels, or wipe out their HQ, to win."),
+            ('',      ''),
+            ('head',  "ATTACK TOKENS  [ A1 / A2 ]"),
+            ('body',  "Place anywhere on your half.  Choose a direction:"),
+            ('body',  "  H = horizontal   V = vertical   D = diagonal"),
+            ('body',  "Ray fires until it hits the first enemy in its path."),
+            ('',      ''),
+            ('head',  "DEFENSE TOKEN  [ DF ]"),
+            ('body',  "Shields a 3×3 bubble of friendly pixels (up to 9 cells)."),
+            ('body',  "DEF+ upgrade expands the bubble to 5×5 (up to 25 cells)."),
+            ('',      ''),
+            ('note',  "Kills unlock:  Splash (3)  ·  DEF+ (6)  ·  Bonus ATK (10)  ·  NUKE (15)"),
+            ('',      ''),
+            ('body',  "First: each player secretly marks their HQ pixel."),
+            ('',      ''),
+            ('cta',   "SPACE  to start"),
         ]
+
+        # Measure total height
+        LINE_H   = 20   # normal line height
+        HALF_H   = 8    # spacer height
+        TITLE_H  = 28
+        total_h  = sum(TITLE_H if s == 'title' else (HALF_H if s == '' else LINE_H)
+                       for s, _ in lines)
+        y_start  = cy - total_h // 2
+
+        y_cur = y_start
+        for style, text in lines:
+            if style == '':
+                y_cur += HALF_H
+                continue
+            if style == 'title':
+                rendered = font.render(text, True, C_GOLD)
+                surf.blit(rendered, rendered.get_rect(center=(cx, y_cur + TITLE_H // 2)))
+                y_cur += TITLE_H
+            elif style == 'head':
+                rendered = font_sm.render(text, True, C_WHITE)
+                surf.blit(rendered, rendered.get_rect(center=(cx, y_cur + LINE_H // 2)))
+                y_cur += LINE_H
+            elif style == 'body':
+                rendered = font_sm.render(text, True, (170, 175, 195))
+                surf.blit(rendered, rendered.get_rect(center=(cx, y_cur + LINE_H // 2)))
+                y_cur += LINE_H
+            elif style == 'note':
+                rendered = font_sm.render(text, True, (180, 155, 60))
+                surf.blit(rendered, rendered.get_rect(center=(cx, y_cur + LINE_H // 2)))
+                y_cur += LINE_H
+            elif style == 'cta':
+                rendered = font_sm.render(text, True, C_WHITE)
+                r = rendered.get_rect(center=(cx, y_cur + LINE_H // 2))
+                box = r.inflate(24, 10)
+                pygame.draw.rect(surf, (40, 55, 40), box, border_radius=4)
+                pygame.draw.rect(surf, C_GREEN,      box, 1, border_radius=4)
+                surf.blit(rendered, r)
+                y_cur += LINE_H + 10
+
+    # ------------------------------------------------------------------
+    # Pass screens
+    # ------------------------------------------------------------------
     elif state.phase == 'setup_pass':
-        lines = ["Blue placed their King", "", "Blue: look away!", "Red: press SPACE"]
+        lines = [
+            (font,    C_WHITE, "Blue has chosen their HQ"),
+            (font_sm, C_GREY,  ""),
+            (font_sm, C_WHITE, "Blue: look away from the screen!"),
+            (font_sm, C_GREY,  "Red: press  SPACE  when Blue has looked away"),
+        ]
+        _render_centred_lines(surf, cx, cy, lines)
+
     elif state.phase == 'init_pass':
         lines = [
-            "Blue placed tokens", "",
-            "Blue: look away!",
-            "Red: press SPACE to place your tokens",
+            (font,    C_WHITE, "Blue has placed their tokens"),
+            (font_sm, C_GREY,  ""),
+            (font_sm, C_WHITE, "Blue: look away from the screen!"),
+            (font_sm, C_GREY,  "Red: press  SPACE  to place your tokens"),
         ]
+        _render_centred_lines(surf, cx, cy, lines)
+
     elif state.phase == 'pass_turn':
         pname = 'BLUE' if state.turn == 'b' else 'RED'
-        lines = [f"Pass to {pname}", "", "Press SPACE when ready"]
+        pcol  = C_DOT_B_ATK if state.turn == 'b' else C_DOT_R_ATK
+        lines = [
+            (font,    pcol,    f"Pass to  {pname}"),
+            (font_sm, C_GREY,  ""),
+            (font_sm, C_WHITE, "Press  SPACE  when ready"),
+        ]
+        _render_centred_lines(surf, cx, cy, lines)
+
     elif state.phase == 'over':
         wname = 'BLUE' if state.winner == 'b' else 'RED'
+        wcol  = C_DOT_B_ATK if state.winner == 'b' else C_DOT_R_ATK
         lines = [
-            "GAME OVER", f"{wname} WINS!", "",
-            f"Blue kills: {state.kills['b']}   Red kills: {state.kills['r']}",
-            f"Rounds: {state.round}", "",
-            "SPACE to restart",
+            (font,    C_WHITE, "GAME OVER"),
+            (font,    wcol,    f"{wname}  WINS!"),
+            (font_sm, C_GREY,  ""),
+            (font_sm, C_GREY,  f"Blue kills: {state.kills['b']}   Red kills: {state.kills['r']}"),
+            (font_sm, C_GREY,  f"Rounds played: {state.round}"),
+            (font_sm, C_GREY,  ""),
+            (font_sm, C_WHITE, "SPACE  to play again"),
         ]
-    else:
-        return
+        _render_centred_lines(surf, cx, cy, lines)
 
-    for i, line in enumerate(lines):
-        f   = font if i == 0 else font_sm
-        col = C_GOLD if (state.phase == 'over' and i == 1) else C_WHITE
-        txt = f.render(line, True, col)
-        surf.blit(txt, txt.get_rect(center=(cx, cy - 90 + i * 28)))
+
+def _render_centred_lines(
+    surf: pygame.Surface,
+    cx: int,
+    cy: int,
+    lines: list,   # [(font, colour, text), ...]
+    line_h: int = 28,
+) -> None:
+    """Render a list of (font, colour, text) entries centred on (cx, cy)."""
+    total = len(lines) * line_h
+    y = cy - total // 2
+    for f, col, text in lines:
+        if text == '':
+            y += line_h // 2
+            continue
+        rendered = f.render(text, True, col)
+        surf.blit(rendered, rendered.get_rect(center=(cx, y + line_h // 2)))
+        y += line_h

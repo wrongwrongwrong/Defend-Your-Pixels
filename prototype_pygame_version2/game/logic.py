@@ -93,6 +93,22 @@ def adj_own(state: GameState, player: str, r: int, c: int) -> list:
             and state.g[r+dr][c+dc].alive]
 
 
+def def_shield_cells(state: GameState, player: str, r: int, c: int, radius: int = 1) -> list:
+    """
+    Return all own alive cells within Chebyshev distance `radius` of (r, c).
+    radius=1 → 3×3 bubble (base DEF:  1 + up to 8 cells)
+    radius=2 → 5×5 bubble (DEF+ upg: 1 + up to 8 + up to 16 cells)
+    """
+    result = []
+    for dr in range(-radius, radius + 1):
+        for dc in range(-radius, radius + 1):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                if state.g[nr][nc].own == player and state.g[nr][nc].alive:
+                    result.append((nr, nc))
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Upgrades
 # ---------------------------------------------------------------------------
@@ -141,9 +157,9 @@ def hit_cell(state: GameState, r: int, c: int, attacker: str, label: str = 'ATK'
             return True                     # terrain destroyed — no kill credit
         state.kills[attacker] += 1
         check_upg(state, attacker)
-        if state.king[opp(attacker)] == (r, c):
+        if state.hq[opp(attacker)] == (r, c):
             winner = 'Blue' if attacker == 'b' else 'Red'
-            log_event(state, f"KING at {coord} destroyed! {winner} wins!", 'win')
+            log_event(state, f"HQ at {coord} destroyed! {winner} wins!", 'win')
             return 'king'
         log_event(state, f"{label} destroyed {coord}")
         return True
@@ -197,15 +213,16 @@ def resolve(state: GameState) -> None:
                 state.g[r][c].shld = False
 
     # 2 — defense
+    #   Base DEF : 3×3 bubble  (Chebyshev radius 1 — up to 9 own cells)
+    #   DEF+ upg : 5×5 bubble  (Chebyshev radius 2 — up to 25 own cells)
     df = state.tok[p]['df']
     if df.pos and not df.mv:
-        dr, dc = df.pos
-        state.g[dr][dc].shld = True
-        log_event(state, f"DEF shields {COL_LABELS[dc]}{dr+1}")
-        if 'dt2' in state.upg[p]:
-            for nr, nc in adj_own(state, p, dr, dc)[:1]:
-                state.g[nr][nc].shld = True
-                log_event(state, f"DEF+ shields {COL_LABELS[nc]}{nr+1}")
+        radius = 2 if 'dt2' in state.upg[p] else 1
+        shielded = def_shield_cells(state, p, *df.pos, radius=radius)
+        for nr, nc in shielded:
+            state.g[nr][nc].shld = True
+        size_str = '5×5' if radius == 2 else '3×3'
+        log_event(state, f"DEF shields {len(shielded)} cells ({size_str} around {COL_LABELS[df.pos[1]]}{df.pos[0]+1})")
 
     # 3 — attack tokens
     a1, a2  = state.tok[p]['a1'], state.tok[p]['a2']
