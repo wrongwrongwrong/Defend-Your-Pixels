@@ -31,10 +31,8 @@ TOKEN_IDS = {
     14,
     # 11,
     # 12,
-    # 13,
     # 15,
     # 16,
-    # 17,
 }
 
 ATTACKER_IDS = {
@@ -45,10 +43,13 @@ ATTACKER_IDS = {
 }
 DEFENDER_IDS = {
     # 12,
-    # 13,
     # 16,
-    # 17,
 }
+
+CONFIRM_IDS = {13, 17}
+CONFIRM_PLAYER_MAP = {13: 1, 17: 2}
+
+ALL_TRACKED_IDS = TOKEN_IDS | CONFIRM_IDS
 
 
 def build_tracker_snapshot(corners, ids):
@@ -83,7 +84,16 @@ def build_tracker_snapshot(corners, ids):
     H = build_homography(board_corners_px)
     playable_corners = build_playable_corners(board_corners_px)
 
+    confirm_markers_out = []
+
     for i, mid in enumerate(ids.flatten()):
+        if mid in CONFIRM_IDS:
+            confirm_markers_out.append({
+                "id": int(mid),
+                "player": CONFIRM_PLAYER_MAP[int(mid)],
+            })
+            continue
+
         if mid not in TOKEN_IDS:
             continue
 
@@ -110,6 +120,7 @@ def build_tracker_snapshot(corners, ids):
     return {
         "calibration_ready": H is not None,
         "markers": markers_out,
+        "confirm_markers": confirm_markers_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -182,11 +193,18 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
         draw_grid_overlay(frame, H)
 
     for i, mid in enumerate(ids.flatten()):
-        if mid not in TOKEN_IDS:
+        if mid not in ALL_TRACKED_IDS:
             continue
 
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
+
+        if mid in CONFIRM_IDS:
+            label = token_label(int(mid))
+            cv2.putText(frame, label, (int(px) + 5, int(py) - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 200, 255), 2, cv2.LINE_AA)
+            continue
+
         rotation_deg = compute_rotation_deg(corners[i][0])
         gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
 
@@ -252,6 +270,8 @@ def token_label(marker_id: int) -> str:
         return "ATK"
     if marker_id in DEFENDER_IDS:
         return "DEF"
+    if marker_id in CONFIRM_IDS:
+        return f"CONFIRM P{CONFIRM_PLAYER_MAP[marker_id]}"
     return f"ID:{marker_id}"
 
 

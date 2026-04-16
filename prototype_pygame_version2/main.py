@@ -4,12 +4,13 @@ Run with:  python main.py
 """
 import pygame
 
-from game.constants import SCREEN_W, SCREEN_H, ROWS, COLS, CELL_SIZE, GAP, MARGIN
+from game.constants import SCREEN_W, SCREEN_H, ROWS, COLS, CELL_SIZE, GAP, MARGIN, GRID_W
 from game.state     import init_state
 from game.logic     import resolve
 from game.input     import (
     cell_click, pick_direction, sel_tok, toggle_nuke,
     done_init_place, start_setup, cont_setup_r, cont_init_r, start_turn,
+    undo_turn_plan,
 )
 from game.renderer  import cell_rect, draw_grid, draw_panel, draw_overlay
 
@@ -29,7 +30,7 @@ def main():
     while True:
         screen.fill(C_BG)
         draw_grid(screen, state, font_sm, font_xs)
-        resolve_btn, nuke_btn, left_btns, right_btns, dir_btns, done_btn = draw_panel(
+        resolve_btn, undo_btn, nuke_btn, left_btns, right_btns, dir_btns, done_btn = draw_panel(
             screen, state, font, font_sm, font_xs
         )
         if state.phase in ('intro', 'setup_pass', 'init_pass', 'pass_turn', 'over'):
@@ -53,10 +54,9 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my  = event.pos
-                panel_y = MARGIN * 2 + ROWS * (CELL_SIZE + GAP)
                 p       = state.turn
 
-                if my < panel_y:
+                if mx < GRID_W:
                     # Grid area — find which cell was clicked
                     for r in range(ROWS):
                         for c in range(COLS):
@@ -76,6 +76,8 @@ def main():
                             done_init_place(state)
                         elif resolve_btn and resolve_btn.collidepoint(mx, my) and not state.pending_dir:
                             resolve(state)
+                        elif undo_btn and undo_btn.collidepoint(mx, my):
+                            undo_turn_plan(state)
                         elif nuke_btn and nuke_btn.collidepoint(mx, my):
                             if 'nuke' in state.upg[p] and not state.nuke_used[p]:
                                 toggle_nuke(state)

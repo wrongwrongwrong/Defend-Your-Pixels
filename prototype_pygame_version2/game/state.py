@@ -17,12 +17,22 @@ from .constants import (
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Cell:
-    own:     Optional[str] = None   # 'b' | 'r' | None
-    alive:   bool          = False
-    hp:      int           = 1
-    shld:    bool          = False
-    terrain: Optional[str] = None   # 'hard' | 'soft'
+class PixelCell:
+    """Pixel ownership layer (independent from terrain)."""
+
+    own:   Optional[str] = None   # 'b' | 'r' | None
+    alive: bool          = False
+    hp:    int           = 1
+    shld:  bool          = False
+
+
+@dataclass
+class TerrainTile:
+    """Terrain layer (hard/soft), independent from pixels and tokens."""
+
+    kind:  Optional[str] = None   # 'hard' | 'soft' | None
+    alive: bool          = False  # soft can be destroyed; hard stays alive
+    hp:    int           = 0
 
 
 @dataclass
@@ -34,8 +44,10 @@ class Token:
 
 @dataclass
 class GameState:
-    g:           list          = field(default_factory=list)   # Cell[ROWS][COLS]
+    pixels:      list          = field(default_factory=list)   # PixelCell[ROWS][COLS]
+    terrain:     list          = field(default_factory=list)   # TerrainTile[ROWS][COLS]
     hq:          dict          = field(default_factory=dict)   # {'b': (r,c), 'r': (r,c)}
+    hq_pending:  Optional[tuple] = None  # (player, (r,c)) pending HQ confirmation
     tok:         dict          = field(default_factory=dict)   # {'b': {'a1','a2','df'}, 'r': ...}
     kills:       dict          = field(default_factory=dict)   # {'b': int, 'r': int}
     upg:         dict          = field(default_factory=dict)   # {'b': set, 'r': set}
@@ -49,6 +61,7 @@ class GameState:
     new_upg:     dict          = field(default_factory=dict)   # unlocked this turn
     winner:      Optional[str] = None
     log:         list          = field(default_factory=list)   # [{msg, cls}, ...]
+    undo:        Optional[dict] = None  # snapshot for undo during planning phase
 
 
 # ---------------------------------------------------------------------------
@@ -104,45 +117,49 @@ def gen_grid() -> list:
     24 cells per player, strongly biased toward their home corner.
     Terrain scattered near the mid-board diagonal.
     """
-    grid = [[Cell() for _ in range(COLS)] for _ in range(ROWS)]
+    px = [[PixelCell() for _ in range(COLS)] for _ in range(ROWS)]
+    terr = [[TerrainTile() for _ in range(COLS)] for _ in range(ROWS)]
 
     # Blue cells — bias toward (0, 0)
     b_cands = [(r, c) for r in range(ROWS) for c in range(COLS) if r + c < 11]
     b_weights = [(12 - r) ** 2 * (12 - c) ** 2 for r, c in b_cands]
     for r, c in _w_sample(b_cands, b_weights, CELLS_PER_PLAYER):
-        grid[r][c] = Cell(own='b', alive=True, hp=1)
+        px[r][c] = PixelCell(own='b', alive=True, hp=1)
 
     # Red cells — bias toward (11, 11)
     r_cands = [(r, c) for r in range(ROWS) for c in range(COLS) if r + c > 11]
     r_weights = [(r + 1) ** 2 * (c + 1) ** 2 for r, c in r_cands]
     for r, c in _w_sample(r_cands, r_weights, CELLS_PER_PLAYER):
-        grid[r][c] = Cell(own='r', alive=True, hp=1)
+        px[r][c] = PixelCell(own='r', alive=True, hp=1)
 
     # Terrain — empty non-diagonal cells, weighted toward mid-board
     empty = [
         (r, c) for r in range(ROWS) for c in range(COLS)
-        if r + c != 11 and not grid[r][c].alive and grid[r][c].own is None
+        if r + c != 11 and not px[r][c].alive and px[r][c].own is None
     ]
     t_weights = [max(1, 9 - abs(r + c - 11)) for r, c in empty]
 
     hard_cells = _w_sample(empty, t_weights, HARD_TERRAIN_COUNT)
     hard_set   = set(map(tuple, hard_cells))
     for r, c in hard_cells:
-        grid[r][c] = Cell(terrain='hard', alive=True, hp=999)
+        terr[r][c] = TerrainTile(kind='hard', alive=True, hp=999)
 
     remain   = [(r, c) for r, c in empty if (r, c) not in hard_set]
     r_tw     = [max(1, 9 - abs(r + c - 11)) for r, c in remain]
     for r, c in _w_sample(remain, r_tw, SOFT_TERRAIN_COUNT):
-        grid[r][c] = Cell(terrain='soft', alive=True, hp=SOFT_TERRAIN_HP)
+        terr[r][c] = TerrainTile(kind='soft', alive=True, hp=SOFT_TERRAIN_HP)
 
-    return grid
+    return px, terr
 
 
 def init_state() -> GameState:
     """Return a fresh GameState ready for the intro screen."""
+    px, terr = gen_grid()
     return GameState(
-        g=gen_grid(),
+        pixels=px,
+        terrain=terr,
         hq={'b': None, 'r': None},
+        hq_pending=None,
         tok={
             'b': {'a1': Token(), 'a2': Token(), 'df': Token()},
             'r': {'a1': Token(), 'a2': Token(), 'df': Token()},

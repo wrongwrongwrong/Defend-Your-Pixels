@@ -15,10 +15,14 @@ SOFT_TERRAIN_HP      = 2
 CELL_SIZE            = 42
 GAP                  = 1
 MARGIN               = 22
-PANEL_HEIGHT         = 348
+PANEL_W              = 360
 
-SCREEN_W = MARGIN * 2 + COLS * (CELL_SIZE + GAP)
-SCREEN_H = MARGIN * 2 + ROWS * (CELL_SIZE + GAP) + PANEL_HEIGHT
+GRID_W = MARGIN * 2 + COLS * (CELL_SIZE + GAP)
+GRID_H = MARGIN * 2 + ROWS * (CELL_SIZE + GAP)
+
+# Right-side panel layout (instead of bottom panel)
+SCREEN_W = GRID_W + PANEL_W + MARGIN
+SCREEN_H = GRID_H
 
 COL_LABELS = list('ABCDEFGHIJKL')
 

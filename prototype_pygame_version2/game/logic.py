@@ -24,16 +24,17 @@ def fire_ray(state: GameState, r: int, c: int, player: str, direction: str):
     dr, dc = DIRS[player][direction]
     nr, nc = r + dr, c + dc
     while 0 <= nr < ROWS and 0 <= nc < COLS:
-        cell = state.g[nr][nc]
-        if cell.terrain == 'hard':
+        pix = state.pixels[nr][nc]
+        terr = state.terrain[nr][nc]
+        if terr.kind == 'hard':
             return None
-        if cell.terrain == 'soft':
-            if cell.alive:
+        if terr.kind == 'soft':
+            if terr.alive:
                 return (nr, nc)       # soft terrain can be hit
             # destroyed soft terrain — ray passes through
             nr += dr; nc += dc
             continue
-        if cell.own == opp(player) and cell.alive:
+        if pix.own == opp(player) and pix.alive:
             return (nr, nc)
         nr += dr
         nc += dc
@@ -54,16 +55,17 @@ def get_ray_cells(state: GameState, r: int, c: int, player: str, direction: str)
     nr, nc = r + dr, c + dc
     cells  = []
     while 0 <= nr < ROWS and 0 <= nc < COLS:
-        cell = state.g[nr][nc]
-        if cell.terrain == 'hard':
+        pix = state.pixels[nr][nc]
+        terr = state.terrain[nr][nc]
+        if terr.kind == 'hard':
             cells.append((nr, nc, 'blocked'))
             break
-        if cell.terrain == 'soft' and cell.alive:
+        if terr.kind == 'soft' and terr.alive:
             cells.append((nr, nc, 'terrain_hit'))
             break
-        if cell.terrain == 'soft' and not cell.alive:
+        if terr.kind == 'soft' and not terr.alive:
             cells.append((nr, nc, 'path'))
-        elif cell.own == opp(player) and cell.alive:
+        elif pix.own == opp(player) and pix.alive:
             cells.append((nr, nc, 'target'))
             break
         else:
@@ -81,16 +83,16 @@ def adj_enemy(state: GameState, player: str, r: int, c: int) -> list:
     return [(r+dr, c+dc)
             for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]
             if 0 <= r+dr < ROWS and 0 <= c+dc < COLS
-            and state.g[r+dr][c+dc].own == opp(player)
-            and state.g[r+dr][c+dc].alive]
+            and state.pixels[r+dr][c+dc].own == opp(player)
+            and state.pixels[r+dr][c+dc].alive]
 
 
 def adj_own(state: GameState, player: str, r: int, c: int) -> list:
     return [(r+dr, c+dc)
             for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]
             if 0 <= r+dr < ROWS and 0 <= c+dc < COLS
-            and state.g[r+dr][c+dc].own == player
-            and state.g[r+dr][c+dc].alive]
+            and state.pixels[r+dr][c+dc].own == player
+            and state.pixels[r+dr][c+dc].alive]
 
 
 def def_shield_cells(state: GameState, player: str, r: int, c: int, radius: int = 1) -> list:
@@ -104,7 +106,7 @@ def def_shield_cells(state: GameState, player: str, r: int, c: int, radius: int 
         for dc in range(-radius, radius + 1):
             nr, nc = r + dr, c + dc
             if 0 <= nr < ROWS and 0 <= nc < COLS:
-                if state.g[nr][nc].own == player and state.g[nr][nc].alive:
+                if state.pixels[nr][nc].own == player and state.pixels[nr][nc].alive:
                     result.append((nr, nc))
     return result
 
@@ -137,24 +139,33 @@ def hit_cell(state: GameState, r: int, c: int, attacker: str, label: str = 'ATK'
         True    — cell/terrain destroyed
         False   — hit blocked or cell already dead
     """
-    cell  = state.g[r][c]
+    pix  = state.pixels[r][c]
+    terr = state.terrain[r][c]
     coord = f"{COL_LABELS[c]}{r+1}"
 
-    if not cell.alive:
-        return False
-
-    if cell.shld:
-        log_event(state, f"{label} > {coord} blocked by shield")
-        cell.shld = False
-        return False
-
-    cell.hp -= 1
-
-    if cell.hp <= 0:
-        cell.alive = False
-        if cell.terrain:
+    if terr.kind is not None:
+        if not terr.alive:
+            return False
+        terr.hp -= 1
+        if terr.hp <= 0:
+            terr.alive = False
             log_event(state, f"{label} destroyed terrain at {coord}")
-            return True                     # terrain destroyed — no kill credit
+            return True
+        log_event(state, f"{label} hit terrain at {coord} (HP {terr.hp})")
+        return False
+
+    if not pix.alive:
+        return False
+
+    if pix.shld:
+        log_event(state, f"{label} > {coord} blocked by shield")
+        pix.shld = False
+        return False
+
+    pix.hp -= 1
+
+    if pix.hp <= 0:
+        pix.alive = False
         state.kills[attacker] += 1
         check_upg(state, attacker)
         if state.hq[opp(attacker)] == (r, c):
@@ -165,10 +176,7 @@ def hit_cell(state: GameState, r: int, c: int, attacker: str, label: str = 'ATK'
         return True
 
     # Cell survived the hit
-    if cell.terrain:
-        log_event(state, f"{label} hit terrain at {coord} (HP {cell.hp})")
-    else:
-        log_event(state, f"{label} hit {coord} (HP {cell.hp})")
+    log_event(state, f"{label} hit {coord} (HP {pix.hp})")
     return False
 
 
@@ -176,9 +184,9 @@ def _check_win(state: GameState, king_hit: bool) -> bool:
     """If win condition met, set phase to 'over' and record winner. Returns True if game over."""
     o = opp(state.turn)
     enemy_alive = any(
-        state.g[r][c].alive
+        state.pixels[r][c].alive
         for r in range(ROWS) for c in range(COLS)
-        if state.g[r][c].own == o
+        if state.pixels[r][c].own == o
     )
     if king_hit or not enemy_alive:
         state.phase  = 'over'
@@ -209,8 +217,8 @@ def resolve(state: GameState) -> None:
     # 1 — clear own shields
     for r in range(ROWS):
         for c in range(COLS):
-            if state.g[r][c].own == p:
-                state.g[r][c].shld = False
+            if state.pixels[r][c].own == p:
+                state.pixels[r][c].shld = False
 
     # 2 — defense
     #   Base DEF : 3×3 bubble  (Chebyshev radius 1 — up to 9 own cells)
@@ -220,7 +228,7 @@ def resolve(state: GameState) -> None:
         radius = 2 if 'dt2' in state.upg[p] else 1
         shielded = def_shield_cells(state, p, *df.pos, radius=radius)
         for nr, nc in shielded:
-            state.g[nr][nc].shld = True
+            state.pixels[nr][nc].shld = True
         size_str = '5×5' if radius == 2 else '3×3'
         log_event(state, f"DEF shields {len(shielded)} cells ({size_str} around {COL_LABELS[df.pos[1]]}{df.pos[0]+1})")
 
@@ -235,7 +243,7 @@ def resolve(state: GameState) -> None:
             res = hit_cell(state, *target, p, 'STACK')
             if res == 'king':
                 king_hit = True
-            if not state.g[target[0]][target[1]].terrain:
+            if state.terrain[target[0]][target[1]].kind is None:
                 for er, ec in adj_enemy(state, p, *target):
                     if hit_cell(state, er, ec, p, 'STACK-AOE') == 'king':
                         king_hit = True
@@ -251,7 +259,7 @@ def resolve(state: GameState) -> None:
                 res = hit_cell(state, *target, p, key.upper())
                 if res == 'king':
                     king_hit = True
-                elif res and 't2' in state.upg[p] and not state.g[target[0]][target[1]].terrain:
+                elif res and 't2' in state.upg[p] and state.terrain[target[0]][target[1]].kind is None:
                     for er, ec in adj_enemy(state, p, *target)[:1]:
                         if hit_cell(state, er, ec, p, 'SPLASH') == 'king':
                             king_hit = True
@@ -275,6 +283,7 @@ def resolve(state: GameState) -> None:
     state.sel         = None
     state.nuke_mode   = False
     state.pending_dir = None
+    state.undo        = None
     state.phase       = 'pass_turn'
 
 
@@ -284,7 +293,7 @@ def do_nuke(state: GameState, r: int, c: int) -> None:
     for dr in range(-1, 2):
         for dc in range(-1, 2):
             nr, nc = r + dr, c + dc
-            if 0 <= nr < ROWS and 0 <= nc < COLS and state.g[nr][nc].own == opp(p):
+            if 0 <= nr < ROWS and 0 <= nc < COLS and state.pixels[nr][nc].own == opp(p):
                 hit_cell(state, nr, nc, p, 'NUKE')
     state.nuke_used[p] = True
     state.nuke_mode    = False
