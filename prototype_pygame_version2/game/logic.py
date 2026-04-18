@@ -16,9 +16,9 @@ def fire_ray(state: GameState, r: int, c: int, player: str, direction: str):
     Returns (row, col) of the first hittable cell on the ray, or None.
 
     Ray rules:
-        - Hard terrain  → blocks permanently, returns None
-        - Soft terrain  → hittable; if already destroyed, ray passes through
-        - Enemy cell    → hit, return position
+        - Wall       → blocks permanently, returns None
+        - Barricade  → hittable; if already destroyed, ray passes through
+        - Enemy cell → hit, return position
         - Own cells / empty / diagonal strip → ray passes through
     """
     dr, dc = DIRS[player][direction]
@@ -26,9 +26,9 @@ def fire_ray(state: GameState, r: int, c: int, player: str, direction: str):
     while 0 <= nr < ROWS and 0 <= nc < COLS:
         pix = state.pixels[nr][nc]
         terr = state.terrain[nr][nc]
-        if terr.kind == 'hard':
+        if terr.kind == 'wall':
             return None
-        if terr.kind == 'soft':
+        if terr.kind == 'barricade':
             if terr.alive:
                 return (nr, nc)       # soft terrain can be hit
             # destroyed soft terrain — ray passes through
@@ -48,8 +48,8 @@ def get_ray_cells(state: GameState, r: int, c: int, player: str, direction: str)
     Tags:
         'path'         — ray passes through (empty / own cell / dead terrain)
         'target'       — first living enemy cell (will be hit)
-        'terrain_hit'  — soft terrain that will be hit
-        'blocked'      — hard terrain (ray stops here, no damage)
+        'terrain_hit'  — barricade that will be hit
+        'blocked'      — wall (ray stops here, no damage)
     """
     dr, dc = DIRS[player][direction]
     nr, nc = r + dr, c + dc
@@ -57,13 +57,13 @@ def get_ray_cells(state: GameState, r: int, c: int, player: str, direction: str)
     while 0 <= nr < ROWS and 0 <= nc < COLS:
         pix = state.pixels[nr][nc]
         terr = state.terrain[nr][nc]
-        if terr.kind == 'hard':
+        if terr.kind == 'wall':
             cells.append((nr, nc, 'blocked'))
             break
-        if terr.kind == 'soft' and terr.alive:
+        if terr.kind == 'barricade' and terr.alive:
             cells.append((nr, nc, 'terrain_hit'))
             break
-        if terr.kind == 'soft' and not terr.alive:
+        if terr.kind == 'barricade' and not terr.alive:
             cells.append((nr, nc, 'path'))
         elif pix.own == opp(player) and pix.alive:
             cells.append((nr, nc, 'target'))
@@ -149,9 +149,11 @@ def hit_cell(state: GameState, r: int, c: int, attacker: str, label: str = 'ATK'
         terr.hp -= 1
         if terr.hp <= 0:
             terr.alive = False
-            log_event(state, f"{label} destroyed terrain at {coord}")
+            kind_name = 'wall' if terr.kind == 'wall' else 'barricade'
+            terr.kind = None
+            log_event(state, f"{label} destroyed {kind_name} at {coord}")
             return True
-        log_event(state, f"{label} hit terrain at {coord} (HP {terr.hp})")
+        log_event(state, f"{label} hit barricade at {coord} (HP {terr.hp})")
         return False
 
     if not pix.alive:
@@ -281,20 +283,7 @@ def resolve(state: GameState) -> None:
     for tok in state.tok[o].values():
         tok.mv = False
     state.sel         = None
-    state.nuke_mode   = False
     state.pending_dir = None
     state.undo        = None
     state.phase       = 'pass_turn'
 
-
-def do_nuke(state: GameState, r: int, c: int) -> None:
-    """Fire the one-time 3×3 nuke centred on (r, c)."""
-    p = state.turn
-    for dr in range(-1, 2):
-        for dc in range(-1, 2):
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < ROWS and 0 <= nc < COLS and state.pixels[nr][nc].own == opp(p):
-                hit_cell(state, nr, nc, p, 'NUKE')
-    state.nuke_used[p] = True
-    state.nuke_mode    = False
-    _check_win(state, False)

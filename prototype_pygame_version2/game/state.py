@@ -7,7 +7,7 @@ import random
 
 from .constants import (
     ROWS, COLS, CELLS_PER_PLAYER,
-    HARD_TERRAIN_COUNT, SOFT_TERRAIN_COUNT, SOFT_TERRAIN_HP,
+    WALL_COUNT, BARRICADE_COUNT, BARRICADE_HP,
     UPGRADES,
 )
 
@@ -28,10 +28,10 @@ class PixelCell:
 
 @dataclass
 class TerrainTile:
-    """Terrain layer (hard/soft), independent from pixels and tokens."""
+    """Terrain layer (wall/barricade), independent from pixels and tokens."""
 
-    kind:  Optional[str] = None   # 'hard' | 'soft' | None
-    alive: bool          = False  # soft can be destroyed; hard stays alive
+    kind:  Optional[str] = None   # 'wall' | 'barricade' | None
+    alive: bool          = False  # barricade can be destroyed; wall stays alive
     hp:    int           = 0
 
 
@@ -51,17 +51,17 @@ class GameState:
     tok:         dict          = field(default_factory=dict)   # {'b': {'a1','a2','df'}, 'r': ...}
     kills:       dict          = field(default_factory=dict)   # {'b': int, 'r': int}
     upg:         dict          = field(default_factory=dict)   # {'b': set, 'r': set}
-    nuke_used:   dict          = field(default_factory=dict)   # {'b': bool, 'r': bool}
     turn:        str           = 'b'
     round:       int           = 1
     phase:       str           = 'intro'
     sel:         Optional[str] = None    # selected token key: 'a1' | 'a2' | 'df'
-    nuke_mode:   bool          = False
     pending_dir: Optional[str] = None   # token key awaiting direction choice
     new_upg:     dict          = field(default_factory=dict)   # unlocked this turn
     winner:      Optional[str] = None
     log:         list          = field(default_factory=list)   # [{msg, cls}, ...]
     undo:        Optional[dict] = None  # snapshot for undo during planning phase
+    menu_sel:    int           = 0     # main menu highlighted option (0=Start, 1=Tutorial, 2=Quit)
+    tut_step:    int           = -1    # -1 = normal game; >= 0 = current tutorial step index
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ def _w_sample(items: list, weights: list, n: int) -> list:
     return result
 
 
-def gen_grid() -> list:
+def gen_grid() -> tuple:
     """
     Build the starting board.
 
@@ -139,15 +139,15 @@ def gen_grid() -> list:
     ]
     t_weights = [max(1, 9 - abs(r + c - 11)) for r, c in empty]
 
-    hard_cells = _w_sample(empty, t_weights, HARD_TERRAIN_COUNT)
-    hard_set   = set(map(tuple, hard_cells))
-    for r, c in hard_cells:
-        terr[r][c] = TerrainTile(kind='hard', alive=True, hp=999)
+    wall_cells = _w_sample(empty, t_weights, WALL_COUNT)
+    wall_set   = set(map(tuple, wall_cells))
+    for r, c in wall_cells:
+        terr[r][c] = TerrainTile(kind='wall', alive=True, hp=999)
 
-    remain   = [(r, c) for r, c in empty if (r, c) not in hard_set]
+    remain   = [(r, c) for r, c in empty if (r, c) not in wall_set]
     r_tw     = [max(1, 9 - abs(r + c - 11)) for r, c in remain]
-    for r, c in _w_sample(remain, r_tw, SOFT_TERRAIN_COUNT):
-        terr[r][c] = TerrainTile(kind='soft', alive=True, hp=SOFT_TERRAIN_HP)
+    for r, c in _w_sample(remain, r_tw, BARRICADE_COUNT):
+        terr[r][c] = TerrainTile(kind='barricade', alive=True, hp=BARRICADE_HP)
 
     return px, terr
 
@@ -166,7 +166,6 @@ def init_state() -> GameState:
         },
         kills={'b': 0, 'r': 0},
         upg={'b': set(), 'r': set()},
-        nuke_used={'b': False, 'r': False},
         new_upg={'b': set(), 'r': set()},
         turn='b', round=1, phase='intro',
     )
