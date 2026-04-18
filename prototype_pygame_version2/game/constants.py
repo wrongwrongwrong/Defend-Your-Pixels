@@ -15,14 +15,20 @@ SOFT_TERRAIN_HP      = 2
 CELL_SIZE            = 42
 GAP                  = 1
 MARGIN               = 22
-PANEL_W              = 360
+SIDE_PANEL_W         = 220
+TOP_BAR_H            = 40
+BOTTOM_H             = 120
 
 GRID_W = MARGIN * 2 + COLS * (CELL_SIZE + GAP)
 GRID_H = MARGIN * 2 + ROWS * (CELL_SIZE + GAP)
 
-# Right-side panel layout (instead of bottom panel)
-SCREEN_W = GRID_W + PANEL_W + MARGIN
-SCREEN_H = GRID_H
+GRID_OFFSET_X = SIDE_PANEL_W
+GRID_OFFSET_Y = TOP_BAR_H
+
+SCREEN_W = SIDE_PANEL_W * 2 + GRID_W
+SCREEN_H = TOP_BAR_H + GRID_H + BOTTOM_H
+
+GAME_TITLE = "Defend Your Pixels"
 
 COL_LABELS = list('ABCDEFGHIJKL')
 

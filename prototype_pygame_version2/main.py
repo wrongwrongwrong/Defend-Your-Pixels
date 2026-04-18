@@ -4,7 +4,10 @@ Run with:  python main.py
 """
 import pygame
 
-from game.constants import SCREEN_W, SCREEN_H, ROWS, COLS, CELL_SIZE, GAP, MARGIN, GRID_W
+from game.constants import (
+    SCREEN_W, SCREEN_H, ROWS, COLS, CELL_SIZE, GAP, MARGIN,
+    GRID_W, SIDE_PANEL_W, TOP_BAR_H, GRID_OFFSET_X, GRID_OFFSET_Y, GRID_H,
+)
 from game.state     import init_state
 from game.logic     import resolve
 from game.input     import (
@@ -18,7 +21,7 @@ from game.renderer  import cell_rect, draw_grid, draw_panel, draw_overlay
 def main():
     pygame.init()
     screen  = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-    pygame.display.set_caption("PixelWar")
+    pygame.display.set_caption("Defend Your Pixels")
     clock   = pygame.time.Clock()
     font    = pygame.font.SysFont('monospace', 16, bold=True)
     font_sm = pygame.font.SysFont('monospace', 13)
@@ -53,24 +56,27 @@ def main():
                     elif state.phase == 'over':       state = init_state()
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mx, my  = event.pos
-                p       = state.turn
+                mx, my = event.pos
+                p = state.turn
 
-                if mx < GRID_W:
-                    # Grid area — find which cell was clicked
+                grid_left = GRID_OFFSET_X
+                grid_right = GRID_OFFSET_X + GRID_W
+                grid_top = GRID_OFFSET_Y
+                grid_bottom = GRID_OFFSET_Y + GRID_H
+
+                if grid_left <= mx < grid_right and grid_top <= my < grid_bottom:
                     for r in range(ROWS):
                         for c in range(COLS):
                             if cell_rect(r, c).collidepoint(mx, my):
                                 cell_click(state, r, c)
-                else:
-                    # Panel area — direction buttons take priority
+
+                elif my >= grid_bottom:
                     handled = False
                     for btn, d in dir_btns:
                         if btn.collidepoint(mx, my):
                             pick_direction(state, d)
                             handled = True
                             break
-
                     if not handled:
                         if done_btn and done_btn.collidepoint(mx, my):
                             done_init_place(state)
@@ -81,11 +87,12 @@ def main():
                         elif nuke_btn and nuke_btn.collidepoint(mx, my):
                             if 'nuke' in state.upg[p] and not state.nuke_used[p]:
                                 toggle_nuke(state)
-                        else:
-                            active_btns = left_btns if p == 'b' else right_btns
-                            for i, btn in enumerate(active_btns):
-                                if btn.collidepoint(mx, my):
-                                    sel_tok(state, ['a1', 'a2', 'df'][i])
+
+                else:
+                    active_btns = left_btns if p == 'b' else right_btns
+                    for i, btn in enumerate(active_btns):
+                        if btn.collidepoint(mx, my):
+                            sel_tok(state, ['a1', 'a2', 'df'][i])
 
 
 if __name__ == '__main__':

@@ -1,21 +1,21 @@
 # ---------------------------------------------------------------------------
-# game/renderer.py — all Pygame draw routines: grid, panel, overlays
+# game/renderer.py — all Pygame draw routines: grid, panels, overlays
 # ---------------------------------------------------------------------------
 import pygame
 
 from .constants import (
-    ROWS, COLS, CELL_SIZE, GAP, MARGIN, PANEL_W,
-    SCREEN_W, SCREEN_H, GRID_W, GRID_H, COL_LABELS, UPGRADES,
+    ROWS, COLS, CELL_SIZE, GAP, MARGIN, SIDE_PANEL_W, TOP_BAR_H, BOTTOM_H,
+    SCREEN_W, SCREEN_H, GRID_W, GRID_H, GRID_OFFSET_X, GRID_OFFSET_Y,
+    COL_LABELS, UPGRADES, GAME_TITLE,
     DIR_ARROW, DIR_NAME,
     C_BG, C_EMPTY, C_DIAG, C_BLUE, C_RED,
     C_SHIELD, C_NUKE_TGT,
     C_DOT_B_ATK, C_DOT_R_ATK, C_DOT_B_DEF, C_DOT_R_DEF,
     C_SEL, C_GOLD, C_WHITE, C_GREY, C_DIM, C_GREEN, C_PANEL,
     C_TERRAIN_HARD, C_TERRAIN_SOFT,
-    AOE_SHIELD,
 )
 from .state import GameState, opp
-from .logic import fire_ray, adj_own, def_shield_cells
+from .logic import fire_ray, def_shield_cells
 from .input import can_done_init_place
 
 
@@ -25,8 +25,8 @@ from .input import can_done_init_place
 
 def cell_rect(r: int, c: int) -> pygame.Rect:
     return pygame.Rect(
-        MARGIN + c * (CELL_SIZE + GAP),
-        MARGIN + r * (CELL_SIZE + GAP),
+        GRID_OFFSET_X + MARGIN + c * (CELL_SIZE + GAP),
+        GRID_OFFSET_Y + MARGIN + r * (CELL_SIZE + GAP),
         CELL_SIZE, CELL_SIZE,
     )
 
@@ -38,29 +38,68 @@ def _alpha_blit(surf: pygame.Surface, rect: pygame.Rect, rgba: tuple) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Top bar
+# ---------------------------------------------------------------------------
+
+_PHASE_LABELS = {
+    'intro':        'Welcome',
+    'setup_hq_b':   "Blue's HQ Setup",
+    'setup_pass':   'Pass to Red',
+    'setup_hq_r':   "Red's HQ Setup",
+    'init_place_b': "Blue's Setup",
+    'init_pass':    'Pass to Red',
+    'init_place_r': "Red's Setup",
+    'pass_turn':    'Pass Device',
+    'over':         'Game Over',
+}
+
+
+def draw_top_bar(
+    surf: pygame.Surface,
+    state: GameState,
+    font: pygame.font.Font,
+    font_sm: pygame.font.Font,
+) -> None:
+    pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, TOP_BAR_H))
+    pygame.draw.line(surf, C_DIM, (0, TOP_BAR_H - 1), (SCREEN_W, TOP_BAR_H - 1))
+
+    title = font.render(GAME_TITLE, True, C_GOLD)
+    surf.blit(title, (14, (TOP_BAR_H - title.get_height()) // 2))
+
+    if state.phase == 'turn':
+        pill_text = f"{'BLUE' if state.turn == 'b' else 'RED'}'S TURN"
+        pill_bg_col = C_DOT_B_ATK if state.turn == 'b' else C_DOT_R_ATK
+    else:
+        pill_text = _PHASE_LABELS.get(state.phase, state.phase.upper())
+        pill_bg_col = C_DIM
+
+    pill = font_sm.render(pill_text, True, C_WHITE)
+    pill_rect = pill.get_rect(center=(SCREEN_W // 2, TOP_BAR_H // 2))
+    pill_bg = pill_rect.inflate(24, 10)
+    pygame.draw.rect(surf, pill_bg_col, pill_bg, border_radius=6)
+    surf.blit(pill, pill_rect)
+
+    round_txt = font_sm.render(f"Round {state.round}", True, C_GREY)
+    surf.blit(round_txt, (SCREEN_W - round_txt.get_width() - 14,
+                          (TOP_BAR_H - round_txt.get_height()) // 2))
+
+
+# ---------------------------------------------------------------------------
 # Grid axis labels
 # ---------------------------------------------------------------------------
 
 def draw_grid_labels(surf: pygame.Surface, font_xs: pygame.font.Font) -> None:
-    """
-    Draw column letters (A–L) above the grid and row numbers (1–12) to the left.
-    """
-    label_col = (80, 90, 110)   # muted blue-grey, unobtrusive
-
+    label_col = (80, 90, 110)
     for c in range(COLS):
-        rect  = cell_rect(0, c)
-        label = COL_LABELS[c]
-        txt   = font_xs.render(label, True, label_col)
-        # Horizontally centred over each column; vertically centred in top margin
+        rect = cell_rect(0, c)
+        txt = font_xs.render(COL_LABELS[c], True, label_col)
         lx = rect.centerx - txt.get_width() // 2
-        ly = (MARGIN - txt.get_height()) // 2
+        ly = GRID_OFFSET_Y + (MARGIN - txt.get_height()) // 2
         surf.blit(txt, (lx, ly))
 
     for r in range(ROWS):
-        rect  = cell_rect(r, 0)
-        label = str(r + 1)
-        txt   = font_xs.render(label, True, label_col)
-        # Vertically centred next to each row; right-aligned against the grid edge
+        rect = cell_rect(r, 0)
+        txt = font_xs.render(str(r + 1), True, label_col)
         lx = rect.left - txt.get_width() - 3
         ly = rect.centery - txt.get_height() // 2
         surf.blit(txt, (lx, ly))
@@ -77,11 +116,8 @@ def draw_grid(
     font_xs: pygame.font.Font,
 ) -> None:
     p = state.turn
-
-    # ── Axis labels ─────────────────────────────────────────────────────────
     draw_grid_labels(surf, font_xs)
 
-    # ── Base cells ──────────────────────────────────────────────────────────
     for r in range(ROWS):
         for c in range(COLS):
             pix = state.pixels[r][c]
@@ -92,42 +128,35 @@ def draw_grid(
                 pygame.draw.rect(surf, C_DIAG, rect)
                 continue
 
-            # 1) Terrain background (drawn first)
             if terr.kind == 'hard':
                 pygame.draw.rect(surf, C_TERRAIN_HARD, rect)
-                pygame.draw.line(surf, (45, 48, 65), rect.topleft,  rect.bottomright, 1)
-                pygame.draw.line(surf, (45, 48, 65), rect.topright, rect.bottomleft,  1)
+                pygame.draw.line(surf, (45, 48, 65), rect.topleft, rect.bottomright, 1)
+                pygame.draw.line(surf, (45, 48, 65), rect.topright, rect.bottomleft, 1)
             elif terr.kind == 'soft':
                 col = C_TERRAIN_SOFT if terr.alive else (75, 52, 22)
                 pygame.draw.rect(surf, col, rect)
                 if terr.alive:
                     for pip in range(terr.hp):
-                        pygame.draw.rect(
-                            surf,
-                            (195, 145, 75),
-                            (rect.x + 3 + pip * 7, rect.y + 3, 5, 5),
-                        )
+                        pygame.draw.rect(surf, (195, 145, 75),
+                                         (rect.x + 3 + pip * 7, rect.y + 3, 5, 5))
             else:
                 pygame.draw.rect(surf, C_EMPTY, rect)
 
-            # 2) Pixel overlay (drawn as a circle so terrain remains visible)
             if pix.own in ('b', 'r'):
                 base = C_BLUE if pix.own == 'b' else C_RED
                 alpha = 230 if pix.alive else 70
                 dot = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
-                pygame.draw.circle(dot, (*base, alpha), (rect.w // 2, rect.h // 2), rect.w // 2 - 4)
+                pygame.draw.circle(dot, (*base, alpha),
+                                   (rect.w // 2, rect.h // 2), rect.w // 2 - 4)
                 surf.blit(dot, rect.topleft)
 
-            # Shield highlight (active shield applied during resolve)
             if pix.shld:
                 pygame.draw.rect(surf, C_SHIELD, rect, 2)
 
-            # HQ marker
             if state.hq.get(pix.own) == (r, c):
                 txt = font_xs.render('HQ', True, C_WHITE)
                 surf.blit(txt, txt.get_rect(center=rect.center))
 
-            # HQ confirmation marker
             if state.hq_pending and state.hq_pending[1] == (r, c):
                 pygame.draw.rect(surf, C_GOLD, rect, 3)
                 q = font_xs.render('?', True, C_GOLD)
@@ -136,49 +165,36 @@ def draw_grid(
             if state.nuke_mode and pix.own == opp(p) and pix.alive:
                 pygame.draw.rect(surf, C_NUKE_TGT, rect, 2)
 
-    # ── DEF token area-of-effect (shield preview) ───────────────────────────
-    #  Base DEF  — 3×3 bubble (Chebyshev r=1): token cell + up to 8 neighbours
-    #  DEF+ upg  — 5×5 bubble (Chebyshev r=2): adds the 16-cell outer ring
-    #
-    #  Inner ring cells (r≤1): bright green border 3 px
-    #  Outer ring cells (r=2, DEF+ only): dim green border 1 px
-    #  Own-alive cells get a "DEF" or "DEF+" chip; empty/other cells just the border.
-    C_DEF_INNER = (34, 197, 94)    # bright green  — 3×3 core
-    C_DEF_OUTER = (22, 120, 55)    # dim green     — 5×5 outer ring
-
+    # DEF shield preview
+    C_DEF_INNER = (34, 197, 94)
+    C_DEF_OUTER = (22, 120, 55)
     for pl in ('b', 'r'):
         df = state.tok[pl]['df']
         if not df.pos:
             continue
         tr, tc = df.pos
         radius = 2 if 'dt2' in state.upg[pl] else 1
-
         for dr in range(-radius, radius + 1):
             for dc in range(-radius, radius + 1):
                 nr, nc = tr + dr, tc + dc
                 if not (0 <= nr < ROWS and 0 <= nc < COLS):
                     continue
-                dist   = max(abs(dr), abs(dc))   # Chebyshev distance
-                rect   = cell_rect(nr, nc)
+                dist = max(abs(dr), abs(dc))
+                rect = cell_rect(nr, nc)
                 is_own = state.pixels[nr][nc].own == pl and state.pixels[nr][nc].alive
-
                 if dist <= 1:
-                    # Inner 3×3 — always shown
                     pygame.draw.rect(surf, C_DEF_INNER, rect, 3 if dist == 0 else 2)
                     if is_own:
                         lbl = font_xs.render('DEF', True, C_DEF_INNER)
                         surf.blit(lbl, (rect.x + 2, rect.y + 2))
                 else:
-                    # Outer ring (DEF+ only)
                     pygame.draw.rect(surf, C_DEF_OUTER, rect, 1)
                     if is_own:
                         lbl = font_xs.render('DEF+', True, C_DEF_OUTER)
                         surf.blit(lbl, (rect.x + 2, rect.y + 2))
 
-    # ── Attack target markers ────────────────────────────────────────────────
-    #  For each ATK token, find its target tile and tag it with the token ID.
-    #  No ray trail — only the aimed cell is highlighted.
-    target_map: dict = {}   # {(r,c): [(player, token_key), ...]}
+    # Attack target markers
+    target_map: dict = {}
     for pl in ('b', 'r'):
         for key, tok in state.tok[pl].items():
             if key == 'df' or not tok.pos or not tok.dir:
@@ -190,37 +206,32 @@ def draw_grid(
     for (rr, rc), entries in target_map.items():
         rect = cell_rect(rr, rc)
         pygame.draw.rect(surf, (220, 60, 60), rect, 2)
-
         for i, (pl, key) in enumerate(entries[:3]):
-            dot_col  = C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK
-            arrow    = DIR_ARROW[pl][state.tok[pl][key].dir or 'h']
-            lbl      = f"{key.upper()}{arrow}"
+            dot_col = C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK
+            arrow = DIR_ARROW[pl][state.tok[pl][key].dir or 'h']
+            lbl = f"{key.upper()}{arrow}"
             rendered = font_xs.render(lbl, True, dot_col)
-
             lx = rect.x + 2
             ly = rect.bottom - 12 - i * 13
-
             bg = pygame.Rect(lx - 1, ly - 1, rendered.get_width() + 2, rendered.get_height() + 1)
             _alpha_blit(surf, bg, (0, 0, 0, 170))
             surf.blit(rendered, (lx, ly))
 
-    # ── Token dots + direction arrows ────────────────────────────────────────
+    # Token dots + direction arrows
     for pl in ('b', 'r'):
         for key, tok in state.tok[pl].items():
             if not tok.pos:
                 continue
-            tr, tc  = tok.pos
-            rect    = cell_rect(tr, tc)
+            tr, tc = tok.pos
+            rect = cell_rect(tr, tc)
             dot_col = (C_DOT_B_DEF if pl == 'b' else C_DOT_R_DEF) if key == 'df' \
                       else (C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK)
-            alpha   = 85 if tok.mv else 255
-            s       = pygame.Surface((10, 10), pygame.SRCALPHA)
+            alpha = 85 if tok.mv else 255
+            s = pygame.Surface((10, 10), pygame.SRCALPHA)
             pygame.draw.circle(s, (*dot_col, alpha), (5, 5), 5)
-            ox, oy  = {'a1': (-7, -5), 'a2': (4, -5), 'df': (-2, 5)}[key]
+            ox, oy = {'a1': (-7, -5), 'a2': (4, -5), 'df': (-2, 5)}[key]
             surf.blit(s, (rect.centerx + ox, rect.centery + oy))
 
-            # Direction arrow is now embedded in the ray label; skip here to avoid
-            # doubling up. Keep it only on the token's own cell for quick reference.
             if key != 'df' and tok.dir:
                 arrow = font_xs.render(DIR_ARROW[pl][tok.dir], True, dot_col)
                 surf.blit(arrow, (rect.centerx + ox - 2, rect.centery + oy - 12))
@@ -230,7 +241,7 @@ def draw_grid(
             if state.pending_dir and state.tok[state.turn].get(state.pending_dir) is tok:
                 pygame.draw.rect(surf, C_GOLD, rect, 2)
 
-    # ── Upgrade pips on token cells ──────────────────────────────────────────
+    # Upgrade pips
     for pl in ('b', 'r'):
         active = [k for _, k, _, _ in UPGRADES if k in state.upg[pl] and k != 'nuke']
         for key, tok in state.tok[pl].items():
@@ -243,94 +254,257 @@ def draw_grid(
 
 
 # ---------------------------------------------------------------------------
-# Panel helpers
+# Side panel (one per player)
 # ---------------------------------------------------------------------------
 
-def _draw_player_col(
+def _count_alive(state: GameState, pl: str) -> int:
+    n = 0
+    for r in range(ROWS):
+        for c in range(COLS):
+            if state.pixels[r][c].own == pl and state.pixels[r][c].alive:
+                n += 1
+    return n
+
+
+def draw_side_panel(
     surf: pygame.Surface,
     state: GameState,
     pl: str,
-    cx: int,
-    y: int,
-    col_w: int,
+    font_sm: pygame.font.Font,
     font_xs: pygame.font.Font,
-) -> tuple:
-    """
-    Draw one player column: header, token buttons, kill bar, upgrade rows.
-    Returns (end_y, list_of_tok_btn_rects).
-    """
+) -> list:
+    """Draw one player's sidebar. Returns list of token button rects."""
+    is_left = (pl == 'b')
+    px = 0 if is_left else (SIDE_PANEL_W + GRID_W)
+    py = TOP_BAR_H
+    pw = SIDE_PANEL_W
+    ph = SCREEN_H - TOP_BAR_H
+
+    pygame.draw.rect(surf, C_PANEL, (px, py, pw, ph))
+    if is_left:
+        pygame.draw.line(surf, C_DIM, (px + pw - 1, py), (px + pw - 1, py + ph))
+    else:
+        pygame.draw.line(surf, C_DIM, (px, py), (px, py + ph))
+
+    cx = px + 10
+    cw = pw - 20
+    y = py + 10
+
     p_name = 'BLUE' if pl == 'b' else 'RED'
-    p_col  = C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK
+    p_col = C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK
     active = state.turn == pl and state.phase in ('turn', 'init_place_b', 'init_place_r')
 
-    # Header
-    prefix = '> ' if active else '  '
-    surf.blit(
-        font_xs.render(f"{prefix}{p_name}  {state.kills[pl]} kills", True, p_col),
-        (cx, y),
-    )
-    y += 16
+    # ── Header ────────────────────────────────────────────────────────────
+    header = f"{p_name} SIDE"
+    surf.blit(font_sm.render(header, True, p_col), (cx, y))
+    y += 20
 
-    # Token buttons
-    btn_w    = (col_w - 4) // 3
-    tok_btns = []
-    for i, key in enumerate(['a1', 'a2', 'df']):
-        tok    = state.tok[pl][key]
-        bx     = cx + i * (btn_w + 2)
-        btn    = pygame.Rect(bx, y, btn_w, 26)
-        tok_btns.append(btn)
-        is_sel = state.sel == key and active
-        is_pnd = state.pending_dir == key and active
-        border = C_GOLD if is_pnd else (C_SEL if is_sel else C_GREY)
-        bg     = (30, 35, 55) if is_sel else (15, 20, 35)
-        pygame.draw.rect(surf, bg,     btn)
-        pygame.draw.rect(surf, border, btn, 1)
-        lbl = key.upper()
-        if tok.mv:
-            lbl += ' MV'
-        elif tok.pos:
-            r2, c2 = tok.pos
-            lbl   += f"@{COL_LABELS[c2]}{r2+1}"
-            if key != 'df' and tok.dir:
-                lbl += DIR_ARROW[pl][tok.dir]
-        rendered = font_xs.render(lbl, True, C_WHITE)
-        surf.blit(rendered, rendered.get_rect(center=btn.center))
+    # ── Kill / alive counters ─────────────────────────────────────────────
+    kills_txt = font_sm.render(str(state.kills[pl]), True, C_WHITE)
+    surf.blit(font_xs.render("PIXELS", True, C_GREY), (cx, y))
+    surf.blit(font_xs.render("DESTROYED", True, C_GREY), (cx, y + 11))
+    surf.blit(kills_txt, (cx + cw - kills_txt.get_width(), y + 2))
+    y += 28
+
+    alive = _count_alive(state, pl)
+    alive_txt = font_sm.render(str(alive), True, C_GREEN)
+    surf.blit(font_xs.render("PIXELS", True, C_GREY), (cx, y))
+    surf.blit(font_xs.render("ALIVE", True, C_GREY), (cx, y + 11))
+    surf.blit(alive_txt, (cx + cw - alive_txt.get_width(), y + 2))
     y += 30
 
-    # Kill progress bar
+    # ── Tokens ────────────────────────────────────────────────────────────
+    surf.blit(font_xs.render("TOKENS", True, C_GREY), (cx, y))
+    y += 14
+
+    tok_btns = []
+    for key in ['a1', 'a2', 'df']:
+        tok = state.tok[pl][key]
+        btn = pygame.Rect(cx, y, cw, 24)
+        tok_btns.append(btn)
+
+        is_sel = state.sel == key and active
+        is_pnd = state.pending_dir == key and active
+        border = C_GOLD if is_pnd else (C_SEL if is_sel else C_DIM)
+        bg = (30, 35, 55) if is_sel else (15, 20, 35)
+        pygame.draw.rect(surf, bg, btn)
+        pygame.draw.rect(surf, border, btn, 1)
+
+        kind_col = p_col
+        kind_lbl = "ATK" if key != 'df' else "DEF"
+        kind_surf = font_xs.render(kind_lbl, True, C_WHITE)
+        badge = pygame.Rect(btn.right - kind_surf.get_width() - 12, btn.y + 3,
+                            kind_surf.get_width() + 8, 18)
+        pygame.draw.rect(surf, kind_col, badge, border_radius=3)
+        surf.blit(kind_surf, kind_surf.get_rect(center=badge.center))
+
+        dot_col = (C_DOT_B_DEF if pl == 'b' else C_DOT_R_DEF) if key == 'df' \
+                  else (C_DOT_B_ATK if pl == 'b' else C_DOT_R_ATK)
+        pygame.draw.circle(surf, dot_col, (btn.x + 10, btn.centery), 4)
+
+        lbl = key.upper()
+        if tok.mv:
+            lbl += '  MV'
+        elif tok.pos:
+            r2, c2 = tok.pos
+            lbl += f" @{COL_LABELS[c2]}{r2 + 1}"
+            if key != 'df' and tok.dir:
+                lbl += DIR_ARROW[pl][tok.dir]
+        else:
+            lbl += '  --'
+        rendered = font_xs.render(lbl, True, C_WHITE)
+        surf.blit(rendered, (btn.x + 20, btn.centery - rendered.get_height() // 2))
+        y += 28
+
+    y += 6
+
+    # ── Upgrades ──────────────────────────────────────────────────────────
+    surf.blit(font_xs.render("UPGRADES", True, C_GREY), (cx, y))
+    y += 14
+
+    for thresh, key, name, _ in UPGRADES:
+        active_upg = key in state.upg[pl]
+        is_new = key in state.new_upg.get(pl, set())
+        row = pygame.Rect(cx, y, cw, 16)
+        pygame.draw.rect(surf, (18, 38, 18) if active_upg else C_PANEL, row)
+        name_col = C_GOLD if is_new else (C_GREEN if active_upg else C_GREY)
+        surf.blit(font_xs.render(name, True, name_col), (cx + 2, y + 1))
+        status = "NEW!" if is_new else ("ON" if active_upg else f"+{thresh - state.kills[pl]}")
+        stat_col = C_GOLD if is_new else (C_GREEN if active_upg else C_GREY)
+        st = font_xs.render(status, True, stat_col)
+        surf.blit(st, (cx + cw - st.get_width() - 2, y + 1))
+        y += 18
+
+    y += 6
+
+    # ── Kill progress bar ─────────────────────────────────────────────────
     next_t = next((t for t, k, _, _ in UPGRADES if k not in state.upg[pl]), None)
     prev_t = max((t for t, k, _, _ in UPGRADES if k in state.upg[pl]), default=0)
-    bar_w  = col_w - 4
+    bar_w = cw
     if next_t:
         pct = max(0.0, min(1.0, (state.kills[pl] - prev_t) / max(next_t - prev_t, 1)))
-        lbl = f"+{next_t - state.kills[pl]} to next"
+        lbl = f"{state.kills[pl]}/{next_t}"
     else:
         pct = 1.0
         lbl = "MAX"
-    pygame.draw.rect(surf, C_DIM, (cx, y, bar_w, 5))
-    pygame.draw.rect(surf, p_col, (cx, y, int(bar_w * pct), 5))
-    surf.blit(font_xs.render(lbl, True, C_GREY), (cx + bar_w + 4, y - 2))
+    pygame.draw.rect(surf, C_DIM, (cx, y, bar_w, 6))
+    pygame.draw.rect(surf, p_col, (cx, y, int(bar_w * pct), 6))
+    y += 8
+    surf.blit(font_xs.render(lbl, True, C_GREY), (cx, y))
+    y += 16
+
+    # ── HQ status ─────────────────────────────────────────────────────────
+    surf.blit(font_xs.render("HQ STATUS", True, C_GREY), (cx, y))
     y += 14
+    hq = state.hq.get(pl)
+    if hq is not None:
+        pygame.draw.circle(surf, p_col, (cx + 5, y + 5), 4)
+        hq_label = f"Location hidden — alive"
+        alive_hq = state.pixels[hq[0]][hq[1]].alive if hq else False
+        if not alive_hq and hq is not None:
+            hq_label = "DESTROYED"
+        surf.blit(font_xs.render(hq_label, True, C_GREY), (cx + 14, y))
+    else:
+        surf.blit(font_xs.render("Not placed", True, C_GREY), (cx, y))
 
-    # Upgrade rows
-    for thresh, key, name, _ in UPGRADES:
-        active_upg = key in state.upg[pl]
-        is_new     = key in state.new_upg.get(pl, set())
-        row        = pygame.Rect(cx, y, col_w - 4, 15)
-        pygame.draw.rect(surf, (18, 38, 18) if active_upg else C_PANEL, row)
-        name_col   = C_GOLD if is_new else (C_GREEN if active_upg else C_GREY)
-        status     = "NEW!" if is_new else ("ON" if active_upg else f"+{thresh - state.kills[pl]}")
-        stat_col   = C_GOLD if is_new else (C_GREEN if active_upg else C_GREY)
-        surf.blit(font_xs.render(name,   True, name_col), (cx + 2, y + 1))
-        st = font_xs.render(status, True, stat_col)
-        surf.blit(st, (cx + col_w - st.get_width() - 6, y + 1))
-        y += 16
-
-    return y, tok_btns
+    return tok_btns
 
 
 # ---------------------------------------------------------------------------
-# Panel
+# Bottom bar (event log + action buttons + direction picker)
+# ---------------------------------------------------------------------------
+
+def draw_bottom_bar(
+    surf: pygame.Surface,
+    state: GameState,
+    font_sm: pygame.font.Font,
+    font_xs: pygame.font.Font,
+) -> tuple:
+    """Draw log, direction picker, and action buttons below the grid.
+    Returns (resolve_rect, undo_rect, nuke_rect, dir_btns, done_rect).
+    """
+    bx = SIDE_PANEL_W
+    by = TOP_BAR_H + GRID_H
+    bw = GRID_W
+    bh = BOTTOM_H
+
+    pygame.draw.rect(surf, C_PANEL, (bx, by, bw, bh))
+    pygame.draw.line(surf, C_DIM, (bx, by), (bx + bw, by))
+
+    left_x = bx + 14
+    y = by + 8
+
+    # ── Event log (left side) ─────────────────────────────────────────────
+    for i, entry in enumerate(state.log[:4]):
+        cls = entry['cls']
+        col = C_GOLD if cls == 'upg' else (C_WHITE if cls == 'win' else C_GREY)
+        dot_col = C_GOLD if cls == 'upg' else (C_GREEN if cls == 'win' else C_DIM)
+        pygame.draw.circle(surf, dot_col, (left_x + 3, y + 6), 3)
+        surf.blit(font_xs.render(entry['msg'], True, col), (left_x + 12, y))
+        y += 15
+
+    # ── Direction picker + action buttons (right half) ────────────────────
+    right_x = bx + bw // 2 + 20
+    ry = by + 8
+    dir_btns = []
+    resolve_rect = None
+    undo_rect = None
+    nuke_rect = None
+    done_rect = None
+    p = state.turn
+
+    if state.pending_dir and state.phase in ('turn', 'init_place_b', 'init_place_r'):
+        pl = state.turn
+        surf.blit(font_xs.render(f"Direction for {state.pending_dir.upper()}:", True, C_GOLD),
+                  (right_x, ry))
+        ry += 16
+        for i, d in enumerate(['h', 'v', 'd']):
+            btn = pygame.Rect(right_x + i * 80, ry, 74, 22)
+            dir_btns.append((btn, d))
+            pygame.draw.rect(surf, (35, 30, 10), btn)
+            pygame.draw.rect(surf, C_GOLD, btn, 1)
+            lbl = f"{DIR_ARROW[pl][d]} {DIR_NAME[d]}"
+            rendered = font_xs.render(lbl, True, C_GOLD)
+            surf.blit(rendered, rendered.get_rect(center=btn.center))
+        ry += 28
+
+    if state.phase == 'turn':
+        can_res = not state.pending_dir
+        resolve_rect = pygame.Rect(right_x, ry, 80, 24)
+        pygame.draw.rect(surf, (35, 70, 35) if can_res else C_DIM, resolve_rect)
+        pygame.draw.rect(surf, C_SHIELD if can_res else C_GREY, resolve_rect, 1)
+        surf.blit(font_sm.render("Resolve", True, C_WHITE),
+                  font_sm.render("Resolve", True, C_WHITE).get_rect(center=resolve_rect.center))
+
+        can_undo = (state.undo is not None and state.undo.get('turn') == state.turn
+                    and not state.pending_dir)
+        undo_rect = pygame.Rect(right_x + 88, ry, 72, 24)
+        pygame.draw.rect(surf, (60, 60, 90) if can_undo else C_DIM, undo_rect)
+        pygame.draw.rect(surf, (160, 160, 220) if can_undo else C_GREY, undo_rect, 1)
+        surf.blit(font_sm.render("Undo", True, C_WHITE),
+                  font_sm.render("Undo", True, C_WHITE).get_rect(center=undo_rect.center))
+
+        nuke_avail = 'nuke' in state.upg[p] and not state.nuke_used[p]
+        nuke_rect = pygame.Rect(right_x + 168, ry, 72, 24)
+        pygame.draw.rect(surf, (55, 28, 8) if nuke_avail else C_DIM, nuke_rect)
+        pygame.draw.rect(surf, C_NUKE_TGT if nuke_avail else C_GREY, nuke_rect, 1)
+        nuke_lbl = "NUKE" + (" ON" if state.nuke_mode else "")
+        surf.blit(font_sm.render(nuke_lbl, True, C_WHITE),
+                  font_sm.render(nuke_lbl, True, C_WHITE).get_rect(center=nuke_rect.center))
+
+    elif state.phase in ('init_place_b', 'init_place_r'):
+        ready = can_done_init_place(state)
+        done_rect = pygame.Rect(right_x, ry, 130, 24)
+        pygame.draw.rect(surf, (28, 58, 90) if ready else C_DIM, done_rect)
+        pygame.draw.rect(surf, (80, 140, 200) if ready else C_GREY, done_rect, 1)
+        rendered = font_sm.render("Done Placing", True, C_WHITE if ready else C_GREY)
+        surf.blit(rendered, rendered.get_rect(center=done_rect.center))
+
+    return resolve_rect, undo_rect, nuke_rect, dir_btns, done_rect
+
+
+# ---------------------------------------------------------------------------
+# Combined draw_panel (keeps main.py call signature compatible)
 # ---------------------------------------------------------------------------
 
 def draw_panel(
@@ -340,151 +514,14 @@ def draw_panel(
     font_sm: pygame.font.Font,
     font_xs: pygame.font.Font,
 ) -> tuple:
-    """
-    Draw the full info panel below the grid.
-    Returns (resolve_rect, undo_rect, nuke_rect, left_btns, right_btns, dir_btns, done_rect).
-    """
-    px = GRID_W + MARGIN // 2
-    py = 0
-    pw = SCREEN_W - px
-    ph = SCREEN_H
-    pygame.draw.rect(surf, C_PANEL, (px, py, pw, ph))
-
-    y = py + 10
-
-    # ── Banner ────────────────────────────────────────────────────────────
-    PHASE_LABELS = {
-        'intro':        'Welcome to PixelWar',
-        'setup_hq_b':   'Blue: click one of your pixels to mark as HQ',
-        'setup_pass':   'Blue: look away  |  Red: press SPACE',
-        'setup_hq_r':   'Red: click one of your pixels to mark as HQ',
-        'init_place_b': 'SETUP — Blue: place all tokens, then Done',
-        'init_pass':    'Blue: look away  |  Red: press SPACE',
-        'init_place_r': 'SETUP — Red: place all tokens, then Done',
-        'pass_turn':    'Pass device  |  press SPACE when ready',
-        'over':         'GAME OVER',
-    }
-    if state.phase == 'turn':
-        label = f"Round {state.round}  —  {'BLUE' if state.turn=='b' else 'RED'}'s Turn"
-    else:
-        label = PHASE_LABELS.get(state.phase, state.phase)
-    p_col = C_DOT_B_ATK if state.turn == 'b' else C_DOT_R_ATK
-    surf.blit(font.render(label, True, p_col), (px + 12, y))
-    y += 26
-
-    # ── Two-column player section ──────────────────────────────────────────
-    col_w   = pw - 24
-    left_x  = px + 12
-    right_x = px + 12  # stacked, not side-by-side
-
-    left_end,  left_btns  = _draw_player_col(surf, state, 'b', left_x,  y, col_w, font_xs)
-    y = left_end + 8
-    right_end, right_btns = _draw_player_col(surf, state, 'r', right_x, y, col_w, font_xs)
-    y = right_end + 6
-
-    # ── Divider ────────────────────────────────────────────────────────────
-    # (No vertical divider in right-side panel layout)
-
-    # ── Direction picker ────────────────────────────────────────────────────
-    dir_btns = []
-    if state.pending_dir and state.phase in ('turn', 'init_place_b', 'init_place_r'):
-        pl = state.turn
-        surf.blit(
-            font_sm.render(f"Pick direction for {state.pending_dir.upper()}:", True, C_GOLD),
-            (px + 12, y),
-        )
-        y += 18
-        for i, d in enumerate(['h', 'v', 'd']):
-            bx  = px + 12 + i * 108
-            btn = pygame.Rect(bx, y, 100, 24)
-            dir_btns.append((btn, d))
-            pygame.draw.rect(surf, (35, 30, 10), btn)
-            pygame.draw.rect(surf, C_GOLD, btn, 1)
-            lbl = f"{DIR_ARROW[pl][d]}  {DIR_NAME[d]}"
-            rendered = font_sm.render(lbl, True, C_GOLD)
-            surf.blit(rendered, rendered.get_rect(center=btn.center))
-        y += 30
-
-    # ── Action buttons ──────────────────────────────────────────────────────
-    resolve_rect = None
-    undo_rect    = None
-    nuke_rect    = None
-    done_rect    = None
-    p            = state.turn
-
-    if state.phase == 'turn':
-        can_res      = not state.pending_dir
-        resolve_rect = pygame.Rect(px + 12, y, 100, 24)
-        pygame.draw.rect(surf, (35, 70, 35) if can_res else C_DIM, resolve_rect)
-        pygame.draw.rect(surf, C_SHIELD if can_res else C_GREY,    resolve_rect, 1)
-        rendered = font_sm.render("Resolve", True, C_WHITE)
-        surf.blit(rendered, rendered.get_rect(center=resolve_rect.center))
-
-        # Undo (planning only): restores token placements/directions/nuke toggle before resolve.
-        can_undo  = state.undo is not None and state.undo.get('turn') == state.turn and not state.pending_dir
-        undo_rect = pygame.Rect(px + 12 + 110, y, 100, 24)
-        pygame.draw.rect(surf, (60, 60, 90) if can_undo else C_DIM, undo_rect)
-        pygame.draw.rect(surf, (160, 160, 220) if can_undo else C_GREY, undo_rect, 1)
-        rendered = font_sm.render("Undo", True, C_WHITE)
-        surf.blit(rendered, rendered.get_rect(center=undo_rect.center))
-
-        nuke_avail = 'nuke' in state.upg[p] and not state.nuke_used[p]
-        nuke_rect  = pygame.Rect(px + 12 + 220, y, 100, 24)
-        pygame.draw.rect(surf, (55, 28, 8) if nuke_avail else C_DIM, nuke_rect)
-        pygame.draw.rect(surf, C_NUKE_TGT if nuke_avail else C_GREY, nuke_rect, 1)
-        nuke_lbl = "NUKE" + (" ON" if state.nuke_mode else "")
-        rendered  = font_sm.render(nuke_lbl, True, C_WHITE)
-        surf.blit(rendered, rendered.get_rect(center=nuke_rect.center))
-
-    elif state.phase in ('init_place_b', 'init_place_r'):
-        ready = can_done_init_place(state)
-        done_rect = pygame.Rect(px + 12, y, 140, 24)
-        pygame.draw.rect(surf, (28, 58, 90) if ready else C_DIM, done_rect)
-        pygame.draw.rect(surf, (80, 140, 200) if ready else C_GREY, done_rect, 1)
-        rendered = font_sm.render("Done Placing", True, C_WHITE if ready else C_GREY)
-        surf.blit(rendered, rendered.get_rect(center=done_rect.center))
-
-    y += 30
-
-    # ── Event log ──────────────────────────────────────────────────────────
-    for i, entry in enumerate(state.log[:3]):
-        cls = entry['cls']
-        col = C_GOLD if cls == 'upg' else (C_WHITE if cls == 'win' else C_GREY)
-        surf.blit(font_xs.render(entry['msg'], True, col), (px + 12, y + i * 14))
-    y += 46
-
-    # ── Legend ─────────────────────────────────────────────────────────────
-    draw_legend(surf, y, font_xs)
-
+    """Draw all UI panels. Returns same tuple as before for click handling."""
+    draw_top_bar(surf, state, font, font_sm)
+    left_btns = draw_side_panel(surf, state, 'b', font_sm, font_xs)
+    right_btns = draw_side_panel(surf, state, 'r', font_sm, font_xs)
+    resolve_rect, undo_rect, nuke_rect, dir_btns, done_rect = draw_bottom_bar(
+        surf, state, font_sm, font_xs
+    )
     return resolve_rect, undo_rect, nuke_rect, left_btns, right_btns, dir_btns, done_rect
-
-
-# ---------------------------------------------------------------------------
-# Legend
-# ---------------------------------------------------------------------------
-
-def draw_legend(surf: pygame.Surface, y: int, font_xs: pygame.font.Font) -> None:
-    items = [
-        (C_BLUE,              "Blue pixels"),
-        (C_RED,               "Red pixels"),
-        (C_TERRAIN_HARD,      "Hard terrain (indestr.)"),
-        (C_TERRAIN_SOFT,      "Soft terrain (2 hits)"),
-        (C_SHIELD,            "Active shield"),
-        ((34, 197, 94),       "DEF 3×3 shield area"),
-        ((22, 120, 55),       "DEF+ 5×5 outer ring"),
-        (C_NUKE_TGT,          "Nuke target"),
-        (C_DIAG,              "Neutral strip"),
-    ]
-    x = GRID_W + MARGIN // 2 + 12
-    for color, label in items:
-        if x + 110 > SCREEN_W - 12:
-            y += 14
-            x  = GRID_W + MARGIN // 2 + 12
-        pygame.draw.rect(surf, color, (x, y + 2, 9, 9))
-        pygame.draw.rect(surf, C_GREY, (x, y + 2, 9, 9), 1)
-        txt = font_xs.render(label, True, C_GREY)
-        surf.blit(txt, (x + 12, y + 2))
-        x += txt.get_width() + 22
 
 
 # ---------------------------------------------------------------------------
@@ -502,48 +539,35 @@ def draw_overlay(
     surf.blit(ov, (0, 0))
     cx, cy = SCREEN_W // 2, SCREEN_H // 2
 
-    # ------------------------------------------------------------------
-    # Intro — full rules card
-    # ------------------------------------------------------------------
     if state.phase == 'intro':
-        # Each entry: (style, text)
-        #   'title'  → big font, gold
-        #   'head'   → small font, white
-        #   'body'   → small font, grey
-        #   'note'   → small font, dim gold
-        #   'cta'    → small font, bright white + box
-        #   ''       → blank spacer (half line)
         lines = [
-            ('title', "P I X E L W A R"),
-            ('',      ''),
-            ('body',  "Battle on a diagonal pixel grid — 24 pixels each."),
-            ('body',  "Destroy ALL enemy pixels, or wipe out their HQ, to win."),
-            ('',      ''),
-            ('head',  "ATTACK TOKENS  [ A1 / A2 ]"),
-            ('body',  "Place anywhere on your half.  Choose a direction:"),
-            ('body',  "  H = horizontal   V = vertical   D = diagonal"),
-            ('body',  "Ray fires until it hits the first enemy in its path."),
-            ('',      ''),
-            ('head',  "DEFENSE TOKEN  [ DF ]"),
-            ('body',  "Shields a 3×3 bubble of friendly pixels (up to 9 cells)."),
-            ('body',  "DEF+ upgrade expands the bubble to 5×5 (up to 25 cells)."),
-            ('',      ''),
-            ('note',  "Kills unlock:  Splash (3)  ·  DEF+ (6)  ·  Bonus ATK (10)  ·  NUKE (15)"),
-            ('',      ''),
-            ('body',  "First: each player secretly marks their HQ pixel."),
-            ('',      ''),
-            ('cta',   "SPACE  to start"),
+            ('title', "D E F E N D   Y O U R   P I X E L S"),
+            ('', ''),
+            ('body', "Battle on a diagonal pixel grid — 24 pixels each."),
+            ('body', "Destroy ALL enemy pixels, or wipe out their HQ, to win."),
+            ('', ''),
+            ('head', "ATTACK TOKENS  [ A1 / A2 ]"),
+            ('body', "Place anywhere on your half.  Choose a direction:"),
+            ('body', "  H = horizontal   V = vertical   D = diagonal"),
+            ('body', "Ray fires until it hits the first enemy in its path."),
+            ('', ''),
+            ('head', "DEFENSE TOKEN  [ DF ]"),
+            ('body', "Shields a 3×3 bubble of friendly pixels (up to 9 cells)."),
+            ('body', "DEF+ upgrade expands the bubble to 5×5 (up to 25 cells)."),
+            ('', ''),
+            ('note', "Kills unlock:  Splash (3)  ·  DEF+ (6)  ·  Bonus ATK (10)  ·  NUKE (15)"),
+            ('', ''),
+            ('body', "First: each player secretly marks their HQ pixel."),
+            ('', ''),
+            ('cta', "SPACE  to start"),
         ]
+        LINE_H = 20
+        HALF_H = 8
+        TITLE_H = 28
+        total_h = sum(TITLE_H if s == 'title' else (HALF_H if s == '' else LINE_H)
+                      for s, _ in lines)
+        y_cur = cy - total_h // 2
 
-        # Measure total height
-        LINE_H   = 20   # normal line height
-        HALF_H   = 8    # spacer height
-        TITLE_H  = 28
-        total_h  = sum(TITLE_H if s == 'title' else (HALF_H if s == '' else LINE_H)
-                       for s, _ in lines)
-        y_start  = cy - total_h // 2
-
-        y_cur = y_start
         for style, text in lines:
             if style == '':
                 y_cur += HALF_H
@@ -569,64 +593,56 @@ def draw_overlay(
                 r = rendered.get_rect(center=(cx, y_cur + LINE_H // 2))
                 box = r.inflate(24, 10)
                 pygame.draw.rect(surf, (40, 55, 40), box, border_radius=4)
-                pygame.draw.rect(surf, C_GREEN,      box, 1, border_radius=4)
+                pygame.draw.rect(surf, C_GREEN, box, 1, border_radius=4)
                 surf.blit(rendered, r)
                 y_cur += LINE_H + 10
 
-    # ------------------------------------------------------------------
-    # Pass screens
-    # ------------------------------------------------------------------
     elif state.phase == 'setup_pass':
-        lines = [
-            (font,    C_WHITE, "Blue has chosen their HQ"),
-            (font_sm, C_GREY,  ""),
+        _render_centred_lines(surf, cx, cy, [
+            (font, C_WHITE, "Blue has chosen their HQ"),
+            (font_sm, C_GREY, ""),
             (font_sm, C_WHITE, "Blue: look away from the screen!"),
-            (font_sm, C_GREY,  "Red: press  SPACE  when Blue has looked away"),
-        ]
-        _render_centred_lines(surf, cx, cy, lines)
+            (font_sm, C_GREY, "Red: press  SPACE  when Blue has looked away"),
+        ])
 
     elif state.phase == 'init_pass':
-        lines = [
-            (font,    C_WHITE, "Blue has placed their tokens"),
-            (font_sm, C_GREY,  ""),
+        _render_centred_lines(surf, cx, cy, [
+            (font, C_WHITE, "Blue has placed their tokens"),
+            (font_sm, C_GREY, ""),
             (font_sm, C_WHITE, "Blue: look away from the screen!"),
-            (font_sm, C_GREY,  "Red: press  SPACE  to place your tokens"),
-        ]
-        _render_centred_lines(surf, cx, cy, lines)
+            (font_sm, C_GREY, "Red: press  SPACE  to place your tokens"),
+        ])
 
     elif state.phase == 'pass_turn':
         pname = 'BLUE' if state.turn == 'b' else 'RED'
-        pcol  = C_DOT_B_ATK if state.turn == 'b' else C_DOT_R_ATK
-        lines = [
-            (font,    pcol,    f"Pass to  {pname}"),
-            (font_sm, C_GREY,  ""),
+        pcol = C_DOT_B_ATK if state.turn == 'b' else C_DOT_R_ATK
+        _render_centred_lines(surf, cx, cy, [
+            (font, pcol, f"Pass to  {pname}"),
+            (font_sm, C_GREY, ""),
             (font_sm, C_WHITE, "Press  SPACE  when ready"),
-        ]
-        _render_centred_lines(surf, cx, cy, lines)
+        ])
 
     elif state.phase == 'over':
         wname = 'BLUE' if state.winner == 'b' else 'RED'
-        wcol  = C_DOT_B_ATK if state.winner == 'b' else C_DOT_R_ATK
-        lines = [
-            (font,    C_WHITE, "GAME OVER"),
-            (font,    wcol,    f"{wname}  WINS!"),
-            (font_sm, C_GREY,  ""),
-            (font_sm, C_GREY,  f"Blue kills: {state.kills['b']}   Red kills: {state.kills['r']}"),
-            (font_sm, C_GREY,  f"Rounds played: {state.round}"),
-            (font_sm, C_GREY,  ""),
+        wcol = C_DOT_B_ATK if state.winner == 'b' else C_DOT_R_ATK
+        _render_centred_lines(surf, cx, cy, [
+            (font, C_WHITE, "GAME OVER"),
+            (font, wcol, f"{wname}  WINS!"),
+            (font_sm, C_GREY, ""),
+            (font_sm, C_GREY, f"Blue kills: {state.kills['b']}   Red kills: {state.kills['r']}"),
+            (font_sm, C_GREY, f"Rounds played: {state.round}"),
+            (font_sm, C_GREY, ""),
             (font_sm, C_WHITE, "SPACE  to play again"),
-        ]
-        _render_centred_lines(surf, cx, cy, lines)
+        ])
 
 
 def _render_centred_lines(
     surf: pygame.Surface,
     cx: int,
     cy: int,
-    lines: list,   # [(font, colour, text), ...]
+    lines: list,
     line_h: int = 28,
 ) -> None:
-    """Render a list of (font, colour, text) entries centred on (cx, cy)."""
     total = len(lines) * line_h
     y = cy - total // 2
     for f, col, text in lines:
