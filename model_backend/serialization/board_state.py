@@ -3,6 +3,7 @@ from __future__ import annotations
 """Serialize the authoritative Python model into the board_state payload."""
 
 from model_backend.game import GameState, PlayerId
+from model_backend.game.entities import Attacker
 
 
 def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None = None) -> dict:
@@ -23,6 +24,10 @@ def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None 
         "move_countdown": _serialize_move_countdown(game),
         "players": [_serialize_player(game, player_id) for player_id in (PlayerId.P1, PlayerId.P2)],
         "units": [_serialize_unit(unit, unit_metadata.get(unit.id, {})) for unit in game.units.values()],
+        "pixels": [_serialize_pixel(px) for px in game.pixels.values()],
+        "kills": {str(int(pid)): cnt for pid, cnt in game.kills.items()},
+        "upgrades": {str(int(pid)): sorted(upg) for pid, upg in game.upg.items()},
+        "obstacles": [_serialize_obstacle(obs) for obs in game.obstacles.values()],
     }
 
 
@@ -50,11 +55,7 @@ def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
 
 
 def _serialize_unit(unit, metadata: dict) -> dict:
-    """Serialize a unit plus any tracker-derived metadata such as rotation.
-
-    Rotation is not authoritative gameplay state today, but keeping it here lets the
-    frontend render the physical token orientation next to authoritative positions.
-    """
+    """Serialize a unit plus any tracker-derived metadata such as rotation."""
     payload = {
         "id": str(unit.id),
         "owner": int(unit.owner),
@@ -67,8 +68,27 @@ def _serialize_unit(unit, metadata: dict) -> dict:
         "max_hp": int(unit.max_hp),
     }
 
+    if isinstance(unit, Attacker) and unit.atk_dir is not None:
+        payload["atk_dir"] = unit.atk_dir
+
     rotation_deg = metadata.get("rotation_deg")
     if isinstance(rotation_deg, (int, float)):
         payload["rotation_deg"] = float(rotation_deg)
 
     return payload
+
+
+def _serialize_pixel(pixel) -> dict:
+    return {
+        "id": str(pixel.id),
+        "owner": int(pixel.owner),
+        "position": {"x": int(pixel.pos.x), "y": int(pixel.pos.y)},
+        "guarded": pixel.guarded_turns > 0,
+    }
+
+
+def _serialize_obstacle(obs) -> dict:
+    return {
+        "position": {"x": int(obs.pos.x), "y": int(obs.pos.y)},
+        "hp": int(obs.hp),
+    }
