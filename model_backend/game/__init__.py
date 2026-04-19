@@ -24,11 +24,6 @@ from .types import (
     TerrainType,
     Direction,
     manhattan_distance,
-    chebyshev_distance,
-    ATK_DIRS,
-    TOKEN_MOVE_RANGE,
-    CELLS_PER_PLAYER,
-    UPGRADES,
 )
 
 __all__ = [
@@ -44,10 +39,5 @@ __all__ = [
     "TerrainType",
     "Direction",
     "manhattan_distance",
-    "chebyshev_distance",
-    "ATK_DIRS",
-    "TOKEN_MOVE_RANGE",
-    "CELLS_PER_PLAYER",
-    "UPGRADES",
 ]
 

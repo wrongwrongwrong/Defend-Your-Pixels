@@ -2,14 +2,13 @@ from __future__ import annotations
 
 """Authoritative game state and rules implementation.
 
-Aligned with ``prototype_pygame_version2`` mechanics:
+`GameState` is the rules engine used by:
+- prototypes (pygame runner)
+- the live tracker runtime (via the bridge layer)
 
-- **Movement**: Chebyshev distance ≤ TOKEN_MOVE_RANGE from start-of-turn origin.
-- **Attack**: ray-based (direction h/v/d); resolved on ``end_turn``.
-- **Defence**: 3×3 (or 5×5 with DEF+ upgrade) shield on friendly pixels.
-- **Terrain**: Wall (BLOCKED, indestructible) and Barricade (Obstacle HP=2, becomes PLAIN).
-- **Win**: all enemy pixels destroyed *or* HQ pixel destroyed.
-- **Upgrades**: Splash (3 kills), DEF+ (6), Bonus ATK (10).
+This module intentionally contains the validation and state transitions that define
+"what is legal" in the game. Adapters/transports should not replicate these rules;
+they should call into `GameState` methods and surface `last_action` to the UI.
 """
 
 from dataclasses import dataclass
@@ -17,13 +16,11 @@ from random import Random
 import time
 from typing import Dict, Optional
 
+import heapq
+
 from .board import Board
 from .entities import Attacker, CommandTower, Defender, EtherDrill, Obstacle, Pixel, Unit
-from .types import (
-    ATK_DIRS, Direction, PlayerId, Pos, TerrainType, UPGRADES,
-    CELLS_PER_PLAYER, TOKEN_MOVE_RANGE, BARRICADE_HP,
-    chebyshev_distance,
-)
+from .types import Direction, PlayerId, Pos, TerrainType
 
 
 @dataclass(slots=True)
@@ -41,8 +38,8 @@ class GameState:
     action is legal and how it mutates turn state, unit state, and win conditions.
     """
 
-    CELLS_PER_PLAYER = CELLS_PER_PLAYER
-    BARRICADE_HP = BARRICADE_HP
+    PIXELS_PER_PLAYER_DEFAULT = 35
+    PIXELS_DESTROYED_TO_WIN = 20
     MOVE_COUNTDOWN_SECONDS = 10.0
 
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
@@ -57,30 +54,24 @@ class GameState:
 
         self.board = Board(board_width, board_height)
         self.players: Dict[PlayerId, PlayerState] = {
-            PlayerId.P1: PlayerState(PlayerId.P1),
-            PlayerId.P2: PlayerState(PlayerId.P2),
+            PlayerId.P1: PlayerState(PlayerId.P1, ether=0, income_per_turn=0),
+            PlayerId.P2: PlayerState(PlayerId.P2, ether=0, income_per_turn=0),
         }
 
+        # Filled by level loader (or demos); pygame prototype uses ASCII maps.
         self.towers: Dict[PlayerId, CommandTower] = {}
+
         self.units: Dict[str, Unit] = {}
         self.drills: Dict[Pos, EtherDrill] = {}
         self.obstacles: Dict[Pos, Obstacle] = {}
         self.pixels: Dict[str, Pixel] = {}
-
-        self.kills: Dict[PlayerId, int] = {PlayerId.P1: 0, PlayerId.P2: 0}
-        self.upg: Dict[PlayerId, set] = {PlayerId.P1: set(), PlayerId.P2: set()}
-        self.new_upg: Dict[PlayerId, set] = {PlayerId.P1: set(), PlayerId.P2: set()}
+        # How many enemy pixels each player has destroyed (win at PIXELS_DESTROYED_TO_WIN).
         self.pixels_destroyed_by: Dict[PlayerId, int] = {PlayerId.P1: 0, PlayerId.P2: 0}
 
-        self._start_positions: Dict[str, Pos] = {}
-        self.log: list = []
-
-    # ------------------------------------------------------------------
-    # Setup helpers
-    # ------------------------------------------------------------------
-
+    # --- Setup helpers ---
     def add_drill(self, pos: Pos, yield_per_turn: int = 1) -> None:
         self.drills[pos] = EtherDrill(pos=pos, owner=None, yield_per_turn=yield_per_turn)
+        self.board.set_terrain(pos, TerrainType.ETHER_DRILL)
 
     def add_unit(self, unit: Unit) -> None:
         self.units[unit.id] = unit
@@ -93,10 +84,8 @@ class GameState:
         self.pixels[pixel.id] = pixel
 
     def spawn_default_pixels(self, per_player: int | None = None) -> None:
-        """Place pixels on empty plain tiles using diagonal territory split."""
-        n = per_player if per_player is not None else self.CELLS_PER_PLAYER
-        threshold = self.board.width - 1
-
+        """Place pixels on empty plain tiles; left half → P1, right half → P2."""
+        n = per_player if per_player is not None else self.PIXELS_PER_PLAYER_DEFAULT
         candidates: list[Pos] = []
         for y in range(self.board.height):
             for x in range(self.board.width):
@@ -108,41 +97,39 @@ class GameState:
                 if self.pixel_at(p) is not None:
                     continue
                 candidates.append(p)
+        mid_x = self.board.width // 2
+        left = sorted([p for p in candidates if p.x < mid_x], key=lambda q: (q.y, q.x))
+        right = sorted([p for p in candidates if p.x >= mid_x], key=lambda q: (q.y, q.x))
 
-        p1_cands = sorted(
-            [p for p in candidates if p.x + p.y < threshold],
-            key=lambda q: (q.y, q.x),
-        )
-        p2_cands = sorted(
-            [p for p in candidates if p.x + p.y > threshold],
-            key=lambda q: (q.y, q.x),
-        )
-
-        p1_pos = p1_cands[:n]
-        p2_pos = p2_cands[:n]
+        p1_pos = left[:n]
+        p2_pos = right[:n]
+        short1 = n - len(p1_pos)
+        short2 = n - len(p2_pos)
+        used = set(p1_pos) | set(p2_pos)
+        spill = sorted([p for p in candidates if p not in used], key=lambda q: (q.y, q.x))
+        for p in spill:
+            if short1 > 0:
+                p1_pos.append(p)
+                short1 -= 1
+                used.add(p)
+            elif short2 > 0:
+                p2_pos.append(p)
+                short2 -= 1
+                used.add(p)
+            if short1 == 0 and short2 == 0:
+                break
 
         pi = 0
         for pos in p1_pos:
-            self.add_pixel(Pixel(id=f"px{pi}", owner=PlayerId.P1, pos=pos))
+            pid = f"px{pi}"
             pi += 1
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P1, pos=pos))
         for pos in p2_pos:
-            self.add_pixel(Pixel(id=f"px{pi}", owner=PlayerId.P2, pos=pos))
+            pid = f"px{pi}"
             pi += 1
+            self.add_pixel(Pixel(id=pid, owner=PlayerId.P2, pos=pos))
 
-    # ------------------------------------------------------------------
-    # Territory
-    # ------------------------------------------------------------------
-
-    def in_territory(self, player: PlayerId, pos: Pos) -> bool:
-        threshold = self.board.width - 1
-        if player == PlayerId.P1:
-            return pos.x + pos.y < threshold
-        return pos.x + pos.y > threshold
-
-    # ------------------------------------------------------------------
-    # Turns
-    # ------------------------------------------------------------------
-
+    # --- Economy / turns ---
     def recompute_income(self) -> None:
         for p in self.players.values():
             p.income_per_turn = 0
@@ -155,10 +142,7 @@ class GameState:
             return
         self.clear_move_countdown()
         self.recompute_income()
-        self._start_positions = {
-            uid: u.pos for uid, u in self.units.items()
-            if u.owner == self.active_player
-        }
+        # Ether / drill income disabled for pixel-win mode.
         for u in self.units.values():
             if u.owner == self.active_player:
                 u.new_turn()
@@ -168,16 +152,27 @@ class GameState:
         if self.game_over:
             return
         self.clear_move_countdown()
-        self.resolve()
-        if self.game_over:
-            return
         self.active_player = PlayerId.P1 if self.active_player == PlayerId.P2 else PlayerId.P2
         self.turn += 1
         self.start_turn()
+        self.end_game()
 
-    # ------------------------------------------------------------------
-    # Timer / countdown (kept for live-tracker)
-    # ------------------------------------------------------------------
+    def _require_active_unit(self, unit_id: str, *, action_name: str) -> Unit | None:
+        if self.game_over:
+            self.last_action = f"Cannot {action_name}; game is already over"
+            return None
+
+        u = self.units[unit_id]
+        if u.owner != self.active_player:
+            self.last_action = (
+                f"{unit_id} belongs to Player {int(u.owner)}; "
+                f"waiting for Player {int(self.active_player)}"
+            )
+            return None
+        if not u.can_act():
+            self.last_action = f"{unit_id} cannot act this turn"
+            return None
+        return u
 
     @property
     def move_countdown_active(self) -> bool:
@@ -201,11 +196,15 @@ class GameState:
         return round(max(0.0, self.move_countdown_deadline - current), 1)
 
     def advance_timers(self, now: float | None = None) -> None:
+        # The live tracker loop calls this every tick so turn-ending countdowns remain
+        # authoritative on the Python side rather than relying on the frontend timer.
         if self.game_over or self.move_countdown_deadline is None:
             return
+
         current = time.monotonic() if now is None else now
         if current < self.move_countdown_deadline:
             return
+
         unit_id = self.move_countdown_unit_id
         self.end_turn()
         if self.game_over:
@@ -215,16 +214,17 @@ class GameState:
         else:
             self.last_action = f"Move timer expired; {self.last_action}"
 
-    # ------------------------------------------------------------------
-    # Lookups
-    # ------------------------------------------------------------------
-
+    # --- Core rules ---
     def is_blocked(self, p: Pos) -> bool:
         if not self.board.in_bounds(p):
             return True
         if self.board.get(p).terrain == TerrainType.BLOCKED:
             return True
+        if self.tower_at(p) is not None:
+            return True
         if p in self.obstacles:
+            return True
+        if self.pixel_at(p) is not None:
             return True
         return False
 
@@ -249,329 +249,305 @@ class GameState:
     def obstacle_at(self, p: Pos) -> Optional[Obstacle]:
         return self.obstacles.get(p)
 
-    # ------------------------------------------------------------------
-    # Movement (Chebyshev distance from start-of-turn origin)
-    # ------------------------------------------------------------------
+    def move_cost(self, p: Pos) -> float:
+        t = self.board.get(p).terrain
+        if t == TerrainType.HIGHWAY:
+            return 0.5
+        if t in (TerrainType.FORTRESS, TerrainType.MOUNTAIN):
+            return 2.0
+        return 1.0
+
+    def move_unit(self, unit_id: str, direction: Direction) -> bool:
+        u = self._require_active_unit(unit_id, action_name="move that unit")
+        if u is None:
+            return False
+        if u.ap <= 0:
+            self.last_action = f"{unit_id} has no actions left this turn"
+            return False
+        nxt = u.pos + direction.delta()
+        if self.is_blocked(nxt) or self.unit_at(nxt) is not None:
+            self.last_action = f"{unit_id} could not move to ({nxt.x}, {nxt.y})"
+            return False
+        cost = self.move_cost(nxt)
+        if u.move_points < cost:
+            self.last_action = f"{unit_id} does not have enough move points"
+            return False
+        u.move_points -= cost
+        u.pos = nxt
+        if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
+            u.on_highway = True
+        self.last_action = f"{unit_id} moved to ({nxt.x}, {nxt.y})"
+        self.start_move_countdown(unit_id)
+        return True
 
     def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
-        """All tiles reachable this turn (Chebyshev ≤ TOKEN_MOVE_RANGE from origin)."""
+        """
+        Returns minimal move cost to reach each position this turn.
+        Includes the unit's current position with cost 0.
+        """
         u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act():
+        if u.owner != self.active_player or not u.can_act() or u.ap <= 0 or u.move_points <= 0:
             return {u.pos: 0.0}
 
-        origin = self._start_positions.get(unit_id, u.pos)
-        result: Dict[Pos, float] = {}
-        rng = TOKEN_MOVE_RANGE
+        start = u.pos
+        budget = float(u.move_points)
+        best: Dict[Pos, float] = {start: 0.0}
+        pq: list[tuple[float, int, int]] = [(0.0, start.x, start.y)]
 
-        for dy in range(-rng, rng + 1):
-            for dx in range(-rng, rng + 1):
-                p = Pos(origin.x + dx, origin.y + dy)
-                if not self.board.in_bounds(p):
-                    continue
-                if self.is_blocked(p):
-                    continue
-                occ = self.unit_at(p)
-                if occ is not None and occ.id != unit_id:
-                    continue
-                if not self.in_territory(u.owner, p):
-                    continue
-                result[p] = float(chebyshev_distance(origin, p))
+        while pq:
+            cost, x, y = heapq.heappop(pq)
+            p = Pos(x, y)
+            if cost != best.get(p, float("inf")):
+                continue
+            if cost > budget:
+                continue
 
-        return result
+            for d in (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT):
+                nxt = p + d.delta()
+                if self.is_blocked(nxt):
+                    continue
+                # Can't move through/onto other units (except our starting tile).
+                occ = self.unit_at(nxt)
+                if occ is not None and nxt != start:
+                    continue
+                step = self.move_cost(nxt)
+                ncost = cost + step
+                if ncost > budget:
+                    continue
+                if ncost < best.get(nxt, float("inf")):
+                    best[nxt] = ncost
+                    heapq.heappush(pq, (ncost, nxt.x, nxt.y))
+
+        return best
 
     def move_unit_to(self, unit_id: str, dest: Pos) -> bool:
-        """Move a unit to *dest* if it's within Chebyshev range of the start-of-turn origin."""
-        u = self.units.get(unit_id)
+        """
+        Commits a move to a chosen destination, consuming move_points based on
+        minimal reachable cost this turn.
+        """
+        u = self._require_active_unit(unit_id, action_name="move that unit")
         if u is None:
-            self.last_action = f"Unknown unit: {unit_id}"
             return False
-        if self.game_over:
-            self.last_action = "Cannot move; game is over"
-            return False
-        if u.owner != self.active_player:
-            self.last_action = (
-                f"{unit_id} belongs to P{int(u.owner)}; "
-                f"waiting for P{int(self.active_player)}"
-            )
-            return False
-        if not u.can_act():
-            self.last_action = f"{unit_id} cannot act this turn"
+        if u.ap <= 0 or u.move_points <= 0:
+            self.last_action = f"{unit_id} cannot move any farther this turn"
             return False
         if dest == u.pos:
             return True
-        if not self.board.in_bounds(dest):
+        if not self.board.in_bounds(dest) or self.is_blocked(dest) or self.unit_at(dest) is not None:
             self.last_action = f"{unit_id} could not move to ({dest.x}, {dest.y})"
-            return False
-        if self.is_blocked(dest):
-            self.last_action = f"{unit_id} could not move to ({dest.x}, {dest.y})"
-            return False
-        occ = self.unit_at(dest)
-        if occ is not None and occ.id != unit_id:
-            self.last_action = f"{unit_id} could not move to ({dest.x}, {dest.y})"
-            return False
-        if not self.in_territory(u.owner, dest):
-            self.last_action = f"{unit_id} cannot move outside territory"
             return False
 
-        origin = self._start_positions.get(unit_id, u.pos)
-        dist = chebyshev_distance(origin, dest)
-        if dist > TOKEN_MOVE_RANGE:
-            self.last_action = f"{unit_id} out of range (max {TOKEN_MOVE_RANGE} tiles)"
+        costs = self.reachable_positions(unit_id)
+        cost = costs.get(dest)
+        if cost is None or cost > u.move_points:
+            self.last_action = f"{unit_id} does not have a legal path to ({dest.x}, {dest.y})"
             return False
 
+        u.move_points -= cost
         u.pos = dest
+        if self.board.get(dest).terrain == TerrainType.HIGHWAY:
+            u.on_highway = True
         self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
         self.start_move_countdown(unit_id)
         return True
 
-    def move_unit(self, unit_id: str, direction: Direction) -> bool:
-        """Single-step directional move (kept for compatibility)."""
-        u = self.units.get(unit_id)
+    def capture(self, unit_id: str) -> bool:
+        self.last_action = "Ether/drill capture disabled (#)"
+        return False
+
+    def push(self, unit_id: str, direction: Direction) -> bool:
+        u = self._require_active_unit(unit_id, action_name="push with that unit")
         if u is None:
             return False
-        nxt = u.pos + direction.delta()
-        return self.move_unit_to(unit_id, nxt)
-
-    def set_direction(self, unit_id: str, direction: str) -> bool:
-        """Set attack direction ('h'/'v'/'d') for an attacker."""
-        u = self.units.get(unit_id)
-        if u is None or not isinstance(u, Attacker):
-            self.last_action = f"{unit_id} is not an attacker"
+        if u.ap <= 0:
+            self.last_action = f"{unit_id} has no actions left this turn"
             return False
-        if u.owner != self.active_player:
-            self.last_action = f"{unit_id} belongs to P{int(u.owner)}"
+        enemy_pos = u.pos + direction.delta()
+        enemy = self.unit_at(enemy_pos)
+        if enemy is None or enemy.owner == u.owner:
+            self.last_action = f"{unit_id} has no enemy to push"
             return False
-        if direction not in ("h", "v", "d"):
-            self.last_action = f"Invalid direction: {direction}"
+        behind = enemy_pos + direction.delta()
+        if self.is_blocked(behind) or self.unit_at(behind) is not None:
+            self.last_action = f"{unit_id} cannot push {enemy.id} into ({behind.x}, {behind.y})"
             return False
-        u.atk_dir = direction
-        self.last_action = f"{unit_id} direction set to {direction}"
+        u.ap -= 1
+        enemy.pos = behind
+        self._finish_turn_after_action(f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})")
         return True
 
-    def capture(self, unit_id: str) -> bool:
-        self.last_action = "Capture disabled"
-        return False
+    def tiles_in_action_range(self, unit_id: str) -> set[Pos]:
+        u = self.units[unit_id]
+        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
+            return set()
+        if u.on_highway:
+            return set()
 
-    # ------------------------------------------------------------------
-    # Combat resolution (called automatically by end_turn)
-    # ------------------------------------------------------------------
-
-    def resolve(self) -> None:
-        """
-        Resolve the active player's turn (mirrors prototype_pygame_version2/game/logic.py).
-
-        Order:
-            1. Clear own shields from previous round
-            2. DEF shield (3×3 base, 5×5 with DEF+ upgrade)
-            3. Fire ATK rays (stacked → AOE, separate → individual)
-            4. T3 bonus attack from first ATK
-            5. Win check
-        """
-        p = self.active_player
-        enemy = PlayerId.P2 if p == PlayerId.P1 else PlayerId.P1
-        king_hit = False
-        self.new_upg = {PlayerId.P1: set(), PlayerId.P2: set()}
-
-        # 1 — clear own shields
-        for px in self.pixels.values():
-            if px.owner == p:
-                px.guarded_turns = 0
-
-        # 2 — DEF shield
-        for u in self.units.values():
-            if u.owner != p or not isinstance(u, Defender):
-                continue
-            radius = 2 if "dt2" in self.upg[p] else 1
-            shielded = 0
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    sp = Pos(u.pos.x + dx, u.pos.y + dy)
-                    if not self.board.in_bounds(sp):
-                        continue
-                    px = self.pixel_at(sp)
-                    if px is not None and px.owner == p:
-                        px.guarded_turns = 1
-                        shielded += 1
-            size = "5×5" if radius == 2 else "3×3"
-            self._log_event(
-                f"DEF shields {shielded} pixels ({size} around ({u.pos.x},{u.pos.y}))"
-            )
-
-        # 3 — ATK rays
-        attackers = sorted(
-            [u for u in self.units.values() if u.owner == p and isinstance(u, Attacker)],
-            key=lambda u: u.id,
-        )
-
-        stacked = (
-            len(attackers) == 2
-            and attackers[0].pos == attackers[1].pos
-            and attackers[0].atk_dir is not None
-            and attackers[1].atk_dir is not None
-        )
-
-        if stacked:
-            a1 = attackers[0]
-            target = self._fire_ray(a1.pos, p, a1.atk_dir or "h")
-            if target is not None:
-                res = self._hit_cell(target, p, "STACK")
-                if res == "king":
-                    king_hit = True
-                if res and target not in self.obstacles:
-                    for epos in self._adj_enemy(p, target):
-                        if self._hit_cell(epos, p, "STACK-AOE") == "king":
-                            king_hit = True
-        else:
-            for atk in attackers:
-                if not atk.atk_dir:
-                    self._log_event(f"{atk.id} has no direction — skip")
+        rng = getattr(u, "range_base", getattr(u, "shield_range", 1))
+        tiles: set[Pos] = set()
+        for dy in range(-rng, rng + 1):
+            for dx in range(-rng, rng + 1):
+                if abs(dx) + abs(dy) > rng or (dx == 0 and dy == 0):
                     continue
-                target = self._fire_ray(atk.pos, p, atk.atk_dir)
-                if target is not None:
-                    res = self._hit_cell(target, p, atk.id.upper())
-                    if res == "king":
-                        king_hit = True
-                    elif res and "t2" in self.upg[p] and target not in self.obstacles:
-                        for epos in self._adj_enemy(p, target)[:1]:
-                            if self._hit_cell(epos, p, "SPLASH") == "king":
-                                king_hit = True
+                p = Pos(u.pos.x + dx, u.pos.y + dy)
+                if self.board.in_bounds(p):
+                    tiles.add(p)
+        return tiles
 
-        # 4 — T3 bonus attack from first attacker
-        if "t3" in self.upg[p] and attackers and attackers[0].atk_dir:
-            target = self._fire_ray(attackers[0].pos, p, attackers[0].atk_dir)
-            if target is not None:
-                if self._hit_cell(target, p, "T3-BONUS") == "king":
-                    king_hit = True
+    def valid_action_targets(self, unit_id: str) -> set[Pos]:
+        u = self.units[unit_id]
+        targets: set[Pos] = set()
+        for pos in self.tiles_in_action_range(unit_id):
+            unit = self.unit_at(pos)
+            tower = self.tower_at(pos)
+            obstacle = self.obstacle_at(pos)
 
-        # 5 — win check
-        self._check_win(king_hit)
+            if isinstance(u, Attacker):
+                pix = self.pixel_at(pos)
+                if pix is not None and pix.owner != u.owner:
+                    targets.add(pos)
+                    continue
+                if unit is not None and unit.owner != u.owner:
+                    targets.add(pos)
+                    continue
+                if tower is not None and tower.owner != u.owner:
+                    targets.add(pos)
+                    continue
+                if obstacle is not None and obstacle.owner != u.owner:
+                    targets.add(pos)
+                    continue
 
-    # ------------------------------------------------------------------
-    # Ray casting
-    # ------------------------------------------------------------------
+            if isinstance(u, Defender):
+                if unit is not None and unit.owner == u.owner and unit.hp < unit.max_hp:
+                    targets.add(pos)
+                    continue
+                if tower is not None and tower.owner == u.owner and tower.hp < tower.max_hp:
+                    targets.add(pos)
+                    continue
 
-    def _fire_ray(self, origin: Pos, player: PlayerId, direction: str) -> Pos | None:
-        """Cast an attack ray; return first hittable position or None."""
-        enemy = PlayerId.P2 if player == PlayerId.P1 else PlayerId.P1
-        delta = ATK_DIRS[player][direction]
-        nx, ny = origin.x + delta.x, origin.y + delta.y
+        return targets
 
-        while self.board.in_bounds(Pos(nx, ny)):
-            pos = Pos(nx, ny)
-            terrain = self.board.get(pos).terrain
-
-            # Wall — BLOCKED terrain without an obstacle
-            if terrain == TerrainType.BLOCKED and pos not in self.obstacles:
-                return None
-            # Barricade — obstacle (hittable)
-            if pos in self.obstacles:
-                return pos
-            # Enemy pixel
-            px = self.pixel_at(pos)
-            if px is not None and px.owner == enemy:
-                return pos
-
-            nx += delta.x
-            ny += delta.y
-        return None
-
-    # ------------------------------------------------------------------
-    # Hit resolution
-    # ------------------------------------------------------------------
-
-    def _hit_cell(self, pos: Pos, attacker: PlayerId, label: str = "ATK") -> object:
-        """Apply one hit. Returns ``'king'``, ``True`` (destroyed), or ``False``."""
-        enemy = PlayerId.P2 if attacker == PlayerId.P1 else PlayerId.P1
-
-        obs = self.obstacles.get(pos)
-        if obs is not None:
-            obs.hp -= 1
-            if obs.hp <= 0:
-                del self.obstacles[pos]
-                self.board.set_terrain(pos, TerrainType.PLAIN)
-                self._log_event(f"{label} destroyed barricade at ({pos.x},{pos.y})")
-                return True
-            self._log_event(f"{label} hit barricade at ({pos.x},{pos.y}) (HP {obs.hp})")
+    def act_on_target(self, unit_id: str, target: Pos) -> bool:
+        u = self._require_active_unit(unit_id, action_name="act with that unit")
+        if u is None:
+            return False
+        if u.ap <= 0:
+            self.last_action = f"{unit_id} cannot act right now"
+            return False
+        if u.on_highway:
+            self.last_action = f"{unit_id} cannot act after moving onto a highway"
+            return False
+        if target not in self.valid_action_targets(unit_id):
+            self.last_action = f"{unit_id} has no valid action on ({target.x}, {target.y})"
             return False
 
-        px = self.pixel_at(pos)
-        if px is None:
+        success = False
+        action_text = None
+        if isinstance(u, Attacker):
+            pix = self.pixel_at(target)
+            if pix is not None and pix.owner != u.owner:
+                del self.pixels[pix.id]
+                self.pixels_destroyed_by[u.owner] += 1
+                action_text = f"{unit_id} destroyed enemy pixel at ({target.x}, {target.y})"
+                success = True
+            enemy = self.unit_at(target)
+            if not success and enemy is not None and enemy.owner != u.owner:
+                enemy.hp -= 2
+                if enemy.hp <= 0:
+                    action_text = f"{unit_id} defeated {enemy.id}"
+                    del self.units[enemy.id]
+                else:
+                    action_text = f"{unit_id} hit {enemy.id} ({enemy.hp}/{enemy.max_hp})"
+                success = True
+            if not success:
+                tower = self.tower_at(target)
+                if tower is not None and tower.owner != u.owner:
+                    tower.hp = max(0, tower.hp - 2)
+                    action_text = f"{unit_id} hit P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
+                    success = True
+                if not success:
+                    obstacle = self.obstacle_at(target)
+                    if obstacle is not None and obstacle.owner != u.owner:
+                        obstacle.hp -= 2
+                        if obstacle.hp <= 0:
+                            del self.obstacles[target]
+                            self.board.set_terrain(target, TerrainType.PLAIN)
+                            action_text = f"{unit_id} destroyed obstacle at ({target.x}, {target.y})"
+                        else:
+                            action_text = f"{unit_id} damaged obstacle at ({target.x}, {target.y})"
+                        success = True
+        elif isinstance(u, Defender):
+            ally = self.unit_at(target)
+            if ally is not None and ally.owner == u.owner:
+                ally.hp = min(ally.max_hp, ally.hp + 1)
+                action_text = f"{unit_id} repaired {ally.id} ({ally.hp}/{ally.max_hp})"
+                success = True
+            else:
+                tower = self.tower_at(target)
+                if tower is not None and tower.owner == u.owner:
+                    tower.hp = min(tower.max_hp, tower.hp + 1)
+                    action_text = f"{unit_id} repaired P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
+                    success = True
+
+        if not success:
             return False
 
-        if px.guarded_turns > 0:
-            self._log_event(f"{label} blocked by shield at ({pos.x},{pos.y})")
-            px.guarded_turns = 0
-            return False
-
-        del self.pixels[px.id]
-        self.kills[attacker] += 1
-        self.pixels_destroyed_by[attacker] += 1
-        self._check_upgrades(attacker)
-
-        if enemy in self.towers and self.towers[enemy].pos == pos:
-            self._log_event(f"HQ pixel at ({pos.x},{pos.y}) destroyed! P{int(attacker)} wins!")
-            return "king"
-
-        self._log_event(f"{label} destroyed pixel at ({pos.x},{pos.y})")
+        u.ap -= 1
+        self._finish_turn_after_action(action_text or f"{unit_id} acted on ({target.x}, {target.y})")
         return True
-
-    def _adj_enemy(self, player: PlayerId, pos: Pos) -> list[Pos]:
-        enemy = PlayerId.P2 if player == PlayerId.P1 else PlayerId.P1
-        result: list[Pos] = []
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            p = Pos(pos.x + dx, pos.y + dy)
-            if not self.board.in_bounds(p):
-                continue
-            px = self.pixel_at(p)
-            if px is not None and px.owner == enemy:
-                result.append(p)
-        return result
-
-    # ------------------------------------------------------------------
-    # Upgrades
-    # ------------------------------------------------------------------
-
-    def _check_upgrades(self, player: PlayerId) -> None:
-        k = self.kills[player]
-        u = self.upg[player]
-        for thresh, key, name, _ in UPGRADES:
-            if k >= thresh and key not in u:
-                u.add(key)
-                self.new_upg[player].add(key)
-                self._log_event(f"P{int(player)} unlocked {name}!")
-
-    # ------------------------------------------------------------------
-    # Win conditions
-    # ------------------------------------------------------------------
-
-    def _check_win(self, king_hit: bool = False) -> bool:
-        if self.game_over:
-            return True
-
-        enemy = PlayerId.P2 if self.active_player == PlayerId.P1 else PlayerId.P1
-        enemy_alive = any(px.owner == enemy for px in self.pixels.values())
-
-        if king_hit or not enemy_alive:
-            self.game_over = True
-            self.winner = self.active_player
-            self.last_action = f"P{int(self.active_player)} wins!"
-            self.clear_move_countdown()
-            return True
-        return False
 
     def check_game_over(self) -> None:
-        self._check_win()
+        """Win when a player has destroyed PIXELS_DESTROYED_TO_WIN enemy pixels."""
+        if self.game_over:
+            return
+        for pid in (PlayerId.P1, PlayerId.P2):
+            if self.pixels_destroyed_by[pid] >= self.PIXELS_DESTROYED_TO_WIN:
+                self.game_over = True
+                self.winner = pid
+                self.last_action = (
+                    f"P{int(pid)} wins: destroyed {self.PIXELS_DESTROYED_TO_WIN} enemy pixels"
+                )
+                return
 
     def end_game(self) -> None:
+        """Evaluate win/loss (pixel quota); call after a turn ends or after a decisive action."""
         self.check_game_over()
+        self._update_game_over_towers()
         if self.game_over:
             self.clear_move_countdown()
 
-    # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
+    def _update_game_over_towers(self) -> None:
+        if self.game_over:
+            return
+        defeated = [pid for pid, tower in self.towers.items() if tower.hp <= 0]
+        if not defeated:
+            return
 
-    def _log_event(self, msg: str, cls: str = "info") -> None:
-        self.log.insert(0, {"msg": msg, "cls": cls})
-        if len(self.log) > 40:
-            self.log.pop()
+        self.game_over = True
+        if PlayerId.P1 in defeated and PlayerId.P2 in defeated:
+            self.winner = None
+            self.last_action = f"{self.last_action} | Draw"
+            return
+
+        loser = defeated[0]
+        self.winner = PlayerId.P1 if loser == PlayerId.P2 else PlayerId.P2
+        self.last_action = f"{self.last_action} | Player {int(self.winner)} wins"
+
+    # Heat / overload resolution (prototype)
+    def overload_check(self, unit: Unit) -> bool:
+        """
+        Returns True if overload attempt succeeds, False if it fails (paralyzes 2 turns).
+        Fail threshold grows with consecutive overload attempts:
+          attempt 1 fails on 1-2
+          attempt 2 fails on 1-3
+          attempt 3 fails on 1-4, etc.
+        """
+        fail_max = 2 + unit.overload_streak
+        roll = self.rng.randint(1, 6)
+        if roll <= fail_max:
+            unit.paralyzed_turns = 2
+            unit.overload_streak = 0
+            return False
+        unit.overload_streak += 1
+        return True
+

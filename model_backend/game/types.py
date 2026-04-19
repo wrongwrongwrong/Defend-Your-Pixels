@@ -28,10 +28,6 @@ def manhattan_distance(a: Pos, b: Pos) -> int:
     return abs(a.x - b.x) + abs(a.y - b.y)
 
 
-def chebyshev_distance(a: Pos, b: Pos) -> int:
-    return max(abs(a.x - b.x), abs(a.y - b.y))
-
-
 class Direction(Enum):
     UP = "up"
     DOWN = "down"
@@ -49,26 +45,10 @@ class Direction(Enum):
 
 class TerrainType(Enum):
     PLAIN = "plain"
-    HIGHWAY = "highway"
-    FORTRESS = "fortress"
-    MOUNTAIN = "mountain"
-    ETHER_DRILL = "ether_drill"
-    BLOCKED = "blocked"  # walls (indestructible) and barricade sites (destructible via Obstacle)
-
-
-CELLS_PER_PLAYER = 24
-TOKEN_MOVE_RANGE = 2
-BARRICADE_HP = 2
-
-ATK_DIRS: dict[PlayerId, dict[str, Pos]] = {
-    PlayerId.P1: {"h": Pos(1, 0), "v": Pos(0, 1), "d": Pos(1, 1)},
-    PlayerId.P2: {"h": Pos(-1, 0), "v": Pos(0, -1), "d": Pos(-1, -1)},
-}
-
-UPGRADES: list[tuple[int, str, str, str]] = [
-    (3,  "t2",  "Splash",    "ATK hits 1 adjacent enemy after primary"),
-    (6,  "dt2", "DEF+",      "DEF shield radius 1→2 (3×3→5×5)"),
-    (10, "t3",  "Bonus ATK", "Extra attack fires from first ATK each resolve"),
-]
+    HIGHWAY = "highway"  # 0.5 move cost, but disables attack/defend abilities this turn
+    FORTRESS = "fortress"  # 2 move cost, +range for attacker / cheaper shield for defender
+    MOUNTAIN = "mountain"  # same as fortress for prototype
+    ETHER_DRILL = "ether_drill"  # capturable resource tile
+    BLOCKED = "blocked"  # impassable (obstacles)
 
 

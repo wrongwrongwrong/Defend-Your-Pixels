@@ -5,10 +5,9 @@ First line, if it is only digits -> random seed. Otherwise the whole file is the
 
 Symbols
 -------
-  #  wall / border (blocked, indestructible)
-  B  barricade (blocked, HP=2, destructible → becomes plain)
+  #  wall / border (blocked)
   . or space  walkable floor
-  E  treated as wall (#) — ether/drill disabled
+  E  treated as wall (#) - ether/drill disabled
   H  Player 1 command tower (headquarters)
   h  Player 2 command tower
   A  Player 1 attacker      a  Player 2 attacker
@@ -20,10 +19,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from model_backend.game import Attacker, CommandTower, Defender, GameState, PlayerId
-from model_backend.game.entities import Obstacle
-from model_backend.game.types import Pos, TerrainType, BARRICADE_HP
+from model_backend.game.types import Pos, TerrainType
 
-_GRID_CHARS = set("#. EHhAaDdBb ")
+_GRID_CHARS = set("#. EHhAaDd ")
 
 
 def load_level_from_path(path: str | Path) -> GameState:
@@ -60,8 +58,6 @@ def load_level_from_path(path: str | Path) -> GameState:
                 game.board.get(pos).terrain = TerrainType.PLAIN
             elif char == "E":
                 game.board.get(pos).terrain = TerrainType.BLOCKED
-            elif char in ("B", "b"):
-                game.add_obstacle(Obstacle(pos=pos, hp=BARRICADE_HP))
             elif char == "H":
                 game.board.get(pos).terrain = TerrainType.PLAIN
                 game.towers[PlayerId.P1] = CommandTower(PlayerId.P1, pos=pos)

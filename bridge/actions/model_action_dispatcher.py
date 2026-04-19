@@ -35,9 +35,8 @@ def apply_action(game: GameState, action: dict) -> bool:
         return _apply_end_turn(game)
     if action_type == "move_unit":
         return _apply_move_unit(game, action)
-    if action_type == "set_direction":
-        return _apply_set_direction(game, action)
 
+    # Unknown verbs are rejected to keep the model safe and make debugging explicit.
     return _reject(game, f"Unknown action: {action_type}")
 
 
@@ -73,21 +72,6 @@ def _apply_move_unit(game: GameState, action: dict) -> bool:
     ok = game.move_unit_to(unit_id, position)
     if not ok:
         return _reject(game, f"{unit_id} could not move to ({position.x}, {position.y})")
-    return True
-
-
-def _apply_set_direction(game: GameState, action: dict) -> bool:
-    unit_id = _require_known_unit(game, action, "set_direction")
-    if unit_id is None:
-        return False
-
-    direction = action.get("direction")
-    if not isinstance(direction, str):
-        return _reject(game, f"set_direction missing direction for {unit_id}")
-
-    ok = game.set_direction(unit_id, direction)
-    if not ok:
-        return False
     return True
 
 

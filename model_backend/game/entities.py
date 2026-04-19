@@ -98,13 +98,9 @@ class Unit:
 
 
 class Attacker(Unit):
-    def __init__(
-        self, id: str, owner: PlayerId, pos: Pos, *,
-        range_base: int = 3, atk_dir: Optional[str] = None,
-    ):
+    def __init__(self, id: str, owner: PlayerId, pos: Pos, *, range_base: int = 3):
         super().__init__(id=id, owner=owner, pos=pos, kind=UnitKind.ATTACKER, hp=3, max_hp=3)
         self.range_base = range_base
-        self.atk_dir: Optional[str] = atk_dir  # 'h' | 'v' | 'd' | None
 
 
 class Defender(Unit):
