@@ -14,11 +14,11 @@ from .entities import (
     Attacker,
     Defender,
     CommandTower,
-    EtherDrill,
     Obstacle,
     Pixel,
 )
 from .types import (
+    AttackDirection,
     PlayerId,
     Pos,
     TerrainType,
@@ -29,9 +29,9 @@ from .types import (
 __all__ = [
     "GameState",
     "Attacker",
+    "AttackDirection",
     "Defender",
     "CommandTower",
-    "EtherDrill",
     "Obstacle",
     "Pixel",
     "PlayerId",

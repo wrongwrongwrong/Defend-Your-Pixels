@@ -1,5 +1,8 @@
 # board_state v1（最小 contract）
 
+Note: the broader Old Mick frontend/backend contract is now documented in
+`docs/frontend_backend_contract_v1.md`. This file remains the narrower board-state payload reference.
+
 供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。第一版刻意**不**包含：`phase`、完整規則樹、動畫專用欄位、tracker 校準細節（校準可續用現有 `tracker_frame`）。
 
 ## WebSocket 訊息
@@ -25,8 +28,8 @@
   "players": [
     {
       "id": 1,
-      "ether": 10,
-      "income_per_turn": 2,
+      "ether": 0,
+      "income_per_turn": 0,
       "command_tower_hp": 20,
       "command_tower_max_hp": 20
     }
@@ -50,7 +53,7 @@
 - `units[].id`：固定使用 `string`，與 `model_backend` 既有 unit id（如 `A1`、`D2`）一致。
 - `units[].rotation_deg`：optional；若無，adapter 預設轉成 UI `rotation: "forward"`，或由 tracker 補。
 - **塔**：v1 固定摺進 `players[]` 的 `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
-- `players[].income_per_turn`：代表此快照下，該玩家下次成為 active player 時會獲得的 income；React 不自行推導。
+- `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
 ## UI consume 形狀（React 現狀）
 
@@ -60,7 +63,6 @@
 |---------|------|
 | `turn` | number |
 | `activePlayer` | `1` \| `2` |
-| `phase` | number（UI-only fallback；**不屬於 v1 authoritative contract**） |
 | `gameOver` | boolean |
 | `players[]` | `id`, `color`, `zone`, `ether`, `incomePerTurn`, `commandTowerHp`, `commandTowerMaxHp`, `tokens[]` |
 | `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation`（字串 facing 或相容格式） |
@@ -96,10 +98,10 @@
 
 第一版 MVP 定案採 **(1)**，條形圖用比例即可，無需與舊 30/40 一致。
 
-## 與 Step 1 盤點的對應
+## 與目前整合狀態的對應
 
-- `endTurn` / `trySpendEther` / 前端 `phaseForTurn`：權威移至 Python 後，以 `board_state` 反映結果。
-- 目前 authoritative action 已有 `end_turn`、`move_unit`；見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。
+- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出 React validation 主線。
+- 目前 authoritative action 已有 `end_turn`、`move_unit`、`attack_in_direction`；見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。
 - Tracker：仍走 `tracker_frame`，不與 `board_state` 混成同一條「全量又只改位置」的路徑。
 
 ## Step 2 定案摘要

@@ -16,8 +16,3 @@ export const PLAYER_ID = {
 };
 
 export const COMMAND_TOWER_MAX_HP = 20;
-
-export const STARTING_ETHER = 10;
-
-/** Per-turn income from captured drills etc. (mock until drills are modeled in UI) */
-export const DEFAULT_INCOME_PER_TURN = 2;

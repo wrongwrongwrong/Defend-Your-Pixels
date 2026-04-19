@@ -6,9 +6,7 @@ import Unit from "../entities/Unit";
 
 export default function Board({
   gameState,
-  onUpgrade,
   activePlayer,
-  upgradesEnabled = true,
   selectedTokenId = null,
   onTokenSelect,
   onCellAction,
@@ -55,10 +53,7 @@ export default function Board({
             token={token}
             playerColor={player.color}
             cellSize={CELL_SIZE}
-            playerEther={player.ether}
             isActivePlayer={player.id === activePlayer}
-            onUpgrade={onUpgrade}
-            upgradesEnabled={upgradesEnabled}
             selected={token.id === selectedTokenId}
             onSelect={onTokenSelect}
           />

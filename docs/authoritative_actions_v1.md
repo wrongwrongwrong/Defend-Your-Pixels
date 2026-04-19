@@ -4,9 +4,9 @@
 
 ## 目前狀態
 
-- 目前已實作並 authoritative 生效的 action 是 `end_turn`、`move_unit`、`capture`、`act_on_target`。
+- 目前已實作並 authoritative 生效的 action 是 `end_turn`、`move_unit`、`attack_in_direction`。
 - `upgrade_unit` 已退出目前 integration prototype 範圍；UI 在 backend 模式下停用。
-- `move_unit` 目前已先接在 tracker-driven flow；React UI 尚未提供手動下達 move 指令的控制。
+- `move_unit` 目前同時可由 tracker flow 與 React validation layer 送出。
 
 ## WebSocket 訊息
 
@@ -34,7 +34,7 @@
 預期結果：
 
 - Python 執行 `GameState.end_turn()`
-- `turn`、`active_player`、`income_per_turn` 相關結果由 Python 更新
+- `turn`、`active_player`、`move_countdown` 等結果由 Python 更新
 - 新 `board_state` 廣播給 React
 
 ### `move_unit`
@@ -52,8 +52,8 @@
 目前狀態：
 
 - 已由 Python backend 實作
-- 目前主要由 tracker flow 產生 move intent
-- React UI 端尚未提供手動 move 控制
+- 可由 tracker flow 產生 move intent
+- React validation layer 也可手動送出 move intent
 
 Python 端行為：
 
@@ -62,42 +62,25 @@ Python 端行為：
 - 成功時更新狀態並廣播新 `board_state`
 - 失敗時更新 `last_action`
 
-### `capture`
+### `attack_in_direction`
 
-用途：讓單位嘗試佔領當前所在格位的 ether drill，由 Python rules 驗證並更新 `board_state`。
-
-```json
-{
-  "action": "capture",
-  "unit_id": "u0"
-}
-```
-
-Python 端行為：
-
-- 驗證 `unit_id`
-- 呼叫 `GameState.capture(...)`
-- 成功時更新 drill owner、income 與 `last_action`
-- 失敗時更新 `last_action`
-
-### `act_on_target`
-
-用途：讓單位對目標格執行攻擊 / 修復等行為，由 Python rules 驗證並更新 `board_state`。
+用途：讓攻擊單位沿 8 個方向之一做直線攻擊，由 Python rules 判定第一個合法目標以及硬地形擋線。
 
 ```json
 {
-  "action": "act_on_target",
+  "action": "attack_in_direction",
   "unit_id": "u0",
-  "target": { "x": 4, "y": 4 }
+  "direction": "up_right"
 }
 ```
 
 Python 端行為：
 
-- 驗證 `unit_id` 與 `target`
-- 呼叫 `GameState.act_on_target(...)`
-- 成功時更新單位 / 塔 / obstacle 等狀態與 `last_action`
-- 失敗時更新 `last_action`
+- 驗證 `unit_id` 與 `direction`
+- 呼叫 `GameState.attack_in_direction(...)`
+- 沿指定方向搜尋第一個合法敵方目標
+- 若先遇到硬地形則攻擊失敗
+- 成功時更新 HQ / resource tile 狀態與 `last_action`
 
 ## 暫不納入 v1 的 action
 
@@ -112,19 +95,7 @@ Python 端行為：
 
 ## 下一個建議切入的 action
 
-目前 `move_unit`、`capture`、`act_on_target` 已切入。下一個可考慮的 action 取決於 prototype 需求，例如：
-
-- `push`
-
-例如 `push` 可考慮：
-
-```json
-{
-  "action": "push",
-  "unit_id": "u0",
-  "direction": "right"
-}
-```
+目前 `move_unit` 與 `attack_in_direction` 已切入。下一個 action 是否需要新增，取決於後續 prototype 是否擴充 upgrade、special attack、或 hidden-information flow。
 
 ## 與 tracker 的關係
 

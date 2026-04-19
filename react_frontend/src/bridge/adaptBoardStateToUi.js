@@ -22,7 +22,6 @@ export function adaptBoardStateToUi(raw) {
     ...baseState,
     turn: numberOr(raw.turn, baseState.turn),
     activePlayer: numberOr(raw.active_player, baseState.activePlayer),
-    phase: baseState.phase,
     gameOver: booleanOr(raw.game_over, baseState.gameOver),
     winner: raw.winner ?? null,
     moveCountdown: adaptMoveCountdown(raw.move_countdown, baseState.moveCountdown),
@@ -60,6 +59,12 @@ function adaptPlayers(rawPlayers, basePlayers) {
       ...basePlayer,
       ether: numberOr(rawPlayer.ether, basePlayer.ether),
       incomePerTurn: numberOr(rawPlayer.income_per_turn, basePlayer.incomePerTurn),
+      hqName:
+        typeof rawPlayer.hq_name === "string" ? rawPlayer.hq_name : basePlayer.hqName,
+      resourceName:
+        typeof rawPlayer.resource_name === "string"
+          ? rawPlayer.resource_name
+          : basePlayer.resourceName,
       commandTowerHp: numberOr(rawPlayer.command_tower_hp, basePlayer.commandTowerHp),
       commandTowerMaxHp: numberOr(
         rawPlayer.command_tower_max_hp,
@@ -85,6 +90,7 @@ function adaptTokensByOwner(rawUnits, players) {
     tokensByOwner.get(owner).push({
       id: String(unit.id),
       kind: unit.kind ?? DEFAULT_UNIT_KIND,
+      themeName: typeof unit.theme_name === "string" ? unit.theme_name : null,
       hp: numberOr(unit.hp, 0),
       maxHp: numberOr(unit.max_hp, numberOr(unit.hp, 0)),
       position: adaptPosition(unit.position),

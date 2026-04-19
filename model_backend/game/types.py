@@ -43,12 +43,34 @@ class Direction(Enum):
         }[self]
 
 
+class AttackDirection(Enum):
+    UP = "up"
+    DOWN = "down"
+    LEFT = "left"
+    RIGHT = "right"
+    UP_LEFT = "up_left"
+    UP_RIGHT = "up_right"
+    DOWN_LEFT = "down_left"
+    DOWN_RIGHT = "down_right"
+
+    def delta(self) -> Pos:
+        return {
+            AttackDirection.UP: Pos(0, -1),
+            AttackDirection.DOWN: Pos(0, 1),
+            AttackDirection.LEFT: Pos(-1, 0),
+            AttackDirection.RIGHT: Pos(1, 0),
+            AttackDirection.UP_LEFT: Pos(-1, -1),
+            AttackDirection.UP_RIGHT: Pos(1, -1),
+            AttackDirection.DOWN_LEFT: Pos(-1, 1),
+            AttackDirection.DOWN_RIGHT: Pos(1, 1),
+        }[self]
+
+
 class TerrainType(Enum):
     PLAIN = "plain"
     HIGHWAY = "highway"  # 0.5 move cost, but disables attack/defend abilities this turn
     FORTRESS = "fortress"  # 2 move cost, +range for attacker / cheaper shield for defender
     MOUNTAIN = "mountain"  # same as fortress for prototype
-    ETHER_DRILL = "ether_drill"  # capturable resource tile
     BLOCKED = "blocked"  # impassable (obstacles)
 
 

@@ -168,7 +168,7 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
             await broadcast(build_board_state_message(serialize_game_state(game, last_unit_metadata)))
             await broadcast(build_tracker_message(snapshot_for_ui))
 
-            cv2.imshow("Pixel Defense — Camera View  [Q to quit]", annotated)
+            cv2.imshow("Old Mick MVP — Camera View  [Q to quit]", annotated)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 print("[Camera] Quit signal received.")
@@ -183,7 +183,7 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
 
 async def async_main():
     print("=" * 55)
-    print("  Pixel Defense Live Tracker")
+    print("  Old Mick MVP Live Tracker")
     print(f"  ws://{WS_HOST}:{WS_PORT}")
     print("=" * 55)
     print()

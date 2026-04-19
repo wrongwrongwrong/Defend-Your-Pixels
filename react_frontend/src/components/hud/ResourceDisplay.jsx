@@ -1,4 +1,4 @@
-// Per-player HUD: Command Tower HP + Ether (matches pitch / model_backend naming)
+// Per-player HUD for the Old Mick MVP validation layer.
 
 import { hpColor } from "../../game/gameLogic";
 
@@ -21,6 +21,7 @@ export default function ResourceDisplay({ player, isActive }) {
       <div className={`flex items-center gap-2 font-bold text-sm ${accent}`}>
         <span className="text-base">{isBlue ? "🔵" : "🔴"}</span>
         <span>Player {player.id}</span>
+        <span className="text-xs font-normal text-slate-500">{player.hqName ?? "HQ"}</span>
         <span className="text-xs font-normal text-slate-500 ml-auto">
           {player.zone}
           {isActive && <span className="text-cyan-300 ml-1">· your turn</span>}
@@ -28,7 +29,7 @@ export default function ResourceDisplay({ player, isActive }) {
       </div>
 
       <div className="flex items-center gap-2 text-xs text-slate-400">
-        <span className="w-24 shrink-0">Command Tower</span>
+        <span className="w-24 shrink-0">{player.hqName ?? "HQ"}</span>
         <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full hp-bar-fill"
@@ -41,9 +42,9 @@ export default function ResourceDisplay({ player, isActive }) {
       </div>
 
       <div className="flex items-center gap-2 text-xs text-slate-400">
-        <span className="w-24 shrink-0">Ether</span>
+        <span className="w-24 shrink-0">{player.resourceName ?? "Resources"}</span>
         <span className="text-amber-300 font-bold">{player.ether}</span>
-        <span className="text-slate-500">+{player.incomePerTurn ?? 0}/turn (next active)</span>
+        <span className="text-slate-500">placeholder contract field for future economy work</span>
       </div>
     </div>
   );

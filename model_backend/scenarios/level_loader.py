@@ -7,7 +7,6 @@ Symbols
 -------
   #  wall / border (blocked)
   . or space  walkable floor
-  E  treated as wall (#) - ether/drill disabled
   H  Player 1 command tower (headquarters)
   h  Player 2 command tower
   A  Player 1 attacker      a  Player 2 attacker
@@ -21,7 +20,7 @@ from pathlib import Path
 from model_backend.game import Attacker, CommandTower, Defender, GameState, PlayerId
 from model_backend.game.types import Pos, TerrainType
 
-_GRID_CHARS = set("#. EHhAaDd ")
+_GRID_CHARS = set("#. HhAaDd ")
 
 
 def load_level_from_path(path: str | Path) -> GameState:
@@ -56,8 +55,6 @@ def load_level_from_path(path: str | Path) -> GameState:
                 game.board.get(pos).terrain = TerrainType.BLOCKED
             elif char in " .":
                 game.board.get(pos).terrain = TerrainType.PLAIN
-            elif char == "E":
-                game.board.get(pos).terrain = TerrainType.BLOCKED
             elif char == "H":
                 game.board.get(pos).terrain = TerrainType.PLAIN
                 game.towers[PlayerId.P1] = CommandTower(PlayerId.P1, pos=pos)

@@ -19,13 +19,14 @@ from typing import Dict, Optional
 import heapq
 
 from .board import Board
-from .entities import Attacker, CommandTower, Defender, EtherDrill, Obstacle, Pixel, Unit
-from .types import Direction, PlayerId, Pos, TerrainType
+from .entities import Attacker, CommandTower, Defender, Obstacle, Pixel, Unit
+from .types import AttackDirection, Direction, PlayerId, Pos, TerrainType
 
 
 @dataclass(slots=True)
 class PlayerState:
     player: PlayerId
+    # Placeholder contract fields kept for later resource/economy work.
     ether: int = 0
     income_per_turn: int = 0
 
@@ -39,7 +40,6 @@ class GameState:
     """
 
     PIXELS_PER_PLAYER_DEFAULT = 35
-    PIXELS_DESTROYED_TO_WIN = 20
     MOVE_COUNTDOWN_SECONDS = 10.0
 
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
@@ -62,17 +62,10 @@ class GameState:
         self.towers: Dict[PlayerId, CommandTower] = {}
 
         self.units: Dict[str, Unit] = {}
-        self.drills: Dict[Pos, EtherDrill] = {}
         self.obstacles: Dict[Pos, Obstacle] = {}
         self.pixels: Dict[str, Pixel] = {}
-        # How many enemy pixels each player has destroyed (win at PIXELS_DESTROYED_TO_WIN).
-        self.pixels_destroyed_by: Dict[PlayerId, int] = {PlayerId.P1: 0, PlayerId.P2: 0}
 
     # --- Setup helpers ---
-    def add_drill(self, pos: Pos, yield_per_turn: int = 1) -> None:
-        self.drills[pos] = EtherDrill(pos=pos, owner=None, yield_per_turn=yield_per_turn)
-        self.board.set_terrain(pos, TerrainType.ETHER_DRILL)
-
     def add_unit(self, unit: Unit) -> None:
         self.units[unit.id] = unit
 
@@ -133,19 +126,17 @@ class GameState:
     def recompute_income(self) -> None:
         for p in self.players.values():
             p.income_per_turn = 0
-        for d in self.drills.values():
-            if d.owner is not None:
-                self.players[d.owner].income_per_turn += d.yield_per_turn
 
     def start_turn(self) -> None:
         if self.game_over:
             return
         self.clear_move_countdown()
         self.recompute_income()
-        # Ether / drill income disabled for pixel-win mode.
+        # Economy is currently out of scope for the Old Mick MVP.
         for u in self.units.values():
             if u.owner == self.active_player:
                 u.new_turn()
+        self._sync_defender_protection()
         self.last_action = f"Player {int(self.active_player)} turn started"
 
     def end_turn(self) -> None:
@@ -249,6 +240,44 @@ class GameState:
     def obstacle_at(self, p: Pos) -> Optional[Obstacle]:
         return self.obstacles.get(p)
 
+    def defender_protection_tiles(self, owner: PlayerId) -> set[Pos]:
+        protected: set[Pos] = set()
+        for unit in self.units.values():
+            if not isinstance(unit, Defender) or unit.owner != owner:
+                continue
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    pos = Pos(unit.pos.x + dx, unit.pos.y + dy)
+                    if self.board.in_bounds(pos):
+                        protected.add(pos)
+        return protected
+
+    def _sync_defender_protection(self) -> None:
+        protected_by_owner = {
+            PlayerId.P1: self.defender_protection_tiles(PlayerId.P1),
+            PlayerId.P2: self.defender_protection_tiles(PlayerId.P2),
+        }
+        for pixel in self.pixels.values():
+            pixel.protection_layers = 1 if pixel.pos in protected_by_owner[pixel.owner] else 0
+
+    def attack_target_at(self, p: Pos, attacker_owner: PlayerId) -> Pixel | CommandTower | None:
+        pixel = self.pixel_at(p)
+        if pixel is not None and pixel.owner != attacker_owner:
+            return pixel
+
+        tower = self.tower_at(p)
+        if tower is not None and tower.owner != attacker_owner:
+            return tower
+
+        return None
+
+    def hard_terrain_blocks_attack(self, p: Pos) -> bool:
+        if not self.board.in_bounds(p):
+            return False
+        if self.board.get(p).terrain == TerrainType.BLOCKED:
+            return True
+        return self.obstacle_at(p) is not None
+
     def move_cost(self, p: Pos) -> float:
         t = self.board.get(p).terrain
         if t == TerrainType.HIGHWAY:
@@ -256,29 +285,6 @@ class GameState:
         if t in (TerrainType.FORTRESS, TerrainType.MOUNTAIN):
             return 2.0
         return 1.0
-
-    def move_unit(self, unit_id: str, direction: Direction) -> bool:
-        u = self._require_active_unit(unit_id, action_name="move that unit")
-        if u is None:
-            return False
-        if u.ap <= 0:
-            self.last_action = f"{unit_id} has no actions left this turn"
-            return False
-        nxt = u.pos + direction.delta()
-        if self.is_blocked(nxt) or self.unit_at(nxt) is not None:
-            self.last_action = f"{unit_id} could not move to ({nxt.x}, {nxt.y})"
-            return False
-        cost = self.move_cost(nxt)
-        if u.move_points < cost:
-            self.last_action = f"{unit_id} does not have enough move points"
-            return False
-        u.move_points -= cost
-        u.pos = nxt
-        if self.board.get(nxt).terrain == TerrainType.HIGHWAY:
-            u.on_highway = True
-        self.last_action = f"{unit_id} moved to ({nxt.x}, {nxt.y})"
-        self.start_move_countdown(unit_id)
-        return True
 
     def reachable_positions(self, unit_id: str) -> Dict[Pos, float]:
         """
@@ -347,171 +353,77 @@ class GameState:
         u.pos = dest
         if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
+        self._sync_defender_protection()
         self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
         self.start_move_countdown(unit_id)
         return True
 
-    def capture(self, unit_id: str) -> bool:
-        self.last_action = "Ether/drill capture disabled (#)"
-        return False
+    def trace_attack_line(
+        self, unit_id: str, direction: AttackDirection
+    ) -> tuple[Pixel | CommandTower | None, str | None]:
+        attacker = self.units[unit_id]
+        step = direction.delta()
+        current = attacker.pos + step
 
-    def push(self, unit_id: str, direction: Direction) -> bool:
-        u = self._require_active_unit(unit_id, action_name="push with that unit")
-        if u is None:
+        while self.board.in_bounds(current):
+            if self.hard_terrain_blocks_attack(current):
+                return None, f"{unit_id} line attack blocked at ({current.x}, {current.y})"
+
+            target = self.attack_target_at(current, attacker.owner)
+            if target is not None:
+                return target, None
+
+            current = current + step
+
+        return None, f"{unit_id} found no enemy target on the {direction.value} line"
+
+    def attack_in_direction(self, unit_id: str, direction: AttackDirection) -> bool:
+        attacker = self._require_active_unit(unit_id, action_name="attack with that unit")
+        if attacker is None:
             return False
-        if u.ap <= 0:
-            self.last_action = f"{unit_id} has no actions left this turn"
+        if not isinstance(attacker, Attacker):
+            self.last_action = f"{unit_id} cannot perform directional attacks"
             return False
-        enemy_pos = u.pos + direction.delta()
-        enemy = self.unit_at(enemy_pos)
-        if enemy is None or enemy.owner == u.owner:
-            self.last_action = f"{unit_id} has no enemy to push"
-            return False
-        behind = enemy_pos + direction.delta()
-        if self.is_blocked(behind) or self.unit_at(behind) is not None:
-            self.last_action = f"{unit_id} cannot push {enemy.id} into ({behind.x}, {behind.y})"
-            return False
-        u.ap -= 1
-        enemy.pos = behind
-        self._finish_turn_after_action(f"{unit_id} pushed {enemy.id} to ({behind.x}, {behind.y})")
-        return True
-
-    def tiles_in_action_range(self, unit_id: str) -> set[Pos]:
-        u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act() or u.ap <= 0:
-            return set()
-        if u.on_highway:
-            return set()
-
-        rng = getattr(u, "range_base", getattr(u, "shield_range", 1))
-        tiles: set[Pos] = set()
-        for dy in range(-rng, rng + 1):
-            for dx in range(-rng, rng + 1):
-                if abs(dx) + abs(dy) > rng or (dx == 0 and dy == 0):
-                    continue
-                p = Pos(u.pos.x + dx, u.pos.y + dy)
-                if self.board.in_bounds(p):
-                    tiles.add(p)
-        return tiles
-
-    def valid_action_targets(self, unit_id: str) -> set[Pos]:
-        u = self.units[unit_id]
-        targets: set[Pos] = set()
-        for pos in self.tiles_in_action_range(unit_id):
-            unit = self.unit_at(pos)
-            tower = self.tower_at(pos)
-            obstacle = self.obstacle_at(pos)
-
-            if isinstance(u, Attacker):
-                pix = self.pixel_at(pos)
-                if pix is not None and pix.owner != u.owner:
-                    targets.add(pos)
-                    continue
-                if unit is not None and unit.owner != u.owner:
-                    targets.add(pos)
-                    continue
-                if tower is not None and tower.owner != u.owner:
-                    targets.add(pos)
-                    continue
-                if obstacle is not None and obstacle.owner != u.owner:
-                    targets.add(pos)
-                    continue
-
-            if isinstance(u, Defender):
-                if unit is not None and unit.owner == u.owner and unit.hp < unit.max_hp:
-                    targets.add(pos)
-                    continue
-                if tower is not None and tower.owner == u.owner and tower.hp < tower.max_hp:
-                    targets.add(pos)
-                    continue
-
-        return targets
-
-    def act_on_target(self, unit_id: str, target: Pos) -> bool:
-        u = self._require_active_unit(unit_id, action_name="act with that unit")
-        if u is None:
-            return False
-        if u.ap <= 0:
+        if attacker.ap <= 0:
             self.last_action = f"{unit_id} cannot act right now"
             return False
-        if u.on_highway:
-            self.last_action = f"{unit_id} cannot act after moving onto a highway"
-            return False
-        if target not in self.valid_action_targets(unit_id):
-            self.last_action = f"{unit_id} has no valid action on ({target.x}, {target.y})"
+        if attacker.on_highway:
+            self.last_action = f"{unit_id} cannot attack after moving onto a highway"
             return False
 
-        success = False
+        target, error = self.trace_attack_line(unit_id, direction)
+        if target is None:
+            self.last_action = error or f"{unit_id} attack failed"
+            return False
+
         action_text = None
-        if isinstance(u, Attacker):
-            pix = self.pixel_at(target)
-            if pix is not None and pix.owner != u.owner:
-                del self.pixels[pix.id]
-                self.pixels_destroyed_by[u.owner] += 1
-                action_text = f"{unit_id} destroyed enemy pixel at ({target.x}, {target.y})"
-                success = True
-            enemy = self.unit_at(target)
-            if not success and enemy is not None and enemy.owner != u.owner:
-                enemy.hp -= 2
-                if enemy.hp <= 0:
-                    action_text = f"{unit_id} defeated {enemy.id}"
-                    del self.units[enemy.id]
-                else:
-                    action_text = f"{unit_id} hit {enemy.id} ({enemy.hp}/{enemy.max_hp})"
-                success = True
-            if not success:
-                tower = self.tower_at(target)
-                if tower is not None and tower.owner != u.owner:
-                    tower.hp = max(0, tower.hp - 2)
-                    action_text = f"{unit_id} hit P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
-                    success = True
-                if not success:
-                    obstacle = self.obstacle_at(target)
-                    if obstacle is not None and obstacle.owner != u.owner:
-                        obstacle.hp -= 2
-                        if obstacle.hp <= 0:
-                            del self.obstacles[target]
-                            self.board.set_terrain(target, TerrainType.PLAIN)
-                            action_text = f"{unit_id} destroyed obstacle at ({target.x}, {target.y})"
-                        else:
-                            action_text = f"{unit_id} damaged obstacle at ({target.x}, {target.y})"
-                        success = True
-        elif isinstance(u, Defender):
-            ally = self.unit_at(target)
-            if ally is not None and ally.owner == u.owner:
-                ally.hp = min(ally.max_hp, ally.hp + 1)
-                action_text = f"{unit_id} repaired {ally.id} ({ally.hp}/{ally.max_hp})"
-                success = True
+        if isinstance(target, Pixel):
+            if target.protection_layers > 0:
+                target.protection_layers = 0
+                action_text = (
+                    f"{unit_id} stripped protection from enemy {target.theme_name} at ({target.pos.x}, {target.pos.y})"
+                )
             else:
-                tower = self.tower_at(target)
-                if tower is not None and tower.owner == u.owner:
-                    tower.hp = min(tower.max_hp, tower.hp + 1)
-                    action_text = f"{unit_id} repaired P{int(tower.owner)} tower ({tower.hp}/{tower.max_hp})"
-                    success = True
+                del self.pixels[target.id]
+                action_text = (
+                    f"{unit_id} destroyed enemy {target.theme_name} at ({target.pos.x}, {target.pos.y})"
+                )
+        else:
+            target.hp = max(0, target.hp - 2)
+            action_text = (
+                f"{unit_id} hit enemy {target.theme_name} ({target.hp}/{target.max_hp})"
+            )
 
-        if not success:
-            return False
-
-        u.ap -= 1
-        self._finish_turn_after_action(action_text or f"{unit_id} acted on ({target.x}, {target.y})")
+        attacker.ap -= 1
+        self._finish_turn_after_action(action_text)
         return True
 
-    def check_game_over(self) -> None:
-        """Win when a player has destroyed PIXELS_DESTROYED_TO_WIN enemy pixels."""
-        if self.game_over:
-            return
-        for pid in (PlayerId.P1, PlayerId.P2):
-            if self.pixels_destroyed_by[pid] >= self.PIXELS_DESTROYED_TO_WIN:
-                self.game_over = True
-                self.winner = pid
-                self.last_action = (
-                    f"P{int(pid)} wins: destroyed {self.PIXELS_DESTROYED_TO_WIN} enemy pixels"
-                )
-                return
+    def _finish_turn_after_action(self, action_text: str) -> None:
+        self.last_action = action_text
+        self.end_game()
 
     def end_game(self) -> None:
-        """Evaluate win/loss (pixel quota); call after a turn ends or after a decisive action."""
-        self.check_game_over()
+        """Evaluate win/loss; call after a turn ends or after a decisive action."""
         self._update_game_over_towers()
         if self.game_over:
             self.clear_move_countdown()
@@ -526,12 +438,12 @@ class GameState:
         self.game_over = True
         if PlayerId.P1 in defeated and PlayerId.P2 in defeated:
             self.winner = None
-            self.last_action = f"{self.last_action} | Draw"
+            self.last_action = f"{self.last_action} | Both HQs destroyed: Draw"
             return
 
         loser = defeated[0]
         self.winner = PlayerId.P1 if loser == PlayerId.P2 else PlayerId.P2
-        self.last_action = f"{self.last_action} | Player {int(self.winner)} wins"
+        self.last_action = f"{self.last_action} | Player {int(self.winner)} wins by destroying the enemy HQ"
 
     # Heat / overload resolution (prototype)
     def overload_check(self, unit: Unit) -> bool:

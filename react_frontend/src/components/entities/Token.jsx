@@ -1,7 +1,6 @@
 // Physical marker on grid — kind: attacker | defender (model_backend UnitKind)
 
-import { useState } from "react";
-import { hpColor, UNIT_STATS } from "../../game/gameLogic";
+import { hpColor } from "../../game/gameLogic";
 import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
 const KIND_RANGE = {
@@ -16,38 +15,24 @@ const DIR_ANGLE = {
   left: 270,
 };
 
-const UPGRADE_COST_ETHER = 5;
-
 export default function Token({
   token,
   playerColor,
   cellSize,
-  onUpgrade,
-  playerEther,
   isActivePlayer,
-  upgradesEnabled,
   selected,
   onSelect,
 }) {
-  const [showUpgrade, setShowUpgrade] = useState(false);
   const kind = token.kind ?? "attacker";
 
   const { accent, glowClass, tokenBorderColor, tokenBackground } = getEntityVisuals(playerColor);
 
-  const maxHp = token.maxHp ?? UNIT_STATS[kind]?.maxHp ?? 30;
+  const maxHp = token.maxHp ?? token.hp ?? 1;
   const barColor = hpColor(token.hp, maxHp);
-  const hpPct = token.hp / maxHp;
+  const hpPct = Math.max(0, token.hp) / Math.max(1, maxHp);
 
   const rangeRadius = (KIND_RANGE[kind] ?? 2) * cellSize;
   const dirAngle = DIR_ANGLE[token.rotation] ?? 0;
-
-  const canAfford = playerEther >= UPGRADE_COST_ETHER;
-  const canUseMenu = isActivePlayer && upgradesEnabled;
-  const upgradeDisabledReason = upgradesEnabled
-    ? !isActivePlayer
-      ? " (not your turn)"
-      : ""
-    : " (upgrade disabled in backend prototype)";
 
   return (
     <div
@@ -64,11 +49,8 @@ export default function Token({
       onClick={(event) => {
         event.stopPropagation();
         onSelect?.(token.id);
-        if (upgradesEnabled) {
-          setShowUpgrade((v) => !v);
-        }
       }}
-      title={`${kind} — HP ${token.hp} | ${token.rotation}${upgradeDisabledReason}`}
+      title={`${kind} — HP ${token.hp} | ${token.rotation}`}
     >
       <div
         className="absolute rounded-full pointer-events-none"
@@ -104,67 +86,6 @@ export default function Token({
           style={{ width: `${hpPct * 100}%`, background: barColor }}
         />
       </div>
-
-      {showUpgrade && upgradesEnabled && (
-        <UpgradeMenu
-          kind={kind}
-          canAfford={canAfford && canUseMenu}
-          cost={UPGRADE_COST_ETHER}
-          onUpgrade={(type) => {
-            onUpgrade?.(token.id, type);
-            setShowUpgrade(false);
-          }}
-          onClose={() => setShowUpgrade(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function UpgradeMenu({ kind, canAfford, cost, onUpgrade, onClose }) {
-  const upgrades =
-    kind === "attacker"
-      ? [
-          { key: "damage", label: "↑ Shot", icon: "⚡" },
-          { key: "heatVent", label: "Vent path", icon: "❄" },
-        ]
-      : [
-          { key: "shield", label: "↑ Shield", icon: "🛡" },
-          { key: "hp", label: "↑ HP", icon: "❤" },
-        ];
-
-  return (
-    <div
-      className="absolute z-50 flex flex-col gap-1 p-2 rounded border border-amber-600 bg-slate-900/95 shadow-xl"
-      style={{ bottom: "110%", left: "50%", transform: "translateX(-50%)", minWidth: 130 }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="text-amber-200 text-xs font-bold text-center mb-1">
-        Upgrade ({cost} ether)
-      </div>
-      {upgrades.map((u) => (
-        <button
-          key={u.key}
-          type="button"
-          disabled={!canAfford}
-          className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold transition
-            ${canAfford
-              ? "hover:bg-amber-900/40 text-amber-100 cursor-pointer"
-              : "text-slate-600 cursor-not-allowed"
-            }`}
-          onClick={() => canAfford && onUpgrade(u.key)}
-        >
-          <span>{u.icon}</span>
-          <span>{u.label}</span>
-        </button>
-      ))}
-      <button
-        type="button"
-        className="text-slate-500 text-xs mt-1 hover:text-slate-300"
-        onClick={onClose}
-      >
-        ✕ close
-      </button>
     </div>
   );
 }

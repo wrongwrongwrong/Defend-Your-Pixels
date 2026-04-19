@@ -1,11 +1,9 @@
-// Turn-based shell aligned with model_backend + pitch: Ether, Command Tower, Attacker/Defender tokens.
+// Temporary React validation layer for the authoritative Old Mick MVP backend.
 
 import { useCallback, useMemo, useState } from "react";
 import Board from "../components/board/Board";
 import ResourceDisplay from "../components/hud/ResourceDisplay";
-import PhaseIndicator from "../components/hud/PhaseIndicator";
 import { useWebSocket } from "../hooks/bridge/useWebSocket";
-import { endTurn, trySpendEther } from "../game/gameLogic";
 
 const ACTION_MODE = {
   MOVE: "move",
@@ -19,10 +17,34 @@ function formatDisplayCoordinates(text) {
   });
 }
 
+function deriveAttackDirection(from, to) {
+  if (!from || !to) return null;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return null;
+
+  const straight = dx === 0 || dy === 0;
+  const diagonal = Math.abs(dx) === Math.abs(dy);
+  if (!straight && !diagonal) return null;
+
+  const key = `${Math.sign(dx)},${Math.sign(dy)}`;
+  return {
+    "0,-1": "up",
+    "0,1": "down",
+    "-1,0": "left",
+    "1,0": "right",
+    "-1,-1": "up_left",
+    "1,-1": "up_right",
+    "-1,1": "down_left",
+    "1,1": "down_right",
+  }[key] ?? null;
+}
+
 export default function App() {
-  const { gameState, setGameState, connected, usingMock, sendAction } = useWebSocket();
+  const { gameState, connected, usingMock, sendAction } = useWebSocket();
   const [selectedTokenId, setSelectedTokenId] = useState(null);
   const [actionMode, setActionMode] = useState(ACTION_MODE.MOVE);
+  const [interactionHint, setInteractionHint] = useState("");
   const isLiveMode = !usingMock;
 
   const sendBackendAction = useCallback(
@@ -38,56 +60,10 @@ export default function App() {
       sendBackendAction({ action: "end_turn" });
       return;
     }
-    setGameState((prev) => endTurn(prev));
-  }, [isLiveMode, sendBackendAction, setGameState]);
+    setInteractionHint("Backend offline. End turn validation requires authoritative Python state.");
+  }, [isLiveMode, sendBackendAction]);
 
-  const handleUpgrade = useCallback(
-    (tokenId, upgradeType) => {
-      if (isLiveMode) return;
-      setGameState((prev) => {
-        const pid = prev.activePlayer;
-        const owns = prev.players.some(
-          (p) => p.id === pid && p.tokens.some((t) => t.id === tokenId)
-        );
-        if (!owns) return prev;
-
-        const { ok, players: afterSpend } = trySpendEther(prev.players, pid, 5);
-        if (!ok) return prev;
-
-        const players = afterSpend.map((player) => {
-          if (player.id !== pid) return player;
-          return {
-            ...player,
-            tokens: player.tokens.map((token) => {
-              if (token.id !== tokenId) return token;
-              if (upgradeType === "damage" && token.kind === "attacker") {
-                return { ...token, atkBonus: (token.atkBonus ?? 0) + 2 };
-              }
-              if (upgradeType === "heatVent" && token.kind === "attacker") {
-                return { ...token, heatVent: true };
-              }
-              if (upgradeType === "shield" && token.kind === "defender") {
-                return { ...token, shieldBonus: (token.shieldBonus ?? 0) + 1 };
-              }
-              if (upgradeType === "hp") {
-                return {
-                  ...token,
-                  maxHp: (token.maxHp ?? 40) + 10,
-                  hp: (token.hp ?? 40) + 10,
-                };
-              }
-              return token;
-            }),
-          };
-        });
-
-        return { ...prev, players };
-      });
-    },
-    [isLiveMode, setGameState]
-  );
-
-  const { phase, players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
+  const { players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
   const p1 = players.find((p) => p.zone === "bottom");
   const p2 = players.find((p) => p.zone === "top");
   const selectedToken = useMemo(
@@ -109,34 +85,47 @@ export default function App() {
   const endTurnLabel = countdownActive
     ? `Turn ending in ${countdownSeconds.toFixed(1)}s`
     : usingMock
-      ? "End turn"
+      ? "Backend offline"
       : "Send end turn";
 
   const selectionStatusText = selectedToken
-    ? `Selected ${selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
+    ? `Selected ${selectedToken.themeName ?? selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
     : "Select one of the active player's tokens, then click a grid cell.";
 
   const footerHint = usingMock
-    ? "End turn -> next player gains Ether (incomePerTurn). Upgrades cost 5 ether (your turn, your token)."
-    : "Python board_state is authoritative. Select a token, choose move/act mode, then click a grid cell.";
+    ? "Backend offline. This React layer is for authoritative-state validation, not local gameplay simulation."
+    : "Python board_state is authoritative. Move mode clicks a destination; Act mode clicks a straight or diagonal attack line.";
 
   const handleTokenSelect = useCallback((tokenId) => {
+    setInteractionHint("");
     setSelectedTokenId((prev) => (prev === tokenId ? null : tokenId));
   }, []);
 
   const handleBoardCellAction = useCallback(
     (position) => {
-      if (!isLiveMode || !selectedToken || !sendAction) return;
+      if (!isLiveMode || !selectedToken || !sendAction) {
+        if (!isLiveMode) {
+          setInteractionHint("Backend offline. Move and attack validation require authoritative Python responses.");
+        }
+        return;
+      }
 
       if (actionMode === ACTION_MODE.ACT) {
+        const direction = deriveAttackDirection(selectedToken.position, position);
+        if (!direction) {
+          setInteractionHint("Act mode only accepts straight or diagonal lines from the selected token.");
+          return;
+        }
+        setInteractionHint(`Attack queued: ${selectedToken.themeName ?? selectedToken.kind} -> ${direction.replaceAll("_", " ")}`);
         sendBackendAction({
-          action: "act_on_target",
+          action: "attack_in_direction",
           unit_id: String(selectedToken.id),
-          target: position,
+          direction,
         });
         return;
       }
 
+      setInteractionHint(`Move queued: ${selectedToken.themeName ?? selectedToken.kind} -> (${position.x + 1}, ${position.y + 1})`);
       sendBackendAction({
         action: "move_unit",
         unit_id: String(selectedToken.id),
@@ -155,13 +144,13 @@ export default function App() {
         className="text-2xl font-bold tracking-widest text-cyan-300 uppercase"
         style={{ textShadow: "0 0 16px rgba(34,211,238,0.5)" }}
       >
-        ◈ Pixel Defense
+        ◈ Old Mick Validation Layer
       </h1>
 
       <div className="flex items-center gap-2 text-xs">
         <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
         <span className={connected ? "text-green-400" : "text-slate-500"}>
-          {connected ? "Python state connected" : "Mock board (no backend)"}
+          {connected ? "Python state connected" : "Backend offline - showing last fallback snapshot"}
         </span>
       </div>
 
@@ -189,6 +178,19 @@ export default function App() {
           <span className="text-cyan-200">{formatDisplayCoordinates(lastAction)}</span>
         </div>
       )}
+
+      {interactionHint && (
+        <div className="max-w-2xl rounded border border-cyan-900 bg-cyan-950/30 px-4 py-2 text-xs text-cyan-100 text-center">
+          <span className="text-cyan-400">Interaction:</span> {interactionHint}
+        </div>
+      )}
+
+      <ValidationSummary
+        players={players}
+        selectedToken={selectedToken}
+        actionMode={actionMode}
+        isLiveMode={isLiveMode}
+      />
 
       {countdownActive && (
         <div className="w-full max-w-2xl rounded border border-amber-700/70 bg-amber-950/50 px-4 py-3 text-center text-sm text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.12)]">
@@ -225,23 +227,19 @@ export default function App() {
         </div>
       )}
 
-      <PhaseIndicator phase={phase} />
-
       {p2 && (
         <ResourceDisplay player={p2} isActive={p2.id === activePlayer} />
       )}
 
       <div className="relative">
-        <Board
-          gameState={gameState}
-          onUpgrade={handleUpgrade}
-          activePlayer={activePlayer}
-          upgradesEnabled={usingMock}
-          selectedTokenId={selectedTokenId}
-          onTokenSelect={handleTokenSelect}
-          onCellAction={handleBoardCellAction}
-          actionMode={actionMode}
-        />
+          <Board
+            gameState={gameState}
+            activePlayer={activePlayer}
+            selectedTokenId={selectedTokenId}
+            onTokenSelect={handleTokenSelect}
+            onCellAction={handleBoardCellAction}
+            actionMode={actionMode}
+          />
 
         {gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center rounded bg-black/85 z-50">
@@ -253,7 +251,7 @@ export default function App() {
             </div>
             <p className="text-slate-400 text-sm mt-3">
               {towerDown
-                ? `Player ${towerDown.id} Command Tower destroyed.`
+                ? `${towerDown.hqName ?? "HQ"} destroyed.`
                 : "Match ended."}
             </p>
             <button
@@ -273,10 +271,10 @@ export default function App() {
 
       <div className="flex gap-4 text-xs text-slate-500 mt-1 flex-wrap justify-center max-w-xl text-center">
         <span>
-          <strong className="text-slate-400">Attacker</strong> — offensive marker
+          <strong className="text-slate-400">Riflemen / Mob</strong> — directional attack role
         </span>
         <span>
-          <strong className="text-slate-400">Defender</strong> — area denial / shield role
+          <strong className="text-slate-400">Old Mick / Cassowary</strong> — passive 3x3 protection role
         </span>
         <span className="text-amber-700/90">
           {footerHint}
@@ -311,14 +309,6 @@ function BackendControls({
       </button>
       <button
         type="button"
-        className="rounded border border-amber-700 px-3 py-1 text-amber-200 opacity-40"
-        disabled
-        title="Capture is not implemented in the Python prototype yet"
-      >
-        Capture
-      </button>
-      <button
-        type="button"
         className="rounded border border-slate-700 px-3 py-1 text-slate-300 disabled:opacity-40"
         onClick={onClearSelection}
         disabled={!selectedToken}
@@ -327,5 +317,74 @@ function BackendControls({
       </button>
       <span className="text-slate-500">{selectionStatusText}</span>
     </>
+  );
+}
+
+function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
+  const contractChecks = [
+    {
+      label: "Turn / winner / status",
+      ok: true,
+      detail: "top-level board_state fields are present in React state",
+    },
+    {
+      label: "HQ labels and HP",
+      ok: players.every((player) => player.hqName && Number.isFinite(player.commandTowerHp)),
+      detail: "per-player HQ name and HP are visible in HUD",
+    },
+    {
+      label: "Resource labels",
+      ok: players.every((player) => player.resourceName),
+      detail: "per-player resource terminology is visible in HUD",
+    },
+    {
+      label: "Token theme names",
+      ok: players.flatMap((player) => player.tokens ?? []).every((token) => token.themeName || !isLiveMode),
+      detail: "frontend can distinguish Riflemen / Mob / Old Mick / Cassowary",
+    },
+  ];
+
+  return (
+    <div className="w-full max-w-5xl rounded border border-slate-800 bg-slate-950/70 px-4 py-3 text-xs text-slate-300">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-[260px] flex-1">
+          <div className="text-slate-500 uppercase tracking-wide mb-2">Validation HUD</div>
+          <div className="space-y-1">
+            {contractChecks.map((check) => (
+              <div key={check.label} className="flex items-start gap-2">
+                <span className={check.ok ? "text-green-400" : "text-amber-400"}>{check.ok ? "OK" : "WARN"}</span>
+                <span>
+                  <strong className="text-slate-200">{check.label}:</strong> {check.detail}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-w-[260px] flex-1">
+          <div className="text-slate-500 uppercase tracking-wide mb-2">Action Flow Check</div>
+          <div className="space-y-1 text-slate-400">
+            <div>
+              <strong className="text-slate-200">Current mode:</strong> {actionMode === ACTION_MODE.MOVE ? "Move" : "Act"}
+            </div>
+            <div>
+              <strong className="text-slate-200">Selected token:</strong>{" "}
+              {selectedToken ? `${selectedToken.themeName ?? selectedToken.kind} ${selectedToken.id}` : "none"}
+            </div>
+            <div>
+              <strong className="text-slate-200">Move flow:</strong>{" "}
+              {"select token -> click reachable destination"}
+            </div>
+            <div>
+              <strong className="text-slate-200">Attack flow:</strong>{" "}
+              {"select token -> click straight/diagonal line -> send attack_in_direction"}
+            </div>
+            <div>
+              <strong className="text-slate-200">Mode:</strong> {isLiveMode ? "authoritative backend validation" : "mock fallback only"}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

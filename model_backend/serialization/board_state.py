@@ -3,6 +3,7 @@ from __future__ import annotations
 """Serialize the authoritative Python model into the board_state payload."""
 
 from model_backend.game import GameState, PlayerId
+from model_backend.game.entities import themed_hq_name, themed_resource_name
 
 
 def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None = None) -> dict:
@@ -44,6 +45,8 @@ def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
         "id": int(player_id),
         "ether": int(player.ether),
         "income_per_turn": int(player.income_per_turn),
+        "hq_name": themed_hq_name(player_id),
+        "resource_name": themed_resource_name(player_id),
         "command_tower_hp": int(tower.hp) if tower is not None else 0,
         "command_tower_max_hp": int(tower.max_hp) if tower is not None else 0,
     }
@@ -59,6 +62,7 @@ def _serialize_unit(unit, metadata: dict) -> dict:
         "id": str(unit.id),
         "owner": int(unit.owner),
         "kind": unit.kind.value,
+        "theme_name": unit.theme_name,
         "position": {
             "x": int(unit.pos.x),
             "y": int(unit.pos.y),

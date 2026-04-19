@@ -14,6 +14,5 @@ def build_react_integration_level() -> GameState:
     # The live tracker scenario is meant to verify marker-driven movement, so keep
     # the board open instead of filling lanes with default pixels.
     game.pixels.clear()
-    game.pixels_destroyed_by = {pid: 0 for pid in game.players}
     game.last_action = f"Player {int(game.active_player)} turn started"
     return game

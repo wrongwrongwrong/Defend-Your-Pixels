@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pygame
 
-from model_backend.game import Direction, GameState, PlayerId
+from model_backend.game import AttackDirection, Direction, GameState, PlayerId
 from model_backend.game.types import Pos
 
 from .levels import build_pvp_level1, build_solo_range_test, build_turn_cycle_test
@@ -22,12 +22,23 @@ _KEY_TO_DIR = {
     pygame.K_d: Direction.RIGHT,
 }
 
+_ATTACK_KEY_TO_DIR = {
+    pygame.K_w: AttackDirection.UP,
+    pygame.K_s: AttackDirection.DOWN,
+    pygame.K_a: AttackDirection.LEFT,
+    pygame.K_d: AttackDirection.RIGHT,
+    pygame.K_q: AttackDirection.UP_LEFT,
+    pygame.K_e: AttackDirection.UP_RIGHT,
+    pygame.K_z: AttackDirection.DOWN_LEFT,
+    pygame.K_c: AttackDirection.DOWN_RIGHT,
+}
+
 
 class PVPController:
     def __init__(
         self,
         model: GameState | None = None,
-        title: str = "Pixel Defense — Pygame PVP (level1.txt)",
+        title: str = "Old Mick MVP — Pygame PVP (level1.txt)",
         *,
         single_player: bool = False,
     ) -> None:
@@ -42,6 +53,7 @@ class PVPController:
         self._unit_ids: list[str] = []
         self._sel = 0
         self._preview_dest: Pos | None = None
+        self._preview_attack_direction: AttackDirection | None = None
         self._undo_move: tuple[int, int, str, Pos, float, bool] | None = None
         self._any_action_this_turn: bool = False
         self._mode: str = "move"  # "move" or "attack"
@@ -57,6 +69,29 @@ class PVPController:
     def _reset_preview(self) -> None:
         uid = self._selected_id()
         self._preview_dest = self.model.units[uid].pos if uid else None
+        self._preview_attack_direction = AttackDirection.RIGHT if uid else None
+
+    def _attack_preview_positions(self, unit_id: str) -> set[Pos]:
+        unit = self.model.units[unit_id]
+        if unit.owner != self.model.active_player or unit.ap <= 0 or unit.on_highway:
+            return set()
+
+        cells: set[Pos] = set()
+        for direction in AttackDirection:
+            current = unit.pos + direction.delta()
+            while self.model.board.in_bounds(current):
+                cells.add(current)
+                if self.model.hard_terrain_blocks_attack(current):
+                    break
+                current = current + direction.delta()
+        return cells
+
+    def _preview_attack_cell(self, unit_id: str | None) -> Pos | None:
+        if unit_id is None or self._preview_attack_direction is None:
+            return None
+        unit = self.model.units[unit_id]
+        current = unit.pos + self._preview_attack_direction.delta()
+        return current if self.model.board.in_bounds(current) else None
 
     def run(self) -> None:
         running = True
@@ -71,13 +106,13 @@ class PVPController:
 
             uid = self._selected_id()
             reachable = self.model.reachable_positions(uid) if uid and self._mode == "move" else {}
-            attack_tiles: set[Pos] = self.model.valid_action_targets(uid) if uid and self._mode == "attack" else set()
+            attack_tiles: set[Pos] = self._attack_preview_positions(uid) if uid and self._mode == "attack" else set()
             self.view.draw(
                 self.screen,
                 self.model,
                 selected_unit_id=uid,
                 reachable=reachable,
-                preview_dest=self._preview_dest,
+                preview_dest=self._preview_attack_cell(uid) if uid and self._mode == "attack" else self._preview_dest,
                 mode=self._mode,
                 attack_tiles=attack_tiles,
                 confirm_skip=self._confirm_skip,
@@ -142,7 +177,8 @@ class PVPController:
                 elif self._mode == "attack" and self._preview_dest is not None:
                     before_turn = int(self.model.turn)
                     before_player = int(self.model.active_player)
-                    if self.model.act_on_target(uid, self._preview_dest):
+                    direction = self._preview_attack_direction
+                    if direction and self.model.attack_in_direction(uid, direction):
                         if self._model_turn_changed(before_turn, before_player):
                             self._sync_after_turn_change()
                             return True
@@ -163,30 +199,24 @@ class PVPController:
             u.pos = pos
             u.move_points = mp
             u.on_highway = on_hw
+            self.model._sync_defender_protection()
             self._undo_move = None
             self._any_action_this_turn = False
             self._refresh_unit_list()
             self._reset_preview()
             return True
-        if key == pygame.K_q:
+        if key == pygame.K_q and self._mode != "attack":
             self._sel -= 1
             # Selecting a unit defaults to move range preview.
             self._mode = "move"
             self._reset_preview()
             return True
-        if key == pygame.K_e:
+        if key == pygame.K_e and self._mode != "attack":
             self._sel += 1
             # Selecting a unit defaults to move range preview.
             self._mode = "move"
             self._reset_preview()
             return True
-        if key == pygame.K_c:
-            uid = self._selected_id()
-            if uid:
-                if self.model.capture(uid):
-                    self._any_action_this_turn = True
-            return True
-
         if key in _KEY_TO_DIR:
             uid = self._selected_id()
             if uid:
@@ -202,10 +232,9 @@ class PVPController:
                     # Only allow previewing a destination the unit can actually reach this turn.
                     if nxt in reachable:
                         self._preview_dest = nxt
-                else:
-                    attack_tiles = self.model.valid_action_targets(uid)
-                    if nxt in attack_tiles:
-                        self._preview_dest = nxt
+            return True
+        if self._mode == "attack" and key in _ATTACK_KEY_TO_DIR:
+            self._preview_attack_direction = _ATTACK_KEY_TO_DIR[key]
             return True
         return True
 
@@ -254,7 +283,7 @@ def main() -> None:
 def main_solo_range_test() -> None:
     PVPController(
         model=build_solo_range_test(),
-        title="Pixel Defense — Solo Range Test",
+        title="Old Mick MVP — Solo Range Test",
         single_player=True,
     ).run()
 
@@ -262,5 +291,5 @@ def main_solo_range_test() -> None:
 def main_turn_cycle_test() -> None:
     PVPController(
         model=build_turn_cycle_test(),
-        title="Pixel Defense — Turn Cycle Test",
+        title="Old Mick MVP — Turn Cycle Test",
     ).run()

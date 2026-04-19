@@ -1,12 +1,12 @@
-import { hpColor, UNIT_STATS } from "../../game/gameLogic";
+import { hpColor } from "../../game/gameLogic";
 import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
 export default function Unit({ unit, cellSize }) {
   const kind = unit.kind ?? "attacker";
   const { glowClass, unitBorderColor, unitBackground } = getEntityVisuals(unit.playerId);
 
-  const maxHp = unit.maxHp ?? UNIT_STATS[kind]?.maxHp ?? 30;
-  const hpPct = Math.max(0, unit.hp) / maxHp;
+  const maxHp = unit.maxHp ?? unit.hp ?? 1;
+  const hpPct = Math.max(0, unit.hp) / Math.max(1, maxHp);
   const barColor = hpColor(unit.hp, maxHp);
 
   const size = Math.floor(cellSize * 0.65);

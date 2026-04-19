@@ -1,7 +1,4 @@
-"""
-4.2-style view. Cells show the same symbols as the level file:
-  # wall   E drill   H HQ   A / D attacker & defender (P1 uppercase, P2 tinted).
-"""
+"""Pygame board view for the Old Mick MVP prototype."""
 
 from __future__ import annotations
 
@@ -15,7 +12,6 @@ from .support_grid import (
     CELL,
     COLOUR_BG,
     COLOUR_BLOCKED,
-    COLOUR_DRILL,
     COLOUR_GRID,
     COLOUR_HIGHWAY,
     COLOUR_HUD_BG,
@@ -83,18 +79,6 @@ class BoardView:
 
                 if t == TerrainType.BLOCKED:
                     bg = COLOUR_BLOCKED
-                elif t == TerrainType.ETHER_DRILL:
-                    drill = game.drills.get(pos)
-                    if drill is not None and drill.owner is not None:
-                        team = COLOUR_P1 if drill.owner == PlayerId.P1 else COLOUR_P2
-                        # Mix base drill green with team colour.
-                        bg = (
-                            int(COLOUR_DRILL[0] * 0.45 + team[0] * 0.55),
-                            int(COLOUR_DRILL[1] * 0.45 + team[1] * 0.55),
-                            int(COLOUR_DRILL[2] * 0.45 + team[2] * 0.55),
-                        )
-                    else:
-                        bg = COLOUR_DRILL
                 elif t == TerrainType.HIGHWAY:
                     bg = COLOUR_HIGHWAY
                 else:
@@ -150,20 +134,13 @@ class BoardView:
         pix = game.pixel_at(pos)
         if pix is not None:
             col = COLOUR_P1 if pix.owner == PlayerId.P1 else COLOUR_P2
-            if pix.guarded_turns > 0:
+            if pix.protection_layers > 0:
                 col = (min(255, col[0] + 60), min(255, col[1] + 50), 120)
             return "*", col
 
         t = game.board.get(pos).terrain
         if t == TerrainType.BLOCKED:
             return "#", COLOUR_TEXT
-        if t == TerrainType.ETHER_DRILL:
-            drill = game.drills.get(pos)
-            if drill is not None and drill.owner is not None:
-                col = COLOUR_P1 if drill.owner == PlayerId.P1 else COLOUR_P2
-                return "E", col
-            return "E", (180, 255, 160)
-
         return ".", (80, 90, 110)
 
     def _draw_hud(
@@ -174,23 +151,17 @@ class BoardView:
         pygame.draw.rect(surf, COLOUR_HUD_BG, (hx - 4, 0, 300, screen_h))
 
         y = 12
-        p1 = game.players[PlayerId.P1]
-        p2 = game.players[PlayerId.P2]
-        k1 = game.pixels_destroyed_by[PlayerId.P1]
-        k2 = game.pixels_destroyed_by[PlayerId.P2]
         rem1 = sum(1 for px in game.pixels.values() if px.owner == PlayerId.P1)
         rem2 = sum(1 for px in game.pixels.values() if px.owner == PlayerId.P2)
-        win_n = game.PIXELS_DESTROYED_TO_WIN
         lines = [
-            "Map: prototype scenario",
-            "# wall   * pixel (bright = guarded)   H HQ",
+            "Map: Old Mick MVP prototype",
+            "# wall   * resource tile (bright = protected)   H HQ",
             "A/D by colour: P1 blue, P2 red",
             "",
             f"Turn {game.turn}  |  Active P{int(game.active_player)}",
             "",
-            "Ether: # (disabled)   Income: #",
-            f"Pixels destroyed: P1→{k1}  P2→{k2}  (win {win_n})",
-            f"Pixels left: P1={rem1}  P2={rem2}",
+            "Win condition: destroy enemy HQ",
+            f"Resources left: P1={rem1}  P2={rem2}",
             "",
             "Towers:",
         ]
@@ -201,10 +172,10 @@ class BoardView:
             "",
             f"Status: {game.last_action}",
             "",
-            "Q/E cycle | Tab undo move | C disabled",
+            "Q/E cycle | Tab undo move",
             "1 action (red)  2 move (green)",
-            "Atk: shoot pixels/units | Def: self=3×3 guard",
-            "WASD preview | Enter confirm | Space end turn | Esc quit",
+            "Atk: direction line attack | Def: passive 3x3 protection",
+            "Move: WASD | Attack: WASD/QEZC direction | Enter confirm | Space end turn | Esc quit",
         ]
 
         if game.game_over:

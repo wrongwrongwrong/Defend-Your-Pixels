@@ -13,7 +13,7 @@ Important design constraints:
   into the model's Python types (e.g. `Pos`).
 """
 
-from model_backend.game import GameState, Pos
+from model_backend.game import AttackDirection, GameState, Pos
 
 
 def apply_action(game: GameState, action: dict) -> bool:
@@ -35,6 +35,8 @@ def apply_action(game: GameState, action: dict) -> bool:
         return _apply_end_turn(game)
     if action_type == "move_unit":
         return _apply_move_unit(game, action)
+    if action_type == "attack_in_direction":
+        return _apply_attack_in_direction(game, action)
 
     # Unknown verbs are rejected to keep the model safe and make debugging explicit.
     return _reject(game, f"Unknown action: {action_type}")
@@ -75,6 +77,21 @@ def _apply_move_unit(game: GameState, action: dict) -> bool:
     return True
 
 
+def _apply_attack_in_direction(game: GameState, action: dict) -> bool:
+    unit_id = _require_known_unit(game, action, "attack_in_direction")
+    if unit_id is None:
+        return False
+
+    direction = _require_attack_direction(game, action)
+    if direction is None:
+        return False
+
+    ok = game.attack_in_direction(unit_id, direction)
+    if not ok:
+        return False
+    return True
+
+
 def _require_known_unit(game: GameState, action: dict, action_name: str) -> str | None:
     # All unit-referencing actions must include a string `unit_id`.
     unit_id = action.get("unit_id")
@@ -106,6 +123,20 @@ def _require_pos(game: GameState, action: dict, *, field_name: str, action_name:
 
     # Convert transport payload into the model's strongly-typed `Pos`.
     return Pos(x, y)
+
+
+def _require_attack_direction(game: GameState, action: dict) -> AttackDirection | None:
+    raw_direction = action.get("direction")
+    if not isinstance(raw_direction, str):
+        _reject(game, "attack_in_direction missing direction")
+        return None
+
+    normalized = raw_direction.strip().lower().replace("-", "_")
+    try:
+        return AttackDirection(normalized)
+    except ValueError:
+        _reject(game, f"attack_in_direction invalid direction: {raw_direction}")
+        return None
 
 
 def _reject(game: GameState, message: str) -> bool:
