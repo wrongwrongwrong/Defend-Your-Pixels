@@ -109,8 +109,8 @@ Current authoritative `board_state` payload shape:
 | Field | Type | Authoritative | Notes |
 |------|------|---------------|------|
 | `id` | `1 \| 2` | yes | Player ID |
-| `ether` | number | yes | Current resource count; currently not core to MVP |
-| `income_per_turn` | number | yes | Current income value; currently placeholder in MVP |
+| `ether` | number | yes | Placeholder contract field for future economy/resource work |
+| `income_per_turn` | number | yes | Placeholder contract field for future economy/resource work |
 | `hq_name` | string | yes | Themed HQ label (`Homestead` / `Nest`) |
 | `resource_name` | string | yes | Themed resource label (`Wheat Paddock` / `Feeding Ground`) |
 | `command_tower_hp` | number | yes | Current HQ HP |

@@ -2,7 +2,8 @@ import { PLAYER_ID } from "./constants";
 
 /**
  * Create initial UI fallback state for the Old Mick MVP validation layer.
- * This snapshot is only used when authoritative backend state is unavailable.
+ * This snapshot is only used when authoritative backend state is unavailable and should
+ * mirror the current MVP contract shape as closely as possible.
  */
 export function createInitialGameState() {
   return {
