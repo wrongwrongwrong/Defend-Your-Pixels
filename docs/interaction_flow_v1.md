@@ -62,11 +62,6 @@ Example:
 
 - `Selected Riflemen u0 at (4, 11)`
 
-### Current pygame prototype behavior
-
-- `Q / E` cycles active-player units.
-- The currently selected unit is the one used for move or attack actions.
-
 ### Validation goal
 
 Players should never need to guess which token is currently selected.
@@ -101,14 +96,6 @@ Current accepted directions:
 - `down_left`
 - `down_right`
 
-### Current pygame prototype behavior
-
-- Player switches to attack mode with `1`.
-- Player chooses direction with:
-  - `W A S D` for orthogonal directions
-  - `Q E Z C` for diagonal directions
-- `Enter` confirms the attack.
-
 ### Validation goal
 
 The player should understand that they are choosing a direction, not choosing an arbitrary target tile.
@@ -133,12 +120,6 @@ The frontend should make it clear that:
 - Example feedback:
   - invalid click -> `Act mode only accepts straight or diagonal lines from the selected token.`
   - valid click -> `Attack queued: Riflemen -> up right`
-
-### Current pygame prototype behavior
-
-- Attack mode highlights reachable line cells for the selected direction family.
-- Preview follows the chosen direction.
-- HUD explains that attack uses directional line attack.
 
 ### MVP limitation
 
@@ -168,11 +149,6 @@ The frontend should communicate that:
   - footer / role text
 - The React validation layer does **not** yet draw a dedicated DEF-zone overlay.
 
-### Current pygame prototype behavior
-
-- Debug HUD states that defenders provide passive `3x3` protection.
-- Protected resource tiles are drawn brighter.
-
 ### MVP limitation
 
 Current frontend state does not yet expose a dedicated protection overlay payload.
@@ -182,7 +158,6 @@ For now, the prototype validates understanding through:
 - rules text
 - HUD wording
 - backend result text
-- brighter protected resource tiles in pygame
 
 ### Validation goal
 
@@ -210,12 +185,6 @@ React currently shows:
 - `Status` from `last_action`
 - move countdown box
 - game-over overlay
-
-### Current pygame prototype behavior
-
-- HUD shows turn number and active player
-- HUD shows current status text
-- HUD shows game-over state and winner
 
 ### Validation goal
 

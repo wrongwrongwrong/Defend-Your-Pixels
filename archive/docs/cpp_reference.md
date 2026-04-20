@@ -1,6 +1,6 @@
 # C++ Reference
 
-[`main.cpp`](Reference/main.cpp) lives under **`docs/Reference/`** (not the runtime entry point).
+[`main.cpp`](Reference/main.cpp) is preserved under **`archive/docs/Reference/`** (not the runtime entry point).
 
 Reason
 - Part of the tracking / AR prototype was first explored in C++.

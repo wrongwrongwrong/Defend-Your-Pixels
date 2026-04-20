@@ -2,11 +2,11 @@
 
 ## Project overview
 
-AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to React frontend.
+AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to `yu_test1/index.html`.
 
-Data flow: `camera → tracker → bridge → react_frontend`
+Data flow: `camera -> tracker -> bridge -> yu_test1/index.html`
 
-Python is authoritative for game state. `model_backend` owns rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app.
+Python is authoritative for game state. `yu_test1/game_model.py` owns the live rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app. `model_backend` remains in the repo for legacy/smoke-test paths.
 
 ## Setup
 
@@ -28,8 +28,13 @@ python3 runner/run_old_mick_core_smoke.py     # backend rules smoke test
 
 **Frontend:**
 ```bash
-cd react_frontend && npm install && npm run dev
+open yu_test1/index.html in a browser
 ```
+
+Windows notes:
+- Double-click `launch_live_demo.cmd` from the repo root for the simplest local launch.
+- `launch_live_demo.ps1` starts the tracker in a new PowerShell window and opens `yu_test1/index.html` automatically.
+- The frontend is a local HTML file, so no Node/Vite frontend server is required.
 
 ## Architecture notes
 
@@ -37,12 +42,11 @@ cd react_frontend && npm install && npm run dev
 - `game-logic/` is legacy; use `model_backend/` for game rules.
 - `archive/` and `dyp/` are not primary runtime paths.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
-- Authoritative payload uses `snake_case` (`units[]`, `hp`, `max_hp`); React adapter converts to UI `camelCase`.
+- The live frontend is `yu_test1/index.html`, which consumes the flat `yu_test1` runtime payload directly.
 
 ## Type checking
 
 Python: `pyright` (config in `pyrightconfig.json`, venv path `.venv`).
-React: `npm run lint` in `react_frontend/`.
 
 ## Testing
 
@@ -58,12 +62,11 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 
 | File | Purpose |
 |------|---------|
-| `runner/run_live_tracker.py` | Full live system: camera → tracker → model → bridge → WS |
-| `bridge/actions/model_action_dispatcher.py` | Routes `action` messages to model methods |
-| `bridge/adapters/` | Tracker frame → WS message conversion |
-| `model_backend/game/` | Game state, rules, actions |
-| `react_frontend/src/bridge/adaptBoardStateToUi.js` | snake_case → UI shape adapter |
-| `react_frontend/src/hooks/bridge/` | WS connection and board-state hooks |
+| `runner/run_live_tracker.py` | Full live system: camera -> tracker -> yu_test1 rules -> WS |
+| `python_tracker/state_output/tracker_snapshot.py` | Tracker snapshot, homography fallback, marker stability |
+| `bridge/transport/websocket_transport.py` | WebSocket server + inbound UI commands |
+| `yu_test1/game_model.py` | Live game rules used by the browser UI |
+| `yu_test1/index.html` | The only supported frontend |
 
 ## Existing instruction files
 

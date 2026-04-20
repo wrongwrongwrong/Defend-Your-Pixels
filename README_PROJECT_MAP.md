@@ -12,9 +12,9 @@ The system uses a camera to detect board markers and tokens, converts those dete
 1. Camera captures frames.
 2. Vision module detects ArUco markers.
 3. Tracker maps marker positions to board/grid coordinates.
-4. Backend game model applies actions and updates authoritative state.
-5. Bridge sends tracker and board state over WebSocket.
-6. Frontend receives messages and renders the game.
+4. Runtime game model updates authoritative state.
+5. Bridge sends live state over WebSocket.
+6. `yu_test1/index.html` receives messages and renders the game.
 
 ## Current top-level folders
 
@@ -30,34 +30,34 @@ Includes:
 Use this when you need to work on camera input, marker detection, or coordinate mapping.
 
 ### `model_backend`
-Purpose: game rules and authoritative state management.
+Purpose: legacy and smoke-test rules code.
 
 Includes:
 - Board state model
 - Rule handling and actions
 - Serialization of game state for transport
 
-Use this when you need to change game logic (movement, turns, actions, captures).
+Use this when you need to change the older backend prototype or smoke tests.
 
 ### `bridge`
-Purpose: connect tracker + model + frontend.
+Purpose: connect tracker + runtime model + frontend.
 
 Includes:
 - WebSocket transport
 - Message schemas/contracts
-- Adapters that convert tracker events into model actions
+- Legacy adapters from the older bridge path
 
 Use this when you need to change real-time communication or message formats.
 
-### `react_frontend`
-Purpose: user interface for the game.
+### `yu_test1`
+Purpose: the current game rules, terrain generation, and browser frontend.
 
 Includes:
-- React app and components
-- WebSocket hook/client
-- Board state adapters for UI rendering
+- `index.html` frontend
+- `game_model.py` authoritative live rules
+- `terrain_gen.py` map generation
 
-Use this when you need to change what users see or how UI updates.
+Use this when you need to change live gameplay or UI rendering.
 
 ### `runner`
 Purpose: clean startup scripts for runtime modes.
@@ -88,7 +88,7 @@ These are not primary runtime entrypoints for the current architecture.
 4. Read `python_tracker` basics
 5. Read `bridge` flow
 6. Read `model_backend` state/actions
-7. Read frontend socket hook and board adapter
+7. Read `yu_test1/index.html`
 
 ## Quick glossary
 

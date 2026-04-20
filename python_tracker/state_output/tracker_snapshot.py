@@ -14,7 +14,7 @@ The snapshot includes:
 import cv2
 import numpy as np
 
-from python_tracker.tracked_markers import CONFIRM_IDS, CONFIRM_PLAYER_MAP, TOKEN_IDS, marker_label
+from python_tracker.tracked_markers import TOKEN_IDS, TURN_MARKER_ID, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
@@ -27,7 +27,7 @@ from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
 
-ALL_TRACKED_IDS = TOKEN_IDS | CONFIRM_IDS
+ALL_TRACKED_IDS = TOKEN_IDS | {TURN_MARKER_ID}
 
 
 def build_tracker_snapshot(corners, ids):
@@ -62,14 +62,17 @@ def build_tracker_snapshot(corners, ids):
     H = build_homography(board_corners_px)
     playable_corners = build_playable_corners(board_corners_px)
 
-    confirm_markers_out = []
+    turn_marker_out = None
 
     for i, mid in enumerate(ids.flatten()):
-        if mid in CONFIRM_IDS:
-            confirm_markers_out.append({
+        if mid == TURN_MARKER_ID:
+            center = corners[i][0].mean(axis=0)
+            rotation_deg = compute_rotation_deg(corners[i][0])
+            turn_marker_out = {
                 "id": int(mid),
-                "player": CONFIRM_PLAYER_MAP[int(mid)],
-            })
+                "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
+                "rotation": round(rotation_deg, 1),
+            }
             continue
 
         if mid not in TOKEN_IDS:
@@ -100,7 +103,7 @@ def build_tracker_snapshot(corners, ids):
     return {
         "calibration_ready": H is not None,
         "markers": markers_out,
-        "confirm_markers": confirm_markers_out,
+        "turn_marker": turn_marker_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -180,7 +183,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
 
-        if mid in CONFIRM_IDS:
+        if mid == TURN_MARKER_ID:
             label = token_label(int(mid))
             cv2.putText(frame, label, (int(px) + 5, int(py) - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 200, 255), 2, cv2.LINE_AA)
@@ -242,6 +245,22 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
             2,
             cv2.LINE_AA,
         )
+
+    turn_marker = snapshot.get("turn_marker")
+    if isinstance(turn_marker, dict) and isinstance(turn_marker.get("raw_position"), dict):
+        px = turn_marker["raw_position"].get("x")
+        py = turn_marker["raw_position"].get("y")
+        if isinstance(px, (int, float)) and isinstance(py, (int, float)):
+            cv2.putText(
+                frame,
+                token_label(int(turn_marker.get("id", -1))),
+                (int(px) + 5, int(py) - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (80, 200, 255),
+                2,
+                cv2.LINE_AA,
+            )
 
     return frame
 

@@ -66,12 +66,12 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 - `units[].rotation_deg`：optional；若無，adapter 預設轉成 UI `rotation: "forward"`，或由 tracker 補。
 - `resource_tiles[]`：authoritative destructible objectives，提供 owner、position、theme name 與 protection layer。
 - **塔**：v1 固定摺進 `players[]` 的 `command_tower_position` / `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
-- `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 React / Phaser 顯示。
+- `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 UI 顯示。
 - `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
-## UI consume 形狀（React 現狀）
+## UI consume 形狀（legacy bridge path）
 
-與 [`createInitialGameState`](../react_frontend/src/game/turns.js) 對齊，精簡列出：
+下列欄位是舊版 `board_state` consume 形狀，保留給 legacy bridge 文件參考：
 
 | UI 欄位 | 說明 |
 |---------|------|
@@ -83,7 +83,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 | `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation`（字串 facing 或相容格式） |
 | `units[]` | 棋盤上非 marker 單位（目前多為 `[]`） |
 
-- `color`、`zone` 為 UI-only 欄位，由 React adapter 依 `player.id` 補上；不由 Python authoritative payload 提供。
+- `color`、`zone` 為 UI-only 欄位，由前端 adapter 依 `player.id` 補上；不由 Python authoritative payload 提供。
 
 ## Adapter：`units` → `players[].tokens[]`（概念）
 
@@ -96,18 +96,18 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 | `units[].rotation_deg` | `rotation`：經 `degreesToFacing` 或對照表 → `forward` / `right` / … |
 | `units[].hp` / `max_hp` | `hp` / `maxHp` |
 
-定案：authoritative payload 維持 `units[]`；`react_frontend/src/bridge/adaptBoardStateToUi.js` 負責組裝 `players[].tokens[]`，保留現有 React UI consume 形狀。
+定案：authoritative payload 維持 `units[]`；舊版前端 adapter 會再組裝 `players[].tokens[]`。
 
 ## HP 尺度策略
 
 | 來源 | 範例 |
 |------|------|
 | `model_backend` `Unit` | 預設 `hp` / `max_hp` 為小整數（如 3）。 |
-| 現有 React token | 如 30 / 40（展示用條較細緻）。 |
+| 舊版 UI token | 如 30 / 40（展示用條較細緻）。 |
 
 **建議（擇一，團隊定案）：**
 
-1. **單一權威整數**：Python 與 contract 只用一套數字；React 僅顯示比例 `hp / max_hp`（推薦，簡單一致）。
+1. **單一權威整數**：Python 與 contract 只用一套數字；前端僅顯示比例 `hp / max_hp`（推薦，簡單一致）。
 2. **Contract 加 `display_scale`**：後端傳倍率，前端乘上再畫條（兩套數字並存，易混亂）。
 3. **僅在 adapter 乘常數**：過渡期把 3 → 30 顯示；需在文件中寫死倍率並與機制稿同步。
 
@@ -115,7 +115,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 
 ## 與目前整合狀態的對應
 
-- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出 React validation 主線。
+- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出目前主線。
 - 目前 authoritative action 已有 `end_turn`、`move_unit`、`attack_in_direction`；見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。
 - Tracker：仍走 `tracker_frame`，不與 `board_state` 混成同一條「全量又只改位置」的路徑。
 
@@ -123,6 +123,6 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 
 - `phase` 不進 v1 authoritative contract。
 - `units[].id` 固定為 `string`。
-- authoritative payload 固定輸出 `units[]`；React adapter 轉成 `players[].tokens[]`。
+- authoritative payload 固定輸出 `units[]`；legacy adapter 轉成 `players[].tokens[]`。
 - `players[]` 不放 `color` / `zone`；由前端補 UI-only 欄位。
 - 塔資料固定摺進 `players[]`。

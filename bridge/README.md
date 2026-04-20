@@ -15,7 +15,7 @@ Naming rules
 Runtime model
 - `python_tracker/` produces tracker observations
 - `bridge/` shapes and transports them
-- `react_frontend/` consumes them
+- `yu_test1/index.html` consumes them
 - `runner/` assembles the live application
 
 Canonical runtime entrypoint

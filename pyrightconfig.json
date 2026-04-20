@@ -2,5 +2,5 @@
   "venvPath": ".",
   "venv": ".venv",
   "include": ["bridge", "python_tracker", "model_backend", "runner"],
-  "exclude": ["**/node_modules", "**/dist", "**/__pycache__", "react_frontend"]
+  "exclude": ["**/node_modules", "**/dist", "**/__pycache__"]
 }

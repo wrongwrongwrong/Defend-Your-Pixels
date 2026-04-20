@@ -12,7 +12,7 @@ from typing import Any
 
 from websockets.server import serve
 
-# Default dev host/port (React connects to ws://localhost:8765 by convention).
+# Default local host/port for the live browser frontend.
 WS_HOST = "localhost"
 WS_PORT = 8765
 
@@ -41,35 +41,32 @@ async def ws_handler(websocket: Any) -> None:
         async for message in websocket:
             # We only care about messages of the shape:
             #   {"type":"action","data":{...}}
-            action = _extract_action(message)
-            if action is None:
+            command = _extract_command(message)
+            if command is None:
                 continue
 
             # Push into the queue; game loop will validate and apply via dispatcher.
-            await incoming_actions.put(action)
+            await incoming_actions.put(command)
     finally:
         # Ensure we always remove the client, even if handler errors.
         connected_clients.discard(websocket)
         print(f"[WS] Client disconnected: {addr}  (total: {len(connected_clients)})")
 
 
-def _extract_action(message: str) -> ActionPayload | None:
+def _extract_command(message: str) -> ActionPayload | None:
     # Parse JSON defensively; ignore malformed payloads.
     try:
         payload = json.loads(message)
     except json.JSONDecodeError:
         return None
 
-    # Route only "action" envelopes here; other types are outgoing-only in this app.
-    if payload.get("type") != "action":
-        return None
-
-    # The action itself is in the `data` field.
-    action = payload.get("data")
-    if not isinstance(action, dict):
-        return None
-
-    return action
+    payload_type = payload.get("type")
+    if payload_type == "action":
+        action = payload.get("data")
+        return action if isinstance(action, dict) else None
+    if payload_type in {"new_map", "tier"}:
+        return payload if isinstance(payload, dict) else None
+    return None
 
 
 async def broadcast(message: str) -> None:

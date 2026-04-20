@@ -1,178 +1,231 @@
-"""Live runtime entrypoint: camera -> tracker -> model -> WebSocket -> React UI.
+"""Live runtime entrypoint: camera -> tracker -> yu_test1 rules -> WebSocket UI.
 
-This module wires the full local dev loop together:
-- capture frames from an OpenCV camera
-- detect ArUco markers and build a tracker snapshot (telemetry)
-- translate tracker state into *proposed* move actions (tracker is not authoritative)
-- apply actions and update the authoritative `model_backend` game state
-- broadcast board_state + tracker_frame JSON to all connected WebSocket clients
-
-Run:
-- `python3 runner/run_live_tracker.py`
+This runtime keeps the current `python_tracker` camera/grid-mapping pipeline, but the
+authoritative gameplay loop and browser payload now follow `yu_test1`.
 """
 
+from __future__ import annotations
+
 import asyncio
+import json
 import os
 import time
 
 import cv2
 
-from bridge.actions.model_action_dispatcher import apply_action
-from bridge.adapters.board_state_message_adapter import build_board_state_message
-from bridge.adapters.tracker_model_sync import build_tracker_move_actions
-from bridge.adapters.tracker_message_adapter import build_tracker_message
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
-from model_backend.game import PlayerId
-from model_backend.scenarios import build_react_integration_level
-from model_backend.serialization import serialize_game_state
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
-from python_tracker.state_output.tracker_snapshot import (
-    CONFIRM_PLAYER_MAP,
-    annotate_tracker_preview,
-    apply_calibration_fallback,
-    build_tracker_preview,
-)
-from python_tracker.tracked_markers import TOKEN_MARKERS
+from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
+from python_tracker.tracked_markers import TOKEN_MARKERS, TURN_MARKER_ID
+from yu_test1 import game_model, terrain_gen
 
 
 CAMERA_ID = 1
 SEND_FPS = 10
-CONFIRM_HOLD_SECONDS = 5.0
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 
-_CONFIRM_PLAYER_ID = {mid: PlayerId.P1 if pnum == 1 else PlayerId.P2
-                      for mid, pnum in CONFIRM_PLAYER_MAP.items()}
+ROLE_BY_MARKER_ID = {
+    10: ("p1", "atk_a"),
+    11: ("p1", "atk_b"),
+    12: ("p1", "def"),
+    14: ("p2", "atk_a"),
+    15: ("p2", "atk_b"),
+    16: ("p2", "def"),
+}
+
+COMPASS_8 = [
+    (0, "E"),
+    (45, "SE"),
+    (90, "S"),
+    (135, "SW"),
+    (180, "W"),
+    (225, "NW"),
+    (270, "N"),
+    (315, "NE"),
+]
 
 
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
-    return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners"))
+    return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_marker"))
 
 
-def _merge_unit_metadata(
-    cached_metadata: dict[str, dict], current_metadata: dict[str, dict]
-) -> dict[str, dict]:
-    merged_metadata = dict(cached_metadata)
-    merged_metadata.update(current_metadata)
-    return merged_metadata
+def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict) -> dict:
+    if cached_snapshot is None:
+        return current_snapshot
+
+    merged_markers: dict[int, dict] = {
+        int(marker["id"]): marker
+        for marker in cached_snapshot.get("markers", [])
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int)
+    }
+    for marker in current_snapshot.get("markers", []):
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int):
+            merged_markers[int(marker["id"])] = marker
+
+    return {
+        **cached_snapshot,
+        **current_snapshot,
+        "markers": list(merged_markers.values()),
+        "turn_marker": current_snapshot.get("turn_marker") or cached_snapshot.get("turn_marker"),
+        "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
+        "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
+        "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
+        "homography": current_snapshot.get("homography") if current_snapshot.get("homography") is not None else cached_snapshot.get("homography"),
+    }
 
 
-class ConfirmMarkerTimer:
-    """Track how long each confirmation marker has been continuously visible."""
+def _angular_distance(angle: float, target: float) -> float:
+    return abs((angle - target + 180.0) % 360.0 - 180.0)
 
-    def __init__(self, hold_seconds: float = CONFIRM_HOLD_SECONDS):
-        self.hold_seconds = hold_seconds
-        self._first_seen: dict[int, float] = {}
 
-    def check(self, game, snapshot: dict) -> bool:
-        """Return True if a confirm marker triggered end_turn this frame."""
-        detected = {m["id"] for m in snapshot.get("confirm_markers", [])}
-        now = time.monotonic()
+def _snap_direction_8(angle: float | None) -> str | None:
+    if angle is None:
+        return None
+    return min(COMPASS_8, key=lambda item: _angular_distance(angle, item[0]))[1]
 
-        for mid in list(self._first_seen):
-            if mid not in detected:
-                del self._first_seen[mid]
 
-        for mid in detected:
-            player = _CONFIRM_PLAYER_ID.get(mid)
-            if player is None:
-                continue
-            if mid not in self._first_seen:
-                self._first_seen[mid] = now
-                pname = "P1" if player == PlayerId.P1 else "P2"
-                game.last_action = f"{pname} confirm marker detected — hold {self.hold_seconds:.0f}s to end turn"
-                continue
+def _turn_from_rotation(angle: float | None) -> int | None:
+    if angle is None:
+        return None
+    if _angular_distance(angle, 0.0) <= 60.0:
+        return 1
+    if _angular_distance(angle, 180.0) <= 60.0:
+        return 2
+    return None
 
-            elapsed = now - self._first_seen[mid]
-            if elapsed >= self.hold_seconds and player == game.active_player and not game.game_over:
-                apply_action(game, {"action": "end_turn"})
-                del self._first_seen[mid]
-                return True
 
-        return False
+def _grid_index(value: float | int | None) -> int | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return max(0, min(11, int(round(float(value)))))
 
-    def seconds_held(self, marker_id: int) -> float:
-        start = self._first_seen.get(marker_id)
-        if start is None:
-            return 0.0
-        return time.monotonic() - start
+
+def _empty_token() -> dict:
+    return {
+        "col": None,
+        "row": None,
+        "angle": None,
+        "direction": None,
+        "stale": True,
+    }
+
+
+class Session:
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.seed = int(time.time() * 1000) % (2 ** 31)
+        self.terrain = terrain_gen.generate(seed=self.seed)
+        self.model = game_model.new_game(self.terrain, seed=self.seed)
+        print(f"[MAP] New game (seed={self.seed}) HQ p1={self.model.hq_p1} p2={self.model.hq_p2}")
+
+    def apply_command(self, command: dict) -> None:
+        command_type = command.get("type")
+        if command_type == "new_map":
+            self.reset()
+            return
+        if command_type != "tier":
+            return
+
+        try:
+            player = int(command.get("player"))
+            delta = int(command.get("delta"))
+        except (TypeError, ValueError):
+            return
+
+        if player == 1:
+            self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
+        elif player == 2:
+            self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
+
+
+def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
+    p1 = {"atk_a": _empty_token(), "atk_b": _empty_token(), "def": _empty_token()}
+    p2 = {"atk_a": _empty_token(), "atk_b": _empty_token(), "def": _empty_token()}
+
+    for marker in snapshot.get("markers", []):
+        role = ROLE_BY_MARKER_ID.get(marker.get("id"))
+        if role is None:
+            continue
+
+        side, slot = role
+        target = p1 if side == "p1" else p2
+        position = marker.get("position") if isinstance(marker.get("position"), dict) else None
+        col = _grid_index(position.get("x")) if position else None
+        row = _grid_index(position.get("y")) if position else None
+        rotation = marker.get("rotation")
+
+        target[slot] = {
+            "col": col,
+            "row": row,
+            "angle": round(float(rotation), 1) if isinstance(rotation, (int, float)) else None,
+            "direction": _snap_direction_8(float(rotation)) if isinstance(rotation, (int, float)) else None,
+            "stale": False,
+        }
+
+    turn_marker = snapshot.get("turn_marker") if isinstance(snapshot.get("turn_marker"), dict) else None
+    turn_rotation = turn_marker.get("rotation") if turn_marker else None
+    turn = _turn_from_rotation(float(turn_rotation)) if isinstance(turn_rotation, (int, float)) else None
+    return p1, p2, turn
 
 
 async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_FPS):
-    # This coroutine owns the live loop. Everything else is an adapter/helper.
     cap = open_camera(camera_id)
     if cap is None:
         print(f"[Camera] ERROR: Cannot open camera (index {camera_id})")
         return
 
-    game = build_react_integration_level()
-    confirm_timer = ConfirmMarkerTimer()
-
+    session = Session()
     configure_camera(cap)
     detector = create_detector()
     interval = 1.0 / send_fps
     last_visible_snapshot: dict | None = None
     last_calibrated_snapshot: dict | None = None
-    last_unit_metadata: dict[str, dict] = {}
 
     print(f"[Camera] Capturing at {send_fps} fps  (press Q to quit)")
 
     try:
         while True:
-            game.advance_timers()
-
             ret, frame = cap.read()
             if not ret:
-                print("[Camera] WARNING: Frame read failed — retrying…")
+                print("[Camera] WARNING: Frame read failed - retrying...")
                 await asyncio.sleep(0.1)
                 continue
 
-            # First apply any explicit UI actions that arrived over WebSocket.
-            for action in await drain_actions():
-                apply_action(game, action)
+            for command in await drain_actions():
+                session.apply_command(command)
 
-            # Then derive tracker telemetry from the camera frame.
-            snapshot, annotated = build_tracker_preview(frame, detector)
+            snapshot, _ = build_tracker_preview(frame, detector)
             if snapshot.get("calibration_ready"):
                 last_calibrated_snapshot = snapshot
             effective_snapshot = apply_calibration_fallback(snapshot, last_calibrated_snapshot)
 
-            annotated = annotate_tracker_preview(frame.copy(), effective_snapshot)
-            # Tracker movement remains advisory; the model still validates every action.
-            tracker_actions, current_unit_metadata = build_tracker_move_actions(game, effective_snapshot)
-            last_unit_metadata = _merge_unit_metadata(last_unit_metadata, current_unit_metadata)
-
             if _snapshot_has_detected_markers(effective_snapshot):
-                last_visible_snapshot = effective_snapshot
+                last_visible_snapshot = _merge_visible_snapshot(last_visible_snapshot, effective_snapshot)
 
-            # Prefer the last visible tracker snapshot so short dropouts do not cause
-            # the frontend markers to flicker off immediately.
             snapshot_for_ui = last_visible_snapshot or effective_snapshot
+            p1, p2, turn = _build_token_state(snapshot_for_ui)
+            events = session.model.on_turn_change(turn, p1, p2) if turn else []
+            payload = {
+                "phase": "game",
+                "corners_found": len(snapshot_for_ui.get("board_corners", [])),
+                "turn": turn,
+                "turn_angle": snapshot_for_ui.get("turn_marker", {}).get("rotation") if isinstance(snapshot_for_ui.get("turn_marker"), dict) else None,
+                "p1": p1,
+                "p2": p2,
+                "terrain": session.terrain,
+                "map_seed": session.seed,
+                "game": session.model.snapshot(),
+                "events": events,
+            }
 
-            confirm_timer.check(game, effective_snapshot)
-
-            if not effective_snapshot.get("calibration_ready"):
-                game.last_action = "Tracker waiting for board calibration"
-            elif game.move_countdown_active:
-                pass
-            elif tracker_actions:
-                moved_units = []
-                for action in tracker_actions:
-                    if apply_action(game, action):
-                        position = action["position"]
-                        moved_units.append(f"{action['unit_id']}->({position['x']},{position['y']})")
-                if moved_units:
-                    game.last_action = f"Tracker move intents: {', '.join(moved_units)}"
-
-            game.advance_timers()
-
-            # Keep the last stable tracker-derived board state visible during
-            # short marker dropouts instead of clearing the UI immediately.
-            await broadcast(build_board_state_message(serialize_game_state(game, last_unit_metadata)))
-            await broadcast(build_tracker_message(snapshot_for_ui))
+            await broadcast(json.dumps(payload))
 
             if not HEADLESS:
-                cv2.imshow("Old Mick MVP — Camera View  [Q to quit]", annotated)
+                annotated = annotate_tracker_preview(frame.copy(), snapshot_for_ui)
+                cv2.imshow("Old Mick MVP - Camera View  [Q to quit]", annotated)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), ord("Q"), 27):
                     print("[Camera] Quit signal received.")
@@ -188,7 +241,7 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
 
 async def async_main():
     print("=" * 55)
-    print("  Old Mick MVP Live Tracker")
+    print("  Old Mick Live Tracker")
     print(f"  ws://{WS_HOST}:{WS_PORT}")
     print("=" * 55)
     print()
@@ -200,11 +253,9 @@ async def async_main():
     for marker in TOKEN_MARKERS:
         print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
-    print(f"  Confirm markers (hold {CONFIRM_HOLD_SECONDS:.0f}s to end turn):")
-    print("    ID 13=P1 CONFIRM")
-    print("    ID 17=P2 CONFIRM")
+    print(f"  Turn marker:\n    ID {TURN_MARKER_ID}=TURN")
     print()
-    print("[Server] Open http://localhost:5173 in your browser\n")
+    print("[Server] Open yu_test1/index.html in your browser\n")
 
     await run_server(publish_live_tracker)
 

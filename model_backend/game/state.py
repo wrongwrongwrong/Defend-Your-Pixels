@@ -2,9 +2,7 @@ from __future__ import annotations
 
 """Authoritative game state and rules implementation.
 
-`GameState` is the rules engine used by:
-- prototypes (pygame runner)
-- the live tracker runtime (via the bridge layer)
+`GameState` is the rules engine used by the live tracker runtime (via the bridge layer).
 
 This module intentionally contains the validation and state transitions that define
 "what is legal" in the game. Adapters/transports should not replicate these rules;
@@ -61,7 +59,7 @@ class GameState:
             PlayerId.P2: PlayerState(PlayerId.P2, ether=0, income_per_turn=0),
         }
 
-        # Filled by level loader (or demos); pygame prototype uses ASCII maps.
+        # Filled by level loaders or demo setups.
         self.towers: Dict[PlayerId, CommandTower] = {}
 
         self.units: Dict[str, Unit] = {}
