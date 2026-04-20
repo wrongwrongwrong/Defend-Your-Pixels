@@ -49,6 +49,7 @@ def _serialize_player(game: GameState, player_id: PlayerId) -> dict:
         "resource_name": themed_resource_name(player_id),
         "command_tower_hp": int(tower.hp) if tower is not None else 0,
         "command_tower_max_hp": int(tower.max_hp) if tower is not None else 0,
+        "command_tower_position": _serialize_position(tower.pos) if tower is not None else None,
     }
 
 
@@ -76,3 +77,10 @@ def _serialize_unit(unit, metadata: dict) -> dict:
         payload["rotation_deg"] = float(rotation_deg)
 
     return payload
+
+
+def _serialize_position(pos) -> dict:
+    return {
+        "x": int(pos.x),
+        "y": int(pos.y),
+    }

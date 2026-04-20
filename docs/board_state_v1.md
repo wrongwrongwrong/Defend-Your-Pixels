@@ -32,6 +32,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
       "income_per_turn": 0,
       "hq_name": "Homestead",
       "resource_name": "Wheat Paddock",
+      "command_tower_position": { "x": 5, "y": 11 },
       "command_tower_hp": 20,
       "command_tower_max_hp": 20
     }
@@ -54,7 +55,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 - `last_action`：optional；有值時供 HUD / debug 顯示，沒有時前端可忽略。
 - `units[].id`：固定使用 `string`，與 `model_backend` 既有 unit id（如 `A1`、`D2`）一致。
 - `units[].rotation_deg`：optional；若無，adapter 預設轉成 UI `rotation: "forward"`，或由 tracker 補。
-- **塔**：v1 固定摺進 `players[]` 的 `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
+- **塔**：v1 固定摺進 `players[]` 的 `command_tower_position` / `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
 - `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 React / Phaser 顯示。
 - `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
@@ -67,7 +68,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 | `turn` | number |
 | `activePlayer` | `1` \| `2` |
 | `gameOver` | boolean |
-| `players[]` | `id`, `color`, `zone`, `ether`, `incomePerTurn`, `hqName`, `resourceName`, `commandTowerHp`, `commandTowerMaxHp`, `tokens[]` |
+| `players[]` | `id`, `color`, `zone`, `ether`, `incomePerTurn`, `hqName`, `resourceName`, `commandTowerPosition`, `commandTowerHp`, `commandTowerMaxHp`, `tokens[]` |
 | `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation`（字串 facing 或相容格式） |
 | `units[]` | 棋盤上非 marker 單位（目前多為 `[]`） |
 

@@ -2,9 +2,16 @@
 // Highlights the player's home zone at the top or bottom of the board.
 // Shows a tinted overlay and a zone label.
 
-export default function PlayerZone({ player, cellSize, gridSize = 12 }) {
+import { isMirroredView } from "../../game/viewTransform";
+
+export default function PlayerZone({ player, cellSize, gridSize = 12, viewPlayerId }) {
   const isBlue = player.color === "blue";
-  const isBottom = player.zone === "bottom";
+  const displayZone = isMirroredView(viewPlayerId)
+    ? player.zone === "bottom"
+      ? "top"
+      : "bottom"
+    : player.zone;
+  const isBottom = displayZone === "bottom";
 
   // Zone spans 2 rows at top or bottom of the 12-row grid
   const zoneRows = 2;

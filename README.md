@@ -32,6 +32,25 @@ This starts:
 - the React frontend
 - the Python live tracker
 
+### Two-screen mirrored UI
+
+After `npm run dev:live`, open two browser windows:
+
+- `http://localhost:5173/?view=p1`
+- `http://localhost:5173/?view=p2`
+
+Recommended setup:
+
+- move the `?view=p1` window to Player 1's monitor
+- move the `?view=p2` window to Player 2's monitor
+- fullscreen both windows
+
+`?view=p2` mirrors the board so Player 2 sees their own side as the local/home edge.
+
+More detail:
+
+- `docs/dual_screen_ui_setup.md`
+
 ### Start separately
 
 Terminal 1, from `Defend-Your-Pixels\react_frontend`:

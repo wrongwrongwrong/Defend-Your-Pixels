@@ -1,6 +1,6 @@
-// Central board marker: mid-field / conflict zone (not a single shared HP bar)
+// Central board marker: mid-field / conflict zone (not a player HQ)
 
-export default function HQ({ cellSize }) {
+export default function MidfieldMarker({ cellSize }) {
   const size = cellSize * 2;
 
   return (

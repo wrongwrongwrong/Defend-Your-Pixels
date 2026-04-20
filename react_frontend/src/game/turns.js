@@ -26,6 +26,7 @@ export function createInitialGameState() {
         incomePerTurn: 0,
         commandTowerHp: 20,
         commandTowerMaxHp: 20,
+        commandTowerPosition: null,
         tokens: [
           {
             id: 10,
@@ -57,6 +58,7 @@ export function createInitialGameState() {
         incomePerTurn: 0,
         commandTowerHp: 20,
         commandTowerMaxHp: 20,
+        commandTowerPosition: null,
         tokens: [
           {
             id: 14,

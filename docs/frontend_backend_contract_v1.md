@@ -52,6 +52,7 @@ Current authoritative `board_state` payload shape:
       "income_per_turn": 0,
       "hq_name": "Homestead",
       "resource_name": "Wheat Paddock",
+      "command_tower_position": { "x": 5, "y": 11 },
       "command_tower_hp": 20,
       "command_tower_max_hp": 20
     },
@@ -61,6 +62,7 @@ Current authoritative `board_state` payload shape:
       "income_per_turn": 0,
       "hq_name": "Nest",
       "resource_name": "Feeding Ground",
+      "command_tower_position": { "x": 6, "y": 0 },
       "command_tower_hp": 20,
       "command_tower_max_hp": 20
     }
@@ -113,6 +115,7 @@ Current authoritative `board_state` payload shape:
 | `income_per_turn` | number | yes | Placeholder contract field for future economy/resource work |
 | `hq_name` | string | yes | Themed HQ label (`Homestead` / `Nest`) |
 | `resource_name` | string | yes | Themed resource label (`Wheat Paddock` / `Feeding Ground`) |
+| `command_tower_position` | `{ x, y } \| null` | yes | HQ grid position for on-board rendering |
 | `command_tower_hp` | number | yes | Current HQ HP |
 | `command_tower_max_hp` | number | yes | Max HQ HP |
 

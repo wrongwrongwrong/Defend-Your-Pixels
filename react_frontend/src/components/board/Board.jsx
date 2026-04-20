@@ -1,5 +1,8 @@
 import { GRID_SIZE, CELL_SIZE } from "../../game/gameLogic";
-import HQ from "./HQ";
+import { PLAYER_ID } from "../../game/constants";
+import { toAuthoritativeBoardPosition } from "../../game/viewTransform";
+import CommandTower from "./CommandTower";
+import MidfieldMarker from "./MidfieldMarker";
 import PlayerZone from "./PlayerZone";
 import Token from "../entities/Token";
 import Unit from "../entities/Unit";
@@ -11,6 +14,7 @@ export default function Board({
   onTokenSelect,
   onCellAction,
   actionMode,
+  viewPlayerId = PLAYER_ID.P1,
 }) {
   const totalSize = GRID_SIZE * CELL_SIZE;
 
@@ -20,7 +24,7 @@ export default function Board({
     const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
     const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
-    onCellAction({ x, y });
+    onCellAction(toAuthoritativeBoardPosition({ x, y }, viewPlayerId, GRID_SIZE));
   }
 
   return (
@@ -41,10 +45,26 @@ export default function Board({
       )}
 
       {gameState.players.map((p) => (
-        <PlayerZone key={p.id} player={p} cellSize={CELL_SIZE} gridSize={GRID_SIZE} />
+        <PlayerZone
+          key={p.id}
+          player={p}
+          cellSize={CELL_SIZE}
+          gridSize={GRID_SIZE}
+          viewPlayerId={viewPlayerId}
+        />
       ))}
 
-      <HQ cellSize={CELL_SIZE} />
+      <MidfieldMarker cellSize={CELL_SIZE} />
+
+      {gameState.players.map((player) => (
+        <CommandTower
+          key={`tower-${player.id}`}
+          player={player}
+          cellSize={CELL_SIZE}
+          gridSize={GRID_SIZE}
+          viewPlayerId={viewPlayerId}
+        />
+      ))}
 
       {gameState.players.map((player) =>
         player.tokens.map((token) => (
@@ -53,6 +73,8 @@ export default function Board({
             token={token}
             playerColor={player.color}
             cellSize={CELL_SIZE}
+            gridSize={GRID_SIZE}
+            viewPlayerId={viewPlayerId}
             isActivePlayer={player.id === activePlayer}
             selected={token.id === selectedTokenId}
             onSelect={onTokenSelect}
@@ -63,7 +85,13 @@ export default function Board({
       {gameState.units
         .filter((u) => u.hp > 0 || u.dying)
         .map((unit) => (
-          <Unit key={unit.id} unit={unit} cellSize={CELL_SIZE} />
+          <Unit
+            key={unit.id}
+            unit={unit}
+            cellSize={CELL_SIZE}
+            gridSize={GRID_SIZE}
+            viewPlayerId={viewPlayerId}
+          />
         ))}
     </div>
   );

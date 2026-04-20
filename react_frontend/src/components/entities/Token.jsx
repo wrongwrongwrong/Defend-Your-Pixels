@@ -1,6 +1,7 @@
 // Physical marker on grid — kind: attacker | defender (model_backend UnitKind)
 
 import { hpColor } from "../../game/gameLogic";
+import { transformBoardPosition, transformFacing } from "../../game/viewTransform";
 import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
 const KIND_RANGE = {
@@ -19,11 +20,15 @@ export default function Token({
   token,
   playerColor,
   cellSize,
+  gridSize,
+  viewPlayerId,
   isActivePlayer,
   selected,
   onSelect,
 }) {
   const kind = token.kind ?? "attacker";
+  const displayPosition = transformBoardPosition(token.position, viewPlayerId, gridSize);
+  const displayRotation = transformFacing(token.rotation, viewPlayerId);
 
   const { accent, glowClass, tokenBorderColor, tokenBackground } = getEntityVisuals(playerColor);
 
@@ -32,7 +37,7 @@ export default function Token({
   const hpPct = Math.max(0, token.hp) / Math.max(1, maxHp);
 
   const rangeRadius = (KIND_RANGE[kind] ?? 2) * cellSize;
-  const dirAngle = DIR_ANGLE[token.rotation] ?? 0;
+  const dirAngle = DIR_ANGLE[displayRotation] ?? 0;
 
   return (
     <div
@@ -40,8 +45,8 @@ export default function Token({
       style={{
         width: cellSize - 4,
         height: cellSize - 4,
-        left: token.position.x * cellSize + 2,
-        top: token.position.y * cellSize + 2,
+        left: displayPosition.x * cellSize + 2,
+        top: displayPosition.y * cellSize + 2,
         background: tokenBackground,
         opacity: isActivePlayer ? 1 : 0.85,
         boxShadow: selected ? `0 0 0 2px ${accent}, 0 0 20px ${accent}88` : undefined,
@@ -50,7 +55,7 @@ export default function Token({
         event.stopPropagation();
         onSelect?.(token.id);
       }}
-      title={`${kind} — HP ${token.hp} | ${token.rotation}`}
+      title={`${kind} — HP ${token.hp} | ${displayRotation}`}
     >
       <div
         className="absolute rounded-full pointer-events-none"

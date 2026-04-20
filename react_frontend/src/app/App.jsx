@@ -3,6 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import Board from "../components/board/Board";
 import ResourceDisplay from "../components/hud/ResourceDisplay";
+import { GRID_SIZE, PLAYER_ID } from "../game/constants";
+import { formatBoardPosition, transformDirectionLabel } from "../game/viewTransform";
 import { useWebSocket } from "../hooks/bridge/useWebSocket";
 
 const ACTION_MODE = {
@@ -10,11 +12,20 @@ const ACTION_MODE = {
   ACT: "act",
 };
 
-function formatDisplayCoordinates(text) {
+function formatDisplayCoordinates(text, viewPlayerId) {
   if (typeof text !== "string") return text;
   return text.replace(/\((\d+),\s*(\d+)\)/g, (_, x, y) => {
-    return `(${Number(x) + 1}, ${Number(y) + 1})`;
+    return formatBoardPosition(
+      { x: Number(x), y: Number(y) },
+      viewPlayerId,
+      GRID_SIZE
+    );
   });
+}
+
+function parseViewPlayerId() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "p2" ? PLAYER_ID.P2 : PLAYER_ID.P1;
 }
 
 function deriveAttackDirection(from, to) {
@@ -46,6 +57,7 @@ export default function App() {
   const [actionMode, setActionMode] = useState(ACTION_MODE.MOVE);
   const [interactionHint, setInteractionHint] = useState("");
   const isLiveMode = !usingMock;
+  const viewPlayerId = useMemo(() => parseViewPlayerId(), []);
 
   const sendBackendAction = useCallback(
     (action) => {
@@ -64,8 +76,8 @@ export default function App() {
   }, [isLiveMode, sendBackendAction]);
 
   const { players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
-  const p1 = players.find((p) => p.zone === "bottom");
-  const p2 = players.find((p) => p.zone === "top");
+  const localPlayer = players.find((player) => player.id === viewPlayerId) ?? players[0] ?? null;
+  const remotePlayer = players.find((player) => player.id !== viewPlayerId) ?? players[1] ?? null;
   const selectedToken = useMemo(
     () => players.flatMap((player) => player.tokens ?? []).find((token) => token.id === selectedTokenId) ?? null,
     [players, selectedTokenId]
@@ -89,12 +101,12 @@ export default function App() {
       : "Send end turn";
 
   const selectionStatusText = selectedToken
-    ? `Selected ${selectedToken.themeName ?? selectedToken.kind} ${selectedToken.id} at (${selectedToken.position.x + 1}, ${selectedToken.position.y + 1})`
+    ? `Selected ${selectedToken.themeName ?? selectedToken.kind} ${selectedToken.id} at ${formatBoardPosition(selectedToken.position, viewPlayerId, GRID_SIZE)}`
     : "Select one of the active player's tokens, then click a grid cell.";
 
   const footerHint = usingMock
     ? "Backend offline. This React layer is for authoritative-state validation, not local gameplay simulation."
-    : "Python board_state is authoritative. Move mode clicks a destination; Act mode clicks a straight or diagonal attack line.";
+    : "Python board_state is authoritative. Open one browser window with ?view=p1 and another with ?view=p2 for a two-screen mirrored setup.";
 
   const handleTokenSelect = useCallback((tokenId) => {
     setInteractionHint("");
@@ -116,7 +128,9 @@ export default function App() {
           setInteractionHint("Act mode only accepts straight or diagonal lines from the selected token.");
           return;
         }
-        setInteractionHint(`Attack queued: ${selectedToken.themeName ?? selectedToken.kind} -> ${direction.replaceAll("_", " ")}`);
+        const displayDirection = transformDirectionLabel(direction, viewPlayerId)
+          .replaceAll("_", " ");
+        setInteractionHint(`Attack queued: ${selectedToken.themeName ?? selectedToken.kind} -> ${displayDirection}`);
         sendBackendAction({
           action: "attack_in_direction",
           unit_id: String(selectedToken.id),
@@ -125,14 +139,16 @@ export default function App() {
         return;
       }
 
-      setInteractionHint(`Move queued: ${selectedToken.themeName ?? selectedToken.kind} -> (${position.x + 1}, ${position.y + 1})`);
+      setInteractionHint(
+        `Move queued: ${selectedToken.themeName ?? selectedToken.kind} -> ${formatBoardPosition(position, viewPlayerId, GRID_SIZE)}`
+      );
       sendBackendAction({
         action: "move_unit",
         unit_id: String(selectedToken.id),
         position,
       });
     },
-    [actionMode, isLiveMode, selectedToken, sendAction, sendBackendAction]
+    [actionMode, isLiveMode, selectedToken, sendAction, sendBackendAction, viewPlayerId]
   );
 
   return (
@@ -151,6 +167,19 @@ export default function App() {
         <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-slate-600"}`} />
         <span className={connected ? "text-green-400" : "text-slate-500"}>
           {connected ? "Python state connected" : "Backend offline - showing last fallback snapshot"}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-slate-300 flex-wrap justify-center">
+        <span className="text-slate-500">Screen view:</span>
+        <ViewLink href="?view=p1" active={viewPlayerId === PLAYER_ID.P1}>
+          Player 1
+        </ViewLink>
+        <ViewLink href="?view=p2" active={viewPlayerId === PLAYER_ID.P2}>
+          Player 2
+        </ViewLink>
+        <span className="text-slate-500">
+          {viewPlayerId === PLAYER_ID.P1 ? "standard orientation" : "mirrored orientation"}
         </span>
       </div>
 
@@ -175,7 +204,7 @@ export default function App() {
       {lastAction && (
         <div className="max-w-2xl rounded border border-slate-800 bg-slate-950/70 px-4 py-2 text-xs text-slate-300 text-center">
           <span className="text-slate-500">Status:</span>{" "}
-          <span className="text-cyan-200">{formatDisplayCoordinates(lastAction)}</span>
+          <span className="text-cyan-200">{formatDisplayCoordinates(lastAction, viewPlayerId)}</span>
         </div>
       )}
 
@@ -227,8 +256,8 @@ export default function App() {
         </div>
       )}
 
-      {p2 && (
-        <ResourceDisplay player={p2} isActive={p2.id === activePlayer} />
+      {remotePlayer && (
+        <ResourceDisplay player={remotePlayer} isActive={remotePlayer.id === activePlayer} />
       )}
 
       <div className="relative">
@@ -239,6 +268,7 @@ export default function App() {
             onTokenSelect={handleTokenSelect}
             onCellAction={handleBoardCellAction}
             actionMode={actionMode}
+            viewPlayerId={viewPlayerId}
           />
 
         {gameOver && (
@@ -265,8 +295,8 @@ export default function App() {
         )}
       </div>
 
-      {p1 && (
-        <ResourceDisplay player={p1} isActive={p1.id === activePlayer} />
+      {localPlayer && (
+        <ResourceDisplay player={localPlayer} isActive={localPlayer.id === activePlayer} />
       )}
 
       <div className="flex gap-4 text-xs text-slate-500 mt-1 flex-wrap justify-center max-w-xl text-center">
@@ -320,6 +350,17 @@ function BackendControls({
   );
 }
 
+function ViewLink({ href, active, children }) {
+  return (
+    <a
+      href={href}
+      className={`rounded border px-3 py-1 ${active ? "border-cyan-500 bg-cyan-950/60 text-cyan-200" : "border-slate-700 text-slate-400 hover:text-slate-200"}`}
+    >
+      {children}
+    </a>
+  );
+}
+
 function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
   const contractChecks = [
     {
@@ -331,6 +372,11 @@ function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
       label: "HQ labels and HP",
       ok: players.every((player) => player.hqName && Number.isFinite(player.commandTowerHp)),
       detail: "per-player HQ name and HP are visible in HUD",
+    },
+    {
+      label: "HQ board positions",
+      ok: players.every((player) => player.commandTowerPosition || !isLiveMode),
+      detail: "authoritative board_state can place real HQs on the board",
     },
     {
       label: "Resource labels",

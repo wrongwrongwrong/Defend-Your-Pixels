@@ -7,48 +7,77 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Dynamic: license-file
 
-# Defend-Your-Pixels
-technical feasibility test
+# Defend Your Pixels
 
-Current repo structure
-- `python_tracker/`: camera, ArUco detection, board mapping, tracker experiments
-- `bridge/`: Python to frontend transport layer
-- `react_frontend/`: React visualization and test frontend
-- `docs/`: architecture and code provenance notes
-- `main.cpp`: preserved C++ reference implementation used during Python conversion
+## Start Up
 
-Setup
-- This project uses `./.venv/`.
+### First-time setup
 
-Install (from a terminal in the repo root — **do not rely on double‑clicking** `setup.sh`; macOS often opens it in an editor instead of running it)
+At the repo root:
 
 ```bash
-cd /path/to/Defend-Your-Pixels
-chmod +x setup.sh   # first time only
-./setup.sh
+python -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -e .
 ```
 
-This installs `requirements.txt`, then **editable** `pip install -e .` so `python_tracker`, `bridge`, and `model_backend` import from any working directory.
+Then install frontend dependencies:
 
-Run
-- `source .venv/bin/activate`
-- **Pygame PVP prototype:** `python3 -m prototype_pygame.main`
-- **Pygame single-player range/attack test:** `python3 -m prototype_pygame.single_player_main`
-- `python3 runner/run_camera_preview.py`
-- `python3 runner/run_marker_preview.py`
-- `python3 runner/run_live_tracker.py`
+```bash
+cd react_frontend
+npm install
+```
 
-Frontend
-- `cd react_frontend`
-- `npm install`
-- `npm run dev`
+### Recommended: start frontend + live tracker together
 
-If you see `ModuleNotFoundError: No module named 'cv2'`
-- Check interpreter:
-  `python -c "import sys; print(sys.executable)"`
-- Reinstall in this env:
-  `python -m pip install -r requirements.txt`
+From `Defend-Your-Pixels\react_frontend`:
 
-If OpenCV says camera access is denied (macOS)
-- Enable Camera for the app launching Python (Terminal/Cursor).
-- If needed: `tccutil reset Camera`
+```bash
+npm run dev:live
+```
+
+This starts:
+- the React frontend
+- the Python live tracker
+
+### Two-screen mirrored UI
+
+After `npm run dev:live`, open two browser windows:
+
+- `http://localhost:5173/?view=p1`
+- `http://localhost:5173/?view=p2`
+
+Recommended setup:
+
+- move the `?view=p1` window to Player 1's monitor
+- move the `?view=p2` window to Player 2's monitor
+- fullscreen both windows
+
+`?view=p2` mirrors the board so Player 2 sees their own side as the local/home edge.
+
+More detail:
+
+- `docs/dual_screen_ui_setup.md`
+
+### Start separately
+
+Terminal 1, from `Defend-Your-Pixels\react_frontend`:
+
+```bash
+npm run dev
+```
+
+Terminal 2, from `D:\Defend-Your-Pixels`:
+
+```bash
+.venv\Scripts\python -m runner.run_live_tracker
+```
+
+### Marker review only
+
+From `D:\Defend-Your-Pixels`:
+
+```bash
+.venv\Scripts\python -m runner.run_marker_preview
+```

@@ -1,8 +1,10 @@
 import { hpColor } from "../../game/gameLogic";
+import { transformBoardPosition } from "../../game/viewTransform";
 import { getEntityVisuals, KIND_ICONS } from "./entityVisuals";
 
-export default function Unit({ unit, cellSize }) {
+export default function Unit({ unit, cellSize, gridSize, viewPlayerId }) {
   const kind = unit.kind ?? "attacker";
+  const displayPosition = transformBoardPosition(unit.pos, viewPlayerId, gridSize);
   const { glowClass, unitBorderColor, unitBackground } = getEntityVisuals(unit.playerId);
 
   const maxHp = unit.maxHp ?? unit.hp ?? 1;
@@ -21,8 +23,8 @@ export default function Unit({ unit, cellSize }) {
       style={{
         width: size,
         height: size,
-        left: unit.pos.x * cellSize - half + cellSize / 2,
-        top: unit.pos.y * cellSize - half + cellSize / 2,
+        left: displayPosition.x * cellSize - half + cellSize / 2,
+        top: displayPosition.y * cellSize - half + cellSize / 2,
         background: unitBackground,
       }}
       title={`${kind} HP:${unit.hp}`}

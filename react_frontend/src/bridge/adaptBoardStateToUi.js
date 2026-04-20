@@ -70,6 +70,10 @@ function adaptPlayers(rawPlayers, basePlayers) {
         rawPlayer.command_tower_max_hp,
         basePlayer.commandTowerMaxHp
       ),
+      commandTowerPosition: adaptNullablePosition(
+        rawPlayer.command_tower_position,
+        basePlayer.commandTowerPosition
+      ),
       tokens: [],
     };
   });
@@ -106,6 +110,11 @@ function adaptPosition(position) {
     x: numberOr(position?.x, 0),
     y: numberOr(position?.y, 0),
   };
+}
+
+function adaptNullablePosition(position, fallback) {
+  if (!isRecord(position)) return fallback ?? null;
+  return adaptPosition(position);
 }
 
 function adaptMoveCountdown(rawCountdown, baseCountdown) {
