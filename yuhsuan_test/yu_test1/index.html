@@ -38,8 +38,10 @@ const H       = BY + ROWS * CELL + 28;   // total canvas height
 //  COLOUR PALETTE  (Old Mick / Emu War theme)
 // ═══════════════════════════════════════════════════════════════════
 const C = {
-  farmer_cell : 0xd4a860,   // ochre wheat paddock
-  emu_cell    : 0x7aaa4a,   // bush green feeding ground
+  farmer_cell : 0xe8c890,   // pale wheat (safe / non-target, washed out)
+  emu_cell    : 0xb8d090,   // pale sage (safe / non-target, washed out)
+  p1_target   : 0xc84818,   // vivid dark orange — attackable P1 cells
+  p2_target   : 0x0f4a10,   // deep forest green — attackable P2 cells
   fence_cell  : 0xe8d068,   // golden fence line
   board_bg    : 0x2a1e0e,   // dark earth background
   panel_bg    : 0x1e1408,   // panel background
@@ -237,8 +239,8 @@ function detectSoundEvents(prev, curr) {
   // Turn change
   if (prev.turn !== curr.turn && curr.turn !== null) SFX.turn();
 
-  // Terrain locked
-  if (!prev.terrain_locked && curr.terrain_locked) SFX.lock();
+  // Map regenerated (seed changed)
+  if (prev.map_seed !== curr.map_seed) SFX.lock();
 
   // Token moved
   const checkMove = (a, b) => {
@@ -273,7 +275,8 @@ class GameScene extends Phaser.Scene {
     this.boardGfx = this.add.graphics().setDepth(0);
     this.dynGfx   = this.add.graphics().setDepth(2);
 
-    this._drawStaticBoard();
+    this._drawBoardLabels();          // one-shot text labels (A–L, 1–12)
+    this._drawStaticBoard();          // initial draw (before terrain arrives)
     this._buildPanel();
     this._buildLabels();
     this._buildLockButton();
@@ -289,126 +292,66 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── Static board (drawn once) ───────────────────────────────────
-  _drawStaticBoard() {
-    const g = this.boardGfx;
-
-    // Deterministic pseudo-random for decorations (stable across reloads)
-    const rnd = (c, r, salt = 0) => {
-      const x = Math.sin((c * 374761393 + r * 668265263 + salt * 9125) * 0.0001) * 43758.5453;
-      return x - Math.floor(x);
-    };
-
-    // ── Soft vignette behind whole board ──────────────────────────
-    g.fillStyle(0x0c0804, 1);
-    g.fillRoundedRect(BX - 10, BY - 10, COLS * CELL + 20, ROWS * CELL + 20, 14);
-
-    // Column labels A–L
+  // ── Board labels (A–L / 1–12), drawn once in create() ──────────
+  _drawBoardLabels() {
     for (let c = 0; c < COLS; c++) {
       this.add.text(BX + c * CELL + CELL / 2 - 4, BY - 18,
         String.fromCharCode(65 + c),
         { fontSize: '11px', color: '#d8b070', fontFamily: 'Georgia', fontStyle: 'bold' });
     }
-    // Row labels 1–12
     for (let r = 0; r < ROWS; r++) {
       this.add.text(BX - 22, BY + r * CELL + CELL / 2 - 7,
         String(r + 1),
         { fontSize: '11px', color: '#d8b070', fontFamily: 'Georgia', fontStyle: 'bold' });
     }
+  }
 
-    // ── Grid cells with cute auto-drawn decorations ───────────────
+  // ── Static board (re-callable when terrain/targets change) ────
+  _drawStaticBoard(terrain) {
+    const g = this.boardGfx;
+    g.clear();
+
+    // Build target lookup sets (empty when terrain not yet received)
+    const targetKey = (c, r) => `${c},${r}`;
+    const p1Targets = new Set((terrain?.p1_targets ?? []).map(t => targetKey(t.col, t.row)));
+    const p2Targets = new Set((terrain?.p2_targets ?? []).map(t => targetKey(t.col, t.row)));
+
+    // ── Soft vignette behind whole board ──────────────────────────
+    g.fillStyle(0x0c0804, 1);
+    g.fillRoundedRect(BX - 10, BY - 10, COLS * CELL + 20, ROWS * CELL + 20, 14);
+
+    // ── Grid cells ────────────────────────────────────────────────
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const x = BX + c * CELL, y = BY + r * CELL;
         const w = CELL - 1, h = CELL - 1;
-        const onFence = (c + r === 11);
-        const p1side  = isP1(c, r);
+        const onFence  = (c + r === 11);
+        const p1side   = isP1(c, r);
+        const key      = targetKey(c, r);
+        const isTarget = p1side ? p1Targets.has(key) : p2Targets.has(key);
 
-        // Base fill
-        const baseFill = onFence ? C.fence_cell
-                       : p1side  ? C.farmer_cell
-                       :           C.emu_cell;
+        // Base fill: targets get vivid colour; everything else muted
+        let baseFill;
+        if (onFence)       baseFill = C.fence_cell;
+        else if (isTarget) baseFill = p1side ? C.p1_target : C.p2_target;
+        else               baseFill = p1side ? C.farmer_cell : C.emu_cell;
+
         g.fillStyle(baseFill, 1);
         g.fillRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
 
-        // Soft inner highlight (top-left) + shadow (bottom-right) for depth
+        // Soft highlight / shadow for depth
         g.fillStyle(0xffffff, 0.07);
         g.fillRoundedRect(x + 1, y + 1, w - 1, (h - 1) / 2, 4);
         g.fillStyle(0x000000, 0.10);
         g.fillRect(x + 2, y + h - 4, w - 3, 3);
 
-        // Thin border
-        g.lineStyle(1, 0x000000, 0.12);
-        g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
-
-        // ── Decorations (deterministic, stable) ───────────────────
-        if (onFence) continue;  // fence posts drawn separately below
-
-        const cx = x + CELL / 2, cy = y + CELL / 2;
-
-        if (p1side) {
-          // Old Mick's wheat fields — small wheat stalks
-          const n = rnd(c, r, 1);
-          if (n < 0.45) {
-            // Wheat stalks (|/\ mark)
-            const stalkCol = 0xb88540;
-            g.lineStyle(1.2, stalkCol, 0.85);
-            const bx = cx + (rnd(c, r, 2) - 0.5) * 18;
-            const by = cy + (rnd(c, r, 3) - 0.5) * 14;
-            g.lineBetween(bx, by + 6, bx, by - 6);
-            g.lineBetween(bx, by - 2, bx - 3, by - 5);
-            g.lineBetween(bx, by - 2, bx + 3, by - 5);
-            g.lineBetween(bx, by - 5, bx - 2, by - 8);
-            g.lineBetween(bx, by - 5, bx + 2, by - 8);
-            // Wheat head (golden dot)
-            g.fillStyle(0xf0c050, 0.9);
-            g.fillCircle(bx, by - 7, 1.5);
-          } else if (n < 0.60) {
-            // Small pebble
-            g.fillStyle(0x8a6830, 0.55);
-            g.fillCircle(cx + (rnd(c, r, 4) - 0.5) * 18,
-                         cy + (rnd(c, r, 5) - 0.5) * 14, 2);
-          } else if (n < 0.68) {
-            // Tiny dirt speck
-            g.fillStyle(0x5a3c10, 0.35);
-            g.fillCircle(cx + (rnd(c, r, 6) - 0.5) * 20,
-                         cy + (rnd(c, r, 7) - 0.5) * 18, 1);
-          }
+        // Border — thicker on targets so they pop
+        if (isTarget) {
+          g.lineStyle(1.5, 0x000000, 0.35);
         } else {
-          // Mob territory — bush green grass tufts + rocks
-          const n = rnd(c, r, 10);
-          if (n < 0.50) {
-            // Grass tuft (3 little arcs)
-            const bx = cx + (rnd(c, r, 11) - 0.5) * 18;
-            const by = cy + (rnd(c, r, 12) - 0.5) * 14;
-            g.lineStyle(1.2, 0x4a8a30, 0.9);
-            for (let i = -1; i <= 1; i++) {
-              g.lineBetween(bx + i * 2, by + 3, bx + i * 2 - 1, by - 3);
-            }
-            // Little shadow under tuft
-            g.fillStyle(0x000000, 0.12);
-            g.fillEllipse(bx, by + 4, 10, 2);
-          } else if (n < 0.65) {
-            // Rock (grey pebble with highlight)
-            const bx = cx + (rnd(c, r, 13) - 0.5) * 20;
-            const by = cy + (rnd(c, r, 14) - 0.5) * 16;
-            g.fillStyle(0x555548, 0.75);
-            g.fillEllipse(bx, by, 6, 4);
-            g.fillStyle(0xa0a090, 0.4);
-            g.fillEllipse(bx - 1, by - 1, 2.5, 1.5);
-          } else if (n < 0.73) {
-            // Tiny flower (white or pale yellow)
-            const bx = cx + (rnd(c, r, 15) - 0.5) * 18;
-            const by = cy + (rnd(c, r, 16) - 0.5) * 14;
-            g.fillStyle(rnd(c, r, 17) < 0.5 ? 0xffffff : 0xffefa0, 0.85);
-            for (let k = 0; k < 5; k++) {
-              const a = (k / 5) * Math.PI * 2;
-              g.fillCircle(bx + Math.cos(a) * 1.6, by + Math.sin(a) * 1.6, 1.1);
-            }
-            g.fillStyle(0xe8b020, 1);
-            g.fillCircle(bx, by, 0.9);
-          }
+          g.lineStyle(1, 0x000000, 0.12);
         }
+        g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
       }
     }
 
@@ -447,13 +390,16 @@ class GameScene extends Phaser.Scene {
       this._drawStar(g, sx, 27, 7, 3, 5);
     }
 
-    this.add.text(BX + COLS * CELL / 2, 14, '⭐  OLD MICK  vs  THE MOB  ⭐', {
-      fontSize: '19px', fontFamily: 'Georgia', color: '#f8d870',
-      fontStyle: 'bold', stroke: '#3a2010', strokeThickness: 3,
-    }).setOrigin(0.5, 0);
-    this.add.text(BX + COLS * CELL / 2, 35, '~ 1932 Great Emu War ~', {
-      fontSize: '11px', fontFamily: 'Georgia', color: '#d0a060', fontStyle: 'italic',
-    }).setOrigin(0.5, 0);
+    if (!this._titleDrawn) {
+      this.add.text(BX + COLS * CELL / 2, 14, '⭐  OLD MICK  vs  THE MOB  ⭐', {
+        fontSize: '19px', fontFamily: 'Georgia', color: '#f8d870',
+        fontStyle: 'bold', stroke: '#3a2010', strokeThickness: 3,
+      }).setOrigin(0.5, 0);
+      this.add.text(BX + COLS * CELL / 2, 35, '~ 1932 Great Emu War ~', {
+        fontSize: '11px', fontFamily: 'Georgia', color: '#d0a060', fontStyle: 'italic',
+      }).setOrigin(0.5, 0);
+      this._titleDrawn = true;
+    }
   }
 
   /** Filled 5-point star for decoration */
@@ -512,10 +458,10 @@ class GameScene extends Phaser.Scene {
     T(8, 226, 'TIER UPGRADES', '#c8a050', '11px');
 
     // Dynamic texts (updated each frame)
-    this.phaseText  = T(8, H - 180, 'Phase: —',   '#c0d0ff', '12px');
-    this.turnText   = T(8, H - 162, 'Turn: —',    '#f0d070', '13px');
-    this.cornerText = T(8, H - 144, 'Corners: 0/4', '#a08040');
-    this.wsText     = T(8, H - 128, '◌ connecting…', '#888860');
+    this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
+    this.scoreText  = T(8, H - 174, 'P1 razed: 0/30  P2 razed: 0/30', '#ffb060', '10px');
+    this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
+    this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
 
     // Tier display
     this.p1TierTxt = T(8,  244, 'P1 Tier: 1', '#f0c060');
@@ -533,6 +479,8 @@ class GameScene extends Phaser.Scene {
       return btn;
     };
 
+    // Tier state is now authoritative on the server — local cache only used
+    // for rendering the DEF zone radius until the first state arrives.
     this._p1Tier = 1;
     this._p2Tier = 1;
     mkBtn('[P1 +Tier]', 8,  272, () => this._changeTier(1,  1), '#f0c060');
@@ -551,18 +499,11 @@ class GameScene extends Phaser.Scene {
   }
 
   _changeTier(player, delta) {
-    if (player === 1) {
-      this._p1Tier = Math.max(1, Math.min(4, this._p1Tier + delta));
-      this.p1TierTxt.setText(`P1 Tier: ${this._p1Tier}${this._p1Tier === 4 ? ' 💥' : ''}`);
-    } else {
-      this._p2Tier = Math.max(1, Math.min(4, this._p2Tier + delta));
-      this.p2TierTxt.setText(`P2 Tier: ${this._p2Tier}${this._p2Tier === 4 ? ' 💥' : ''}`);
+    // Server is authoritative — just send the request
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+      wsInstance.send(JSON.stringify({ type: 'tier', player, delta }));
     }
-    if ((player === 1 && this._p1Tier === 4) || (player === 2 && this._p2Tier === 4)) {
-      SFX.nuke();
-    } else {
-      SFX.lock();
-    }
+    SFX.lock();
   }
 
   // ── Token labels (repositioned each frame) ──────────────────────
@@ -615,37 +556,37 @@ class GameScene extends Phaser.Scene {
     arr.setVisible(true);
   }
 
-  // ── Lock terrain button ─────────────────────────────────────────
+  // ── Control buttons ─────────────────────────────────────────────
   _buildLockButton() {
+    // "NEW MAP" button — asks server to regenerate terrain
     const bx = PANEL_X + 8, by = H - 108, bw = PW - 16, bh = 36;
 
-    this.lockBtnGfx = this.add.graphics().setDepth(5);
-    this.lockBtnGfx.fillStyle(0x226622, 1);
-    this.lockBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
-    this.lockBtnGfx.setInteractive(
+    this.newMapBtnGfx = this.add.graphics().setDepth(5);
+    this.newMapBtnGfx.fillStyle(0x3a5aa0, 1);
+    this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    this.newMapBtnGfx.setInteractive(
       new Phaser.Geom.Rectangle(bx, by, bw, bh),
       Phaser.Geom.Rectangle.Contains
     );
-
-    this.lockBtnTxt = this.add.text(bx + 12, by + 9,
-      '🔒  LOCK TERRAIN  →  START BATTLE', {
-        fontSize: '11px', fontFamily: 'Georgia',
-        color: '#ccffcc', fontStyle: 'bold'
+    this.newMapBtnTxt = this.add.text(bx + 12, by + 9,
+      '🎲  NEW RANDOM MAP', {
+        fontSize: '12px', fontFamily: 'Georgia',
+        color: '#e0e8ff', fontStyle: 'bold'
       }).setDepth(6);
 
-    this.lockBtnGfx.on('pointerdown', () => this._sendLock());
-    this.lockBtnGfx.on('pointerover', () => {
-      this.lockBtnGfx.clear();
-      this.lockBtnGfx.fillStyle(0x339933, 1);
-      this.lockBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
-    });
-    this.lockBtnGfx.on('pointerout', () => {
-      this.lockBtnGfx.clear();
-      this.lockBtnGfx.fillStyle(0x226622, 1);
-      this.lockBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
-    });
+    // Keep the alias so existing tween targeting lockBtnGfx keeps working
+    this.lockBtnGfx = this.newMapBtnGfx;
 
-    // Fire button (manual fire trigger for demo)
+    const redraw = (fill) => {
+      this.newMapBtnGfx.clear();
+      this.newMapBtnGfx.fillStyle(fill, 1);
+      this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    };
+    this.newMapBtnGfx.on('pointerover', () => redraw(0x5c7cc8));
+    this.newMapBtnGfx.on('pointerout',  () => redraw(0x3a5aa0));
+    this.newMapBtnGfx.on('pointerdown', () => this._requestNewMap());
+
+    // Fire button (demo sound trigger)
     const fbx = PANEL_X + 8, fby = H - 60, fbw = PW - 16, fbh = 28;
     const fireGfx = this.add.graphics().setDepth(5);
     fireGfx.fillStyle(0x882200, 1);
@@ -660,20 +601,16 @@ class GameScene extends Phaser.Scene {
     fireGfx.on('pointerdown', () => { SFX.fire(); setTimeout(() => SFX.hit(), 280); });
   }
 
-  _sendLock() {
+  _requestNewMap() {
     if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
-      wsInstance.send(JSON.stringify({ type: 'lock_terrain' }));
+      wsInstance.send(JSON.stringify({ type: 'new_map' }));
     }
-    // Visual feedback
-    const bx = PANEL_X + 8, by = H - 108, bw = PW - 16, bh = 36;
-    this.lockBtnGfx.clear();
-    this.lockBtnGfx.fillStyle(0x884422, 1);
-    this.lockBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
-    this.lockBtnTxt.setText('✓  TERRAIN LOCKED  —  BATTLE!');
-    this.lockBtnTxt.setColor('#ffffaa');
-    this.tweens.killTweensOf(this.lockBtnGfx);
-    this.lockBtnGfx.setAlpha(1);
-    SFX.lock();
+    // Visual feedback — quick flash
+    this.tweens.add({
+      targets: this.newMapBtnGfx,
+      alpha: { from: 0.5, to: 1 }, duration: 250, ease: 'Sine.easeOut',
+    });
+    SFX.lock();   // reuse the three rising tones for a "new map" chime
   }
 
   // ── WebSocket ───────────────────────────────────────────────────
@@ -704,14 +641,43 @@ class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════════
   _applyState() {
     if (!gameState) return;
-    const { phase, turn, corners_found, p1, p2, terrain, terrain_locked } = gameState;
+    const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
+    const G = game || {};
 
-    // ── Phase / turn / corner texts ───────────────────────────────
-    if (phase === 'terrain_placement') {
-      this.phaseText.setText('Phase: 📍 TERRAIN PLACEMENT').setColor('#90b8ff');
-    } else {
-      this.phaseText.setText('Phase: ⚔  BATTLE').setColor('#ff8844');
+    // Redraw board when a new random map arrives (target cells shift).
+    if (terrain && map_seed !== this._drawnSeed) {
+      this._drawStaticBoard(terrain);
+      this._drawnSeed = map_seed;
     }
+
+    // Sync tiers from server (authoritative)
+    if (G.tier_p1 != null) {
+      this._p1Tier = G.tier_p1;
+      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : ''}`);
+    }
+    if (G.tier_p2 != null) {
+      this._p2Tier = G.tier_p2;
+      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : ''}`);
+    }
+
+    // ── Turn / corner / score texts ──────────────────────────────
+    const thr = G.attrition_threshold ?? 30;
+    const s1 = G.score_p2_destroyed ?? 0;  // cells P1 razed (in P2 territory)
+    const s2 = G.score_p1_destroyed ?? 0;  // cells P2 razed (in P1 territory)
+    this.scoreText?.setText(`P1 razed: ${s1}/${thr}   P2 razed: ${s2}/${thr}`);
+
+    // Fire sound on new attack events coming from the server
+    if (Array.isArray(gameState.events)) {
+      for (const ev of gameState.events) {
+        if (ev.type === 'cell_destroyed')    SFX.hit();
+        else if (ev.type === 'cell_damaged') SFX.fire();
+        else if (ev.type === 'hq_destroyed') SFX.nuke();
+        else if (ev.type === 'soft_destroyed') SFX.block();
+      }
+    }
+
+    // Win banner
+    this._updateWinBanner(G);
 
     if (turn === 1)       this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
     else if (turn === 2)  this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
@@ -739,8 +705,11 @@ class GameScene extends Phaser.Scene {
     // ── Clear dynamic layer ───────────────────────────────────────
     this.dynGfx.clear();
 
-    // ── 1. Terrain ─────────────────────────────────────────────────
-    this._drawTerrain(terrain);
+    // ── 0. Scorched earth + damaged cells + revealed HQ ───────────
+    this._drawDamageLayer(G);
+
+    // ── 1. Terrain (skip destroyed soft pieces) ───────────────────
+    this._drawTerrain(terrain, new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`)));
 
     // ── 2. Defense zones ───────────────────────────────────────────
     if (p1?.def?.col != null)
@@ -764,16 +733,12 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── 4. Tokens + direction arrows ───────────────────────────────
-    if (p1) {
-      if (p1.atk_a?.col != null) this._drawToken(p1.atk_a.col, p1.atk_a.row, p1.atk_a.angle, 'atk', true);
-      if (p1.atk_b?.col != null) this._drawToken(p1.atk_b.col, p1.atk_b.row, p1.atk_b.angle, 'atk', true);
-      if (p1.def?.col  != null)  this._drawToken(p1.def.col,   p1.def.row,   null,            'def', true);
-    }
-    if (p2) {
-      if (p2.atk_a?.col != null) this._drawToken(p2.atk_a.col, p2.atk_a.row, p2.atk_a.angle, 'atk', false);
-      if (p2.atk_b?.col != null) this._drawToken(p2.atk_b.col, p2.atk_b.row, p2.atk_b.angle, 'atk', false);
-      if (p2.def?.col  != null)  this._drawToken(p2.def.col,   p2.def.row,   null,            'def', false);
-    }
+    const drawTok = (tok, role, p1side) => {
+      if (!tok || tok.col == null) return;
+      this._drawToken(tok.col, tok.row, tok.angle, role, p1side, !!tok.stale);
+    };
+    if (p1) { drawTok(p1.atk_a, 'atk', true);  drawTok(p1.atk_b, 'atk', true);  drawTok(p1.def, 'def', true);  }
+    if (p2) { drawTok(p2.atk_a, 'atk', false); drawTok(p2.atk_b, 'atk', false); drawTok(p2.def, 'def', false); }
 
     // ── 5. Token labels ────────────────────────────────────────────
     this._placeLabel('p1_atk_a', p1?.atk_a?.col, p1?.atk_a?.row);
@@ -802,25 +767,23 @@ class GameScene extends Phaser.Scene {
     this.p2AtkBInfo.setText(posStr(p2?.atk_b));
     this.p2DefInfo .setText(posStr(p2?.def));
 
-    // Terrain-placement phase: draw placement-guide grid overlay
-    if (phase === 'terrain_placement') {
-      this._drawPlacementGuide(p1, p2);
-    } else {
-      this._hidePlacementLabels();
-    }
+    // Placement-guide overlays are no longer used — terrain is server-generated
+    this._hidePlacementLabels();
   }
 
   // ═══════════════════════════════════════════════════════════════
   //  DRAW HELPERS
   // ═══════════════════════════════════════════════════════════════
 
-  /** Terrain pieces: hard = filled + X, soft = lighter + dots */
-  _drawTerrain(terrain) {
+  /** Terrain pieces: hard = filled + X, soft = lighter + dots.
+   *  softGoneKeys = Set of "c,r" strings for destroyed soft terrain (skip them). */
+  _drawTerrain(terrain, softGoneKeys = new Set()) {
     if (!terrain) return;
     const g = this.dynGfx;
 
     const drawPiece = (col, row, isHard, isP1side) => {
       if (col == null) return;
+      if (!isHard && softGoneKeys.has(`${col},${row}`)) return;   // destroyed
       const x = BX + col * CELL, y = BY + row * CELL;
       const pad = 3, s = CELL - 1 - pad * 2;
 
@@ -863,6 +826,70 @@ class GameScene extends Phaser.Scene {
     (terrain.p1_soft || []).forEach(t => drawPiece(t.col, t.row, false, true));
     (terrain.p2_hard || []).forEach(t => drawPiece(t.col, t.row, true,  false));
     (terrain.p2_soft || []).forEach(t => drawPiece(t.col, t.row, false, false));
+  }
+
+  /** Cracked / damaged cell look (took damage but not destroyed yet) */
+  _drawDamageLayer(G) {
+    const g = this.dynGfx;
+    // Damaged (partial HP) — single crack overlay
+    const dmg = G.damage || {};
+    for (const key in dmg) {
+      const [c, r] = key.split(',').map(Number);
+      if ((G.destroyed || []).some(d => d[0] === c && d[1] === r)) continue;   // skip fully destroyed
+      const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+      // Dark smoky overlay
+      g.fillStyle(0x000000, 0.28);
+      g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+      // Crack line
+      g.lineStyle(1.5, 0x201008, 0.8);
+      g.lineBetween(x + 6, y + 10, x + CELL - 12, y + CELL - 8);
+      g.lineBetween(x + CELL - 14, y + 12, x + CELL - 6, y + CELL - 14);
+    }
+
+    // Scorched earth (destroyed)
+    (G.destroyed || []).forEach(([c, r]) => this._drawScorched(c, r));
+
+    // Revealed HQ (once destroyed)
+    const hqR = G.hq_revealed || {};
+    Object.entries(hqR).forEach(([side, pos]) => {
+      if (!pos) return;
+      const [c, r] = pos;
+      const cx = BX + c * CELL + CELL / 2, cy = BY + r * CELL + CELL / 2;
+      // Golden ring
+      g.lineStyle(3, 0xffd060, 0.95);
+      g.strokeCircle(cx, cy, CELL * 0.38);
+      g.lineStyle(1.5, 0xffffff, 0.8);
+      g.strokeCircle(cx, cy, CELL * 0.28);
+    });
+  }
+
+  /** Draw a single scorched-earth cell (destroyed forever) */
+  _drawScorched(c, r) {
+    const g = this.dynGfx;
+    const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+    const w = CELL - 3, h = CELL - 3;
+    // Deep black base
+    g.fillStyle(0x0a0603, 0.92);
+    g.fillRoundedRect(x, y, w, h, 3);
+    // Ember specks (deterministic by cell)
+    const rnd = (k) => {
+      const v = Math.sin((c * 91 + r * 17 + k * 131) * 12.97) * 43758.55;
+      return v - Math.floor(v);
+    };
+    for (let i = 0; i < 5; i++) {
+      const ex = x + 4 + rnd(i) * (w - 8);
+      const ey = y + 4 + rnd(i + 10) * (h - 8);
+      g.fillStyle(0xff6a20, 0.55);
+      g.fillCircle(ex, ey, 1.4);
+    }
+    // Cracks
+    g.lineStyle(1, 0x502010, 0.8);
+    g.lineBetween(x + 4, y + 8,  x + w - 8, y + h - 6);
+    g.lineBetween(x + w - 6, y + 10, x + 10, y + h - 10);
+    // Faint skull hint — small '×' burn mark
+    g.lineStyle(2, 0x802010, 0.55);
+    g.lineBetween(x + w / 2 - 5, y + h / 2 - 5, x + w / 2 + 5, y + h / 2 + 5);
+    g.lineBetween(x + w / 2 + 5, y + h / 2 - 5, x + w / 2 - 5, y + h / 2 + 5);
   }
 
   /** Defense zone — semi-transparent highlighted rectangle */
@@ -977,8 +1004,9 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Token — rounded square (ATK) or diamond (DEF) with bob + shadow */
-  _drawToken(col, row, angle, role, isP1) {
+  /** Token — rounded square (ATK) or diamond (DEF) with bob + shadow.
+   *  If `stale` is true (cached position, marker briefly lost), draw semi-transparent. */
+  _drawToken(col, row, angle, role, isP1, stale = false) {
     const g = this.dynGfx;
     const { x: cx0, y: cy0 } = cc(col, row);
     const r16    = CELL * 0.36;
@@ -991,35 +1019,38 @@ class GameScene extends Phaser.Scene {
     const bob   = Math.sin(this.time.now / 450 + phase) * 1.4;
     const cx = cx0, cy = cy0 + bob;
 
+    const bodyA   = stale ? 0.45 : 1.0;   // fade out cached tokens
+    const borderA = stale ? 0.6  : 1.0;
+
     // Shadow under token
-    g.fillStyle(0x000000, 0.28);
+    g.fillStyle(0x000000, 0.28 * bodyA);
     g.fillEllipse(cx + 1, cy0 + r16 + 3, r16 * 1.6, r16 * 0.45);
 
     if (role === 'atk') {
       // Rounded square body
-      g.fillStyle(fill, 1);
+      g.fillStyle(fill, bodyA);
       g.fillRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
       // Highlight strip (top)
-      g.fillStyle(0xffffff, 0.20);
+      g.fillStyle(0xffffff, 0.20 * bodyA);
       g.fillRoundedRect(cx - r16 + 2, cy - r16 + 2, r16 * 2 - 4, r16 * 0.7, 5);
       // Border
-      g.lineStyle(2.5, border, 1);
+      g.lineStyle(2.5, border, borderA);
       g.strokeRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
     } else {
       // Diamond (rotated square) — DEF
-      g.fillStyle(fill, 1);
+      g.fillStyle(fill, bodyA);
       g.fillPoints([
         { x: cx,       y: cy - r16 }, { x: cx + r16, y: cy },
         { x: cx,       y: cy + r16 }, { x: cx - r16, y: cy }
       ], true);
       // Top highlight (smaller diamond)
-      g.fillStyle(0xffffff, 0.22);
+      g.fillStyle(0xffffff, 0.22 * bodyA);
       g.fillPoints([
         { x: cx,           y: cy - r16 + 2 }, { x: cx + r16 * 0.6, y: cy - r16 * 0.2 },
         { x: cx,           y: cy },           { x: cx - r16 * 0.6, y: cy - r16 * 0.2 }
       ], true);
       // Border
-      g.lineStyle(2.5, border, 1);
+      g.lineStyle(2.5, border, borderA);
       g.strokePoints([
         { x: cx,       y: cy - r16 }, { x: cx + r16, y: cy },
         { x: cx,       y: cy + r16 }, { x: cx - r16, y: cy }
@@ -1115,6 +1146,46 @@ class GameScene extends Phaser.Scene {
   _hidePlacementLabels() {
     if (this._zoneLabels)
       Object.values(this._zoneLabels).forEach(l => l.setVisible(false));
+  }
+
+  /** Big victory banner on top of the board when the game ends */
+  _updateWinBanner(G) {
+    const winner = G.winner;
+    if (!winner) {
+      if (this._winBanner) { this._winBanner.setVisible(false); this._winSub?.setVisible(false); }
+      return;
+    }
+
+    if (!this._winBanner) {
+      const bgCol = 'rgba(12,6,2,0.88)';
+      this._winBanner = this.add.text(
+        BX + COLS * CELL / 2, BY + ROWS * CELL / 2 - 16, '',
+        { fontSize: '28px', fontFamily: 'Georgia', fontStyle: 'bold',
+          color: '#ffe070', backgroundColor: bgCol,
+          padding: { x: 22, y: 12 },
+          stroke: '#3a2010', strokeThickness: 4 }
+      ).setOrigin(0.5, 0.5).setDepth(20);
+      this._winSub = this.add.text(
+        BX + COLS * CELL / 2, BY + ROWS * CELL / 2 + 28, '',
+        { fontSize: '13px', fontFamily: 'Georgia', fontStyle: 'italic',
+          color: '#f0c080', backgroundColor: bgCol, padding: { x: 14, y: 6 } }
+      ).setOrigin(0.5, 0.5).setDepth(20);
+      this.tweens.add({
+        targets: this._winBanner, scale: { from: 0.5, to: 1 },
+        duration: 400, ease: 'Back.easeOut',
+      });
+    }
+
+    const msgs = {
+      homestead_destroyed: ['🐦 THE MOB WINS', 'Old Mick\'s homestead burns — no shelter, no grain.'],
+      nest_destroyed:      ['🌾 OLD MICK WINS', 'The hidden Nest is gone. The emu breeding heart is dead.'],
+      attrition:           winner === 'p1'
+          ? ['🌾 OLD MICK WINS', 'Feeding grounds razed. The Mob starves.']
+          : ['🐦 THE MOB WINS', 'Paddocks trampled. Old Mick can\'t fund another shot.'],
+    };
+    const [title, sub] = msgs[G.win_reason] || [`${winner.toUpperCase()} WINS`, ''];
+    this._winBanner.setText(title).setVisible(true);
+    this._winSub.setText(sub).setVisible(true);
   }
 
   // ─── Utility: dashed line ────────────────────────────────────────
