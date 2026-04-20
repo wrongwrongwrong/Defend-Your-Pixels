@@ -3,23 +3,44 @@
  * Repo root must be the current working directory for `node scripts/run-live-tracker.cjs`.
  */
 const { spawn } = require("child_process");
+const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const isWin = process.platform === "win32";
-const venvPython = isWin
-  ? path.join(root, ".venv", "Scripts", "python.exe")
-  : path.join(root, ".venv", "bin", "python");
+const activeVenvPython = process.env.VIRTUAL_ENV
+  ? path.join(
+      process.env.VIRTUAL_ENV,
+      isWin ? path.join("Scripts", "python.exe") : path.join("bin", "python"),
+    )
+  : null;
+const configuredPython = process.env.DEFEND_YOUR_PIXELS_PYTHON || null;
+const candidatePythons = [
+  configuredPython,
+  activeVenvPython,
+  isWin ? path.join(root, ".venv", "Scripts", "python.exe") : path.join(root, ".venv", "bin", "python"),
+  isWin ? path.join(root, "dyp", "Scripts", "python.exe") : path.join(root, "dyp", "bin", "python"),
+].filter(Boolean);
+
+function isUsablePython(candidate) {
+  if (!candidate || !fs.existsSync(candidate)) {
+    return false;
+  }
+
+  const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
+  return result.status === 0;
+}
 
 let python = isWin ? "python" : "python3";
-if (fs.existsSync(venvPython)) {
-  python = venvPython;
+const existingPython = candidatePythons.find((candidate) => isUsablePython(candidate));
+if (existingPython) {
+  python = existingPython;
 } else {
   console.warn(
-    "[run-live-tracker] No .venv found; using from PATH:",
+    "[run-live-tracker] No repo virtualenv found; using from PATH:",
     python,
-    "(run setup.sh / Windows venv setup first)",
+    `(tried: ${candidatePythons.join(", ") || "none"})`,
   );
 }
 

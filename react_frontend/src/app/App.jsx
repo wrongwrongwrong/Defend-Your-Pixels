@@ -75,7 +75,7 @@ export default function App() {
     setInteractionHint("Backend offline. End turn validation requires authoritative Python state.");
   }, [isLiveMode, sendBackendAction]);
 
-  const { players, gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
+  const { players, resourceTiles = [], gameOver, activePlayer, turn, lastAction, moveCountdown } = gameState;
   const localPlayer = players.find((player) => player.id === viewPlayerId) ?? players[0] ?? null;
   const remotePlayer = players.find((player) => player.id !== viewPlayerId) ?? players[1] ?? null;
   const selectedToken = useMemo(
@@ -216,6 +216,7 @@ export default function App() {
 
       <ValidationSummary
         players={players}
+        resourceTiles={resourceTiles}
         selectedToken={selectedToken}
         actionMode={actionMode}
         isLiveMode={isLiveMode}
@@ -361,7 +362,7 @@ function ViewLink({ href, active, children }) {
   );
 }
 
-function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
+function ValidationSummary({ players, resourceTiles, selectedToken, actionMode, isLiveMode }) {
   const contractChecks = [
     {
       label: "Turn / winner / status",
@@ -387,6 +388,11 @@ function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
       label: "Token theme names",
       ok: players.flatMap((player) => player.tokens ?? []).every((token) => token.themeName || !isLiveMode),
       detail: "frontend can distinguish Riflemen / Mob / Old Mick / Cassowary",
+    },
+    {
+      label: "Resource tile payload",
+      ok: Array.isArray(resourceTiles),
+      detail: "resource tiles are available as first-class frontend data",
     },
   ];
 
@@ -416,6 +422,9 @@ function ValidationSummary({ players, selectedToken, actionMode, isLiveMode }) {
             <div>
               <strong className="text-slate-200">Selected token:</strong>{" "}
               {selectedToken ? `${selectedToken.themeName ?? selectedToken.kind} ${selectedToken.id}` : "none"}
+            </div>
+            <div>
+              <strong className="text-slate-200">Resource tiles visible:</strong> {resourceTiles.length}
             </div>
             <div>
               <strong className="text-slate-200">Move flow:</strong>{" "}

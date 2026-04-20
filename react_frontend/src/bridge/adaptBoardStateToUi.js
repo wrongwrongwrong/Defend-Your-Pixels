@@ -27,6 +27,7 @@ export function adaptBoardStateToUi(raw) {
     moveCountdown: adaptMoveCountdown(raw.move_countdown, baseState.moveCountdown),
     lastAction:
       typeof raw.last_action === "string" ? raw.last_action : baseState.lastAction,
+    resourceTiles: adaptResourceTiles(raw.resource_tiles),
     players: players.map((player) => ({
       ...player,
       tokens: tokensByOwner.get(player.id) ?? [],
@@ -103,6 +104,20 @@ function adaptTokensByOwner(rawUnits, players) {
   }
 
   return tokensByOwner;
+}
+
+function adaptResourceTiles(rawTiles) {
+  if (!Array.isArray(rawTiles)) return [];
+
+  return rawTiles
+    .filter((tile) => isRecord(tile))
+    .map((tile) => ({
+      id: String(tile.id),
+      owner: numberOr(tile.owner, 0),
+      themeName: typeof tile.theme_name === "string" ? tile.theme_name : "Resource Tile",
+      position: adaptPosition(tile.position),
+      protectionLayers: numberOr(tile.protection_layers, 0),
+    }));
 }
 
 function adaptPosition(position) {

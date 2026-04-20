@@ -16,17 +16,14 @@ source .venv/bin/activate
 pip install -e .                         # editable install — required so python_tracker, bridge, model_backend import from anywhere
 ```
 
-The venv is `.venv/` (not `venv`). The editable install packages `python_tracker`, `bridge`, `model_backend`, `prototype_pygame`.
+The venv is `.venv/` (not `venv`). The editable install packages `python_tracker`, `bridge`, and `model_backend`.
 
 ## Running
 
 **Python (always from repo root, with `.venv` active):**
 ```bash
-python3 -m prototype_pygame.main              # PVP prototype
-python3 -m prototype_pygame.single_player_main # single-player range/attack test
 python3 runner/run_live_tracker.py            # live tracker + WS server + cv2 preview
-python3 runner/run_camera_preview.py          # camera feed only
-python3 runner/run_marker_preview.py           # marker detection preview
+python3 runner/run_old_mick_core_smoke.py     # backend rules smoke test
 ```
 
 **Frontend:**
@@ -49,7 +46,7 @@ React: `npm run lint` in `react_frontend/`.
 
 ## Testing
 
-No pytest/unittest framework is configured. The only test-like file is `prototype_pygame/levels/solo_range_test.py`.
+No pytest/unittest framework is configured in this repository.
 
 ## Cameras / OpenCV
 

@@ -154,6 +154,10 @@ Core gameplay test cases are tracked in:
 - `docs/old_mick_core_test_cases.md`
 - `runner/run_old_mick_core_smoke.py`
 
+Gameplay checkpoint planning is tracked in:
+
+- `docs/old_mick_checkpoint_v1.md`
+
 ## Implementation note
 
 The first implementation should happen in `model_backend`.
@@ -164,6 +168,11 @@ Recommended early focus:
 - authoritative straight-line attack resolution
 - authoritative DEF `3x3` protection
 - authoritative destructible resource tiles
+
+Current integration state:
+
+- resource tiles are exposed as first-class `board_state.resource_tiles[]`
+- frontend validation can display tile ownership and protection state
 
 React or Phaser should consume these rules as presentation and interaction layers rather
 than reimplementing them.

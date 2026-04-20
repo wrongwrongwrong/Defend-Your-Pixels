@@ -23,7 +23,6 @@ current runtime and the folders that are only historical or experimental.
 - `python_tracker/`: Python tracking pipeline
 - `bridge/`: transport layer from Python to frontend
 - `model_backend/`: Python game-model / rules prototype
-- `prototype_pygame/`: pygame prototype client for gameplay testing
 - `react_frontend/`: Vite + React visualization client
 - `runner/`: runtime entrypoints for tracker preview/live flows
 - `docs/`: architecture and reference notes (includes `testing marker.pdf`)
@@ -42,8 +41,6 @@ current runtime and the folders that are only historical or experimental.
 - `bridge/adapters/`: tracker snapshot to transport message conversion
 - `bridge/transport/`: websocket transport runtime
 - `model_backend/game/`: game state, board, unit, and rules logic
-- `prototype_pygame/levels/`: ASCII map loaders and prototype scenarios
-- `prototype_pygame/single_player_main.py`: single-player range/attack verification entrypoint
 - `react_frontend/src/app/`: app-level container components
 - `react_frontend/src/bridge/`: tracker translation helpers
 - `react_frontend/src/components/board/`: board and zone rendering

@@ -75,3 +75,7 @@ The current automated smoke test is:
 - `python runner/run_old_mick_core_smoke.py`
 
 It checks the same four core scenarios above.
+
+For gameplay evaluation beyond rule correctness, see:
+
+- `docs/old_mick_checkpoint_v1.md`

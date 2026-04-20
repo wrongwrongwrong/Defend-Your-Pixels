@@ -23,6 +23,7 @@ def serialize_game_state(game: GameState, unit_metadata: dict[str, dict] | None 
         "last_action": game.last_action,
         "move_countdown": _serialize_move_countdown(game),
         "players": [_serialize_player(game, player_id) for player_id in (PlayerId.P1, PlayerId.P2)],
+        "resource_tiles": [_serialize_resource_tile(pixel) for pixel in game.pixels.values()],
         "units": [_serialize_unit(unit, unit_metadata.get(unit.id, {})) for unit in game.units.values()],
     }
 
@@ -77,6 +78,16 @@ def _serialize_unit(unit, metadata: dict) -> dict:
         payload["rotation_deg"] = float(rotation_deg)
 
     return payload
+
+
+def _serialize_resource_tile(pixel) -> dict:
+    return {
+        "id": str(pixel.id),
+        "owner": int(pixel.owner),
+        "theme_name": pixel.theme_name,
+        "position": _serialize_position(pixel.pos),
+        "protection_layers": int(pixel.protection_layers),
+    }
 
 
 def _serialize_position(pos) -> dict:

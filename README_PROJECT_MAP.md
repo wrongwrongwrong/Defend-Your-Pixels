@@ -63,16 +63,10 @@ Use this when you need to change what users see or how UI updates.
 Purpose: clean startup scripts for runtime modes.
 
 Important scripts:
-- `run_camera_preview.py`: camera feed debug only
-- `run_marker_preview.py`: marker detection debug only
 - `run_live_tracker.py`: integrated runtime path
+- `run_old_mick_core_smoke.py`: fast backend rules smoke test
 
 Use this folder first when running demos and checks.
-
-### `prototype_pygame`
-Purpose: local gameplay prototype in Pygame.
-
-Use this for rapid gameplay experiments independent from React UI.
 
 ### `docs`
 Purpose: project documentation and integration notes.
@@ -90,7 +84,7 @@ These are not primary runtime entrypoints for the current architecture.
 
 1. Root `README.md`
 2. `runner/README.md`
-3. Run `runner/run_marker_preview.py`
+3. Run `runner/run_live_tracker.py` or `runner/run_old_mick_core_smoke.py`
 4. Read `python_tracker` basics
 5. Read `bridge` flow
 6. Read `model_backend` state/actions

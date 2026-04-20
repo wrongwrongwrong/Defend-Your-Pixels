@@ -4,6 +4,7 @@ import { toAuthoritativeBoardPosition } from "../../game/viewTransform";
 import CommandTower from "./CommandTower";
 import MidfieldMarker from "./MidfieldMarker";
 import PlayerZone from "./PlayerZone";
+import ResourceTile from "./ResourceTile";
 import Token from "../entities/Token";
 import Unit from "../entities/Unit";
 
@@ -60,6 +61,16 @@ export default function Board({
         <CommandTower
           key={`tower-${player.id}`}
           player={player}
+          cellSize={CELL_SIZE}
+          gridSize={GRID_SIZE}
+          viewPlayerId={viewPlayerId}
+        />
+      ))}
+
+      {(gameState.resourceTiles ?? []).map((tile) => (
+        <ResourceTile
+          key={tile.id}
+          tile={tile}
           cellSize={CELL_SIZE}
           gridSize={GRID_SIZE}
           viewPlayerId={viewPlayerId}

@@ -67,6 +67,15 @@ Current authoritative `board_state` payload shape:
       "command_tower_max_hp": 20
     }
   ],
+  "resource_tiles": [
+    {
+      "id": "px0",
+      "owner": 1,
+      "theme_name": "Wheat Paddock",
+      "position": { "x": 4, "y": 10 },
+      "protection_layers": 1
+    }
+  ],
   "units": [
     {
       "id": "u0",
@@ -95,6 +104,7 @@ Current authoritative `board_state` payload shape:
 | `last_action` | string | yes | Human-readable latest backend status |
 | `move_countdown` | object | yes | Auto-end-turn timer state |
 | `players` | array | yes | Per-player authoritative summary |
+| `resource_tiles` | array | yes | Authoritative destructible resource-tile state |
 | `units` | array | yes | All authoritative units on the board |
 
 ### `move_countdown`
@@ -105,6 +115,16 @@ Current authoritative `board_state` payload shape:
 | `seconds_remaining` | number | yes | Remaining seconds |
 | `duration_seconds` | number | yes | Total countdown duration |
 | `unit_id` | `string \| null` | yes | Unit that triggered countdown |
+
+### `resource_tiles[]`
+
+| Field | Type | Authoritative | Notes |
+|------|------|---------------|------|
+| `id` | string | yes | Stable tile ID |
+| `owner` | `1 \| 2` | yes | Owning player |
+| `theme_name` | string | yes | Themed label (`Wheat Paddock` / `Feeding Ground`) |
+| `position` | `{ x, y }` | yes | Grid position |
+| `protection_layers` | number | yes | Current defender-provided protection layer count |
 
 ### `players[]`
 
@@ -136,7 +156,6 @@ Current authoritative `board_state` payload shape:
 
 These are intentionally not in the current contract yet:
 
-- resource tile list as a first-class payload
 - terrain list as a first-class payload
 - defender protection overlay as a dedicated payload
 - hidden information / per-player filtered state

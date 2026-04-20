@@ -1,15 +1,14 @@
 # Runner
 
 Purpose
-- provide a single, clear way to start each runtime mode
+- provide a minimal, clear set of runner entrypoints for the current project stage
 - keep startup/orchestration separate from tracking and transport code
 
 Naming convention
 - `run_<mode>.py`
-- `preview` means a debug-only visual check
 - `live_tracker` means the integrated runtime used by the bridge/frontend flow
+- `old_mick_core_smoke` means a fast rules-validation smoke test for the MVP
 
 Entry points
-- `run_camera_preview.py`: raw camera preview only
-- `run_marker_preview.py`: marker detection preview only
 - `run_live_tracker.py`: full live tracker + websocket transport
+- `run_old_mick_core_smoke.py`: authoritative backend smoke test for the Old Mick MVP ruleset

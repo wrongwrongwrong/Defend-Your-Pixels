@@ -34,7 +34,7 @@ from python_tracker.state_output.tracker_snapshot import (
 )
 
 
-CAMERA_ID = 0
+CAMERA_ID = 1
 SEND_FPS = 10
 CONFIRM_HOLD_SECONDS = 5.0
 

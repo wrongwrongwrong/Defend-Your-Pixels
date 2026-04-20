@@ -23,16 +23,6 @@ model_backend/scenarios/level_loader.py
 model_backend/scenarios/react_integration_level.py
 model_backend/serialization/__init__.py
 model_backend/serialization/board_state.py
-prototype_pygame/__init__.py
-prototype_pygame/control.py
-prototype_pygame/main.py
-prototype_pygame/single_player_main.py
-prototype_pygame/support_grid.py
-prototype_pygame/view.py
-prototype_pygame/levels/__init__.py
-prototype_pygame/levels/pvp_level1.py
-prototype_pygame/levels/solo_range_test.py
-prototype_pygame/levels/turn_cycle_test.py
 prototype_pygame_version2/main.py
 prototype_pygame_version2/game/__init__.py
 prototype_pygame_version2/game/constants.py
