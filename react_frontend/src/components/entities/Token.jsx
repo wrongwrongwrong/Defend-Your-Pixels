@@ -39,9 +39,20 @@ export default function Token({
   const rangeRadius = (KIND_RANGE[kind] ?? 2) * cellSize;
   const dirAngle = DIR_ANGLE[displayRotation] ?? 0;
 
+  const inBounds =
+    token?.position &&
+    Number.isFinite(token.position.x) &&
+    Number.isFinite(token.position.y) &&
+    token.position.x >= 0 &&
+    token.position.x < gridSize &&
+    token.position.y >= 0 &&
+    token.position.y < gridSize;
+
   return (
     <div
-      className={`absolute flex flex-col items-center justify-center rounded border ${tokenBorderColor} ${glowClass} cursor-pointer select-none z-20`}
+      className={`absolute flex flex-col items-center justify-center rounded border ${tokenBorderColor} ${glowClass} select-none z-20 ${
+        inBounds ? "cursor-pointer" : "pointer-events-none opacity-40"
+      }`}
       style={{
         width: cellSize - 4,
         height: cellSize - 4,
@@ -52,6 +63,7 @@ export default function Token({
         boxShadow: selected ? `0 0 0 2px ${accent}, 0 0 20px ${accent}88` : undefined,
       }}
       onClick={(event) => {
+        if (!inBounds) return;
         event.stopPropagation();
         onSelect?.(token.id);
       }}

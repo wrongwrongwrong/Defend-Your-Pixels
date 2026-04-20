@@ -117,9 +117,17 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 }
 
 $escapedPythonExe = $pythonExe.Replace("'", "''")
-$devLiveCommand = "`$env:DEFEND_YOUR_PIXELS_PYTHON = '$escapedPythonExe'; Set-Location -LiteralPath '$frontendDir'; npm run dev:live"
-$viteCommand = "Set-Location -LiteralPath '$frontendDir'; npm run dev"
-$trackerCommand = "Set-Location -LiteralPath '$repoRoot'; & '$escapedPythonExe' -m runner.run_live_tracker"
+
+# Test-friendly defaults:
+# - DYP_FREE_MOVE=1 removes pathfinding constraints for move_unit (free placement).
+#   You can override by setting DYP_FREE_MOVE=0 in the environment before launching.
+if (-not $env:DYP_FREE_MOVE) {
+    $env:DYP_FREE_MOVE = "1"
+}
+
+$devLiveCommand = "`$env:DEFEND_YOUR_PIXELS_PYTHON = '$escapedPythonExe'; `$env:DYP_FREE_MOVE = '$($env:DYP_FREE_MOVE)'; Set-Location -LiteralPath '$frontendDir'; npm run dev:live"
+$viteCommand = "`$env:DYP_FREE_MOVE = '$($env:DYP_FREE_MOVE)'; Set-Location -LiteralPath '$frontendDir'; npm run dev"
+$trackerCommand = "`$env:DYP_FREE_MOVE = '$($env:DYP_FREE_MOVE)'; Set-Location -LiteralPath '$repoRoot'; & '$escapedPythonExe' -m runner.run_live_tracker"
 
 Write-Host "Starting live demo services..." -ForegroundColor Cyan
 Write-Host "Using Python: $pythonExe" -ForegroundColor DarkGray

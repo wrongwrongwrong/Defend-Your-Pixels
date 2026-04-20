@@ -14,40 +14,18 @@ The snapshot includes:
 import cv2
 import numpy as np
 
+from python_tracker.tracked_markers import CONFIRM_IDS, CONFIRM_PLAYER_MAP, TOKEN_IDS, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
     build_homography,
     build_playable_corners,
-    pixel_to_grid,
     pixel_to_grid_with_bounds,
 )
 from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
-TOKEN_IDS = {
-    10,
-    14,
-    # 11,
-    # 12,
-    # 15,
-    # 16,
-}
-
-ATTACKER_IDS = {
-    10,
-    14,
-    # 11,
-    # 15,
-}
-DEFENDER_IDS = {
-    # 12,
-    # 16,
-}
-
-CONFIRM_IDS = {13, 17}
-CONFIRM_PLAYER_MAP = {13: 1, 17: 2}
 
 ALL_TRACKED_IDS = TOKEN_IDS | CONFIRM_IDS
 
@@ -100,13 +78,14 @@ def build_tracker_snapshot(corners, ids):
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
         rotation_deg = compute_rotation_deg(corners[i][0])
-        gx, gy = pixel_to_grid(px, py, H)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
 
         if gx is not None:
             markers_out.append({
                 "id": int(mid),
-                "position": {"x": gx, "y": gy},
+                "position": {"x": gx, "y": gy} if in_bounds else None,
                 "raw_position": {"x": round(px, 1), "y": round(py, 1)},
+                "in_bounds": in_bounds,
                 "rotation": round(rotation_deg, 1),
             })
         else:
@@ -114,6 +93,7 @@ def build_tracker_snapshot(corners, ids):
                 "id": int(mid),
                 "position": {"x": round(px, 1), "y": round(py, 1)},
                 "raw_position": {"x": round(px, 1), "y": round(py, 1)},
+                "in_bounds": False,
                 "rotation": round(rotation_deg, 1),
             })
 
@@ -152,14 +132,15 @@ def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -
             remapped_markers.append(marker)
             continue
 
-        gx, gy = pixel_to_grid(float(raw_x), float(raw_y), fallback_h)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(float(raw_x), float(raw_y), fallback_h)
         if gx is None or gy is None:
             remapped_markers.append(marker)
             continue
 
         remapped_markers.append({
             **marker,
-            "position": {"x": gx, "y": gy},
+            "position": {"x": gx, "y": gy} if in_bounds else None,
+            "in_bounds": in_bounds,
         })
 
     return {
@@ -266,13 +247,7 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
 
 
 def token_label(marker_id: int) -> str:
-    if marker_id in ATTACKER_IDS:
-        return "ATK"
-    if marker_id in DEFENDER_IDS:
-        return "DEF"
-    if marker_id in CONFIRM_IDS:
-        return f"CONFIRM P{CONFIRM_PLAYER_MAP[marker_id]}"
-    return f"ID:{marker_id}"
+    return marker_label(marker_id)
 
 
 def draw_grid_overlay(frame, H):

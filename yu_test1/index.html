@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Old Mick Against the Mob</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1008;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: Georgia, serif;
+  }
+  #game-container canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  LAYOUT CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const CELL   = 52;          // px per grid cell
+const COLS   = 12;
+const ROWS   = 12;
+const BX     = 38;          // board top-left X (leaves room for row labels)
+const BY     = 58;          // board top-left Y (leaves room for col labels + title)
+const PANEL_X = BX + COLS * CELL + 14;   // right panel start X
+const PW      = 210;        // panel width
+const W       = PANEL_X + PW + 8;        // total canvas width
+const H       = BY + ROWS * CELL + 28;   // total canvas height
+
+// ═══════════════════════════════════════════════════════════════════
+//  COLOUR PALETTE  (Old Mick / Emu War theme)
+// ═══════════════════════════════════════════════════════════════════
+const C = {
+  farmer_cell : 0xe8c890,   // pale wheat (safe / non-target, washed out)
+  emu_cell    : 0xb8d090,   // pale sage (safe / non-target, washed out)
+  p1_target   : 0xc84818,   // vivid dark orange — attackable P1 cells
+  p2_target   : 0x0f4a10,   // deep forest green — attackable P2 cells
+  fence_cell  : 0xe8d068,   // golden fence line
+  board_bg    : 0x2a1e0e,   // dark earth background
+  panel_bg    : 0x1e1408,   // panel background
+  panel_border: 0x6a4a20,
+
+  // ATK tokens
+  p1_atk : 0xe06820,        // farmer orange-brown
+  p2_atk : 0x2a8a20,        // emu green
+
+  // DEF tokens
+  p1_def : 0x905020,        // Old Mick dark brown
+  p2_def : 0x1a6010,        // Cassowary dark green
+
+  // Token borders
+  p1_border : 0xf8e090,     // warm yellow
+  p2_border : 0xb8ee60,     // bright green
+
+  // Terrain
+  hard_fill   : 0x706050,
+  hard_border : 0xb0a080,
+  soft_fill   : 0xc0d060,
+  soft_border : 0xe0f080,
+
+  // Rays
+  ray_path    : 0x44ff88,   // green dashes
+  ray_blocked : 0xff2200,   // red X (hard terrain stops)
+  ray_soft    : 0xff9900,   // orange triangle (soft terrain hit)
+  ray_hit     : 0xff4400,   // explosion (enemy token hit)
+
+  // Defense zone
+  p1_zone : 0xf8c040,
+  p2_zone : 0x44cc20,
+
+  // Phase bar
+  phase_terrain : 0x3060c0,
+  phase_battle  : 0xb03010,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  RAY DIRECTION VECTORS  (direction string → [dcol, drow])
+// ═══════════════════════════════════════════════════════════════════
+const DIR_VEC = {
+  E  : [ 1,  0],
+  SE : [ 1,  1],
+  S  : [ 0,  1],
+  SW : [-1,  1],
+  W  : [-1,  0],
+  NW : [-1, -1],
+  N  : [ 0, -1],
+  NE : [ 1, -1],
+};
+
+// Unicode arrow characters (same trick as old yuhsuan_test version — text always renders)
+const ARROW_CHAR = {
+  E: '→', SE: '↘', S: '↓', SW: '↙',
+  W: '←', NW: '↖', N: '↑', NE: '↗',
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  SHARED STATE
+// ═══════════════════════════════════════════════════════════════════
+let gameState  = null;
+let prevState  = null;
+let wsInstance = null;
+
+// ═══════════════════════════════════════════════════════════════════
+//  WEB AUDIO SOUND ENGINE  (no audio files needed)
+// ═══════════════════════════════════════════════════════════════════
+class SoundEngine {
+  constructor() {
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) { this.ctx = null; }
+  }
+
+  _osc(type, freq, startT, dur, vol, freqEnd) {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const t   = this.ctx.currentTime + startT;
+    const osc = this.ctx.createOscillator();
+    const g   = this.ctx.createGain();
+    osc.connect(g); g.connect(this.ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.01);
+  }
+
+  // Short click — token placed / moved
+  place()  { this._osc('sine',    523, 0,    0.12, 0.20); }
+
+  // Three rising tones — terrain locked
+  lock()   {
+    [523, 659, 784].forEach((f, i) =>
+      this._osc('sine', f, i * 0.10, 0.14, 0.25));
+  }
+
+  // Downward sawtooth — rifle / emu fires
+  fire()   { this._osc('sawtooth', 300, 0, 0.25, 0.35, 55); }
+
+  // Thud — attack hits a target
+  hit()    { this._osc('square',   120, 0, 0.40, 0.45, 35); }
+
+  // Hard block sound — blocked by hard terrain
+  block()  { this._osc('square',   250, 0, 0.18, 0.30, 80); }
+
+  // Nuke — deep rumble + descending saw
+  nuke()   {
+    this._osc('sawtooth', 110, 0, 1.20, 0.60, 20);
+    this._osc('sine',      55, 0, 1.50, 0.40, 18);
+  }
+
+  // Turn change — soft chime
+  turn()   {
+    this._osc('sine', 660, 0,    0.12, 0.18);
+    this._osc('sine', 880, 0.12, 0.10, 0.14);
+  }
+}
+
+const SFX = new SoundEngine();
+
+// Audio unlock on first user gesture (Chrome/Safari block AudioContext until then)
+const _unlockAudio = () => {
+  if (SFX.ctx && SFX.ctx.state === 'suspended') SFX.ctx.resume();
+  // Silent ping to confirm audio pipeline works
+  SFX._osc('sine', 880, 0, 0.02, 0.001);
+  window.removeEventListener('click',    _unlockAudio);
+  window.removeEventListener('keydown',  _unlockAudio);
+  window.removeEventListener('touchend', _unlockAudio);
+};
+window.addEventListener('click',    _unlockAudio);
+window.addEventListener('keydown',  _unlockAudio);
+window.addEventListener('touchend', _unlockAudio);
+
+// ═══════════════════════════════════════════════════════════════════
+//  HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+/** Pixel centre of grid cell (col, row) */
+function cc(col, row) {
+  return { x: BX + col * CELL + CELL / 2, y: BY + row * CELL + CELL / 2 };
+}
+
+function isP1(col, row) { return col + row < 11; }
+function isP2(col, row) { return col + row > 11; }
+
+/**
+ * Trace a ray from (startCol, startRow) in direction dir.
+ * Returns array of { col, row, type } where type is:
+ *   'path'    — free cell
+ *   'hit'     — first enemy token cell
+ *   'soft'    — first soft-terrain cell (absorbed, stops ray)
+ *   'blocked' — hard terrain (stops ray, shows X)
+ */
+function computeRay(startCol, startRow, dir, hardMap, softMap, enemyMap) {
+  if (!dir || !DIR_VEC[dir]) return [];
+  const [dc, dr] = DIR_VEC[dir];
+  const cells = [];
+  let c = startCol + dc, r = startRow + dr;
+
+  while (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+    const k = `${c},${r}`;
+    if (hardMap[k])  { cells.push({ col: c, row: r, type: 'blocked' }); break; }
+    if (softMap[k])  { cells.push({ col: c, row: r, type: 'soft'    }); break; }
+    if (enemyMap[k]) { cells.push({ col: c, row: r, type: 'hit'     }); break; }
+    cells.push({ col: c, row: r, type: 'path' });
+    c += dc; r += dr;
+  }
+  return cells;
+}
+
+/** Return all cells in the DEF zone centred at (col, row), radius depends on tier. */
+function defZoneCells(col, row, tier) {
+  const rad = tier >= 2 ? 2 : 1;   // tier 2 → 5×5, else 3×3
+  const out = [];
+  for (let dr = -rad; dr <= rad; dr++)
+    for (let dc = -rad; dc <= rad; dc++) {
+      const c = col + dc, r = row + dr;
+      if (c >= 0 && c < COLS && r >= 0 && r < ROWS) out.push({ col: c, row: r });
+    }
+  return out;
+}
+
+/** Convert number colour to CSS hex string */
+function hex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
+// ═══════════════════════════════════════════════════════════════════
+//  DETECT STATE CHANGES → trigger sounds
+// ═══════════════════════════════════════════════════════════════════
+function detectSoundEvents(prev, curr) {
+  if (!prev || !curr) return;
+
+  // Turn change
+  if (prev.turn !== curr.turn && curr.turn !== null) SFX.turn();
+
+  // Map regenerated (seed changed)
+  if (prev.map_seed !== curr.map_seed) SFX.lock();
+
+  // Token moved
+  const checkMove = (a, b) => {
+    if (!a || !b) return;
+    if (a.col !== b.col || a.row !== b.row) {
+      if (b.col !== null) SFX.place();
+    }
+  };
+  if (prev.p1 && curr.p1) {
+    checkMove(prev.p1.atk_a, curr.p1.atk_a);
+    checkMove(prev.p1.atk_b, curr.p1.atk_b);
+    checkMove(prev.p1.def,   curr.p1.def);
+  }
+  if (prev.p2 && curr.p2) {
+    checkMove(prev.p2.atk_a, curr.p2.atk_a);
+    checkMove(prev.p2.atk_b, curr.p2.atk_b);
+    checkMove(prev.p2.def,   curr.p2.def);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PHASER SCENE
+// ═══════════════════════════════════════════════════════════════════
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  // ── create ─────────────────────────────────────────────────────
+  create() {
+    // Two graphics layers:
+    //   boardGfx  — static board, drawn once
+    //   dynGfx    — cleared + redrawn every tick (terrain, rays, tokens, zones)
+    this.boardGfx = this.add.graphics().setDepth(0);
+    this.dynGfx   = this.add.graphics().setDepth(2);
+
+    this._drawBoardLabels();          // one-shot text labels (A–L, 1–12)
+    this._drawStaticBoard();          // initial draw (before terrain arrives)
+    this._buildPanel();
+    this._buildLabels();
+    this._buildLockButton();
+    this._connectWS();
+
+    // Refresh UI at 20 fps
+    this.time.addEvent({ delay: 50, callback: this._applyState, callbackScope: this, loop: true });
+
+    // Pulsing effect on LOCK button during terrain phase
+    this.tweens.add({
+      targets: this.lockBtnGfx, alpha: { from: 1, to: 0.55 },
+      yoyo: true, repeat: -1, duration: 800, ease: 'Sine.easeInOut'
+    });
+  }
+
+  // ── Board labels (A–L / 1–12), drawn once in create() ──────────
+  _drawBoardLabels() {
+    for (let c = 0; c < COLS; c++) {
+      this.add.text(BX + c * CELL + CELL / 2 - 4, BY - 18,
+        String.fromCharCode(65 + c),
+        { fontSize: '11px', color: '#d8b070', fontFamily: 'Georgia', fontStyle: 'bold' });
+    }
+    for (let r = 0; r < ROWS; r++) {
+      this.add.text(BX - 22, BY + r * CELL + CELL / 2 - 7,
+        String(r + 1),
+        { fontSize: '11px', color: '#d8b070', fontFamily: 'Georgia', fontStyle: 'bold' });
+    }
+  }
+
+  // ── Static board (re-callable when terrain/targets change) ────
+  _drawStaticBoard(terrain) {
+    const g = this.boardGfx;
+    g.clear();
+
+    // Build target lookup sets (empty when terrain not yet received)
+    const targetKey = (c, r) => `${c},${r}`;
+    const p1Targets = new Set((terrain?.p1_targets ?? []).map(t => targetKey(t.col, t.row)));
+    const p2Targets = new Set((terrain?.p2_targets ?? []).map(t => targetKey(t.col, t.row)));
+
+    // ── Soft vignette behind whole board ──────────────────────────
+    g.fillStyle(0x0c0804, 1);
+    g.fillRoundedRect(BX - 10, BY - 10, COLS * CELL + 20, ROWS * CELL + 20, 14);
+
+    // ── Grid cells ────────────────────────────────────────────────
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x = BX + c * CELL, y = BY + r * CELL;
+        const w = CELL - 1, h = CELL - 1;
+        const onFence  = (c + r === 11);
+        const p1side   = isP1(c, r);
+        const key      = targetKey(c, r);
+        const isTarget = p1side ? p1Targets.has(key) : p2Targets.has(key);
+
+        // Base fill: targets get vivid colour; everything else muted
+        let baseFill;
+        if (onFence)       baseFill = C.fence_cell;
+        else if (isTarget) baseFill = p1side ? C.p1_target : C.p2_target;
+        else               baseFill = p1side ? C.farmer_cell : C.emu_cell;
+
+        g.fillStyle(baseFill, 1);
+        g.fillRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
+
+        // Soft highlight / shadow for depth
+        g.fillStyle(0xffffff, 0.07);
+        g.fillRoundedRect(x + 1, y + 1, w - 1, (h - 1) / 2, 4);
+        g.fillStyle(0x000000, 0.10);
+        g.fillRect(x + 2, y + h - 4, w - 3, 3);
+
+        // Border — thicker on targets so they pop
+        if (isTarget) {
+          g.lineStyle(1.5, 0x000000, 0.35);
+        } else {
+          g.lineStyle(1, 0x000000, 0.12);
+        }
+        g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
+      }
+    }
+
+    // ── Fence diagonal with wooden posts ──────────────────────────
+    // Soft shadow line
+    g.lineStyle(6, 0x000000, 0.30);
+    g.lineBetween(BX + COLS * CELL, BY, BX, BY + ROWS * CELL);
+    // Main fence line
+    g.lineStyle(3, 0x8b5a20, 0.95);
+    g.lineBetween(BX + COLS * CELL, BY, BX, BY + ROWS * CELL);
+    // Little wooden posts along the diagonal
+    for (let i = 0; i < 12; i++) {
+      const t = (i + 0.5) / 12;
+      const fx = BX + COLS * CELL - t * COLS * CELL;
+      const fy = BY + t * ROWS * CELL;
+      // Post shadow
+      g.fillStyle(0x000000, 0.3);
+      g.fillEllipse(fx + 1, fy + 8, 10, 3);
+      // Post body
+      g.fillStyle(0x6a3a10, 1);
+      g.fillRoundedRect(fx - 3, fy - 10, 6, 18, 2);
+      // Post highlight
+      g.fillStyle(0xb07a30, 0.8);
+      g.fillRect(fx - 2, fy - 9, 1.5, 16);
+    }
+
+    // ── Title banner (decorative plaque) ──────────────────────────
+    // Dark ribbon background
+    g.fillStyle(0x2a1a0a, 0.95);
+    g.fillRoundedRect(BX - 2, 4, COLS * CELL + 4, 46, 10);
+    g.lineStyle(1.5, 0x8a6030, 0.9);
+    g.strokeRoundedRect(BX - 2, 4, COLS * CELL + 4, 46, 10);
+    // Decorative stars
+    for (const sx of [BX + 12, BX + COLS * CELL - 20]) {
+      g.fillStyle(0xf0d070, 1);
+      this._drawStar(g, sx, 27, 7, 3, 5);
+    }
+
+    if (!this._titleDrawn) {
+      this.add.text(BX + COLS * CELL / 2, 14, '⭐  OLD MICK  vs  THE MOB  ⭐', {
+        fontSize: '19px', fontFamily: 'Georgia', color: '#f8d870',
+        fontStyle: 'bold', stroke: '#3a2010', strokeThickness: 3,
+      }).setOrigin(0.5, 0);
+      this.add.text(BX + COLS * CELL / 2, 35, '~ 1932 Great Emu War ~', {
+        fontSize: '11px', fontFamily: 'Georgia', color: '#d0a060', fontStyle: 'italic',
+      }).setOrigin(0.5, 0);
+      this._titleDrawn = true;
+    }
+  }
+
+  /** Filled 5-point star for decoration */
+  _drawStar(g, cx, cy, outerR, innerR, points) {
+    const pts = [];
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+      pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+    }
+    g.fillPoints(pts, true);
+  }
+
+  // ── Panel ───────────────────────────────────────────────────────
+  _buildPanel() {
+    const g   = this.boardGfx;
+    const px  = PANEL_X;
+
+    // Background
+    g.fillStyle(C.panel_bg, 1);
+    g.fillRect(px, 0, PW, H);
+    g.lineStyle(1, C.panel_border, 0.8);
+    g.strokeRect(px, 0, PW, H);
+
+    const sep = (y) => {
+      g.lineStyle(0.5, C.panel_border, 0.4);
+      g.lineBetween(px + 6, y, px + PW - 6, y);
+    };
+
+    // Labels
+    const T = (x, y, str, col, size = '11px') =>
+      this.add.text(px + x, y, str, {
+        fontSize: size, fontFamily: 'Georgia', color: col
+      });
+
+    T(8, 10, '⚔  BATTLE LOG', '#f0d070', '13px');
+    sep(30);
+
+    T(8, 36,  '🌾  OLD MICK\'S SIDE', '#f8c860', '11px');
+    T(8, 53,  'Rifleman 1  (R1) · ATK', '#d0a040');
+    T(8, 68,  'Rifleman 2  (R2) · ATK', '#d0a040');
+    T(8, 83,  'Old Mick    (OM) · DEF', '#d0a040');
+    sep(102);
+
+    T(8, 108, '🐦  THE MOB\'S SIDE', '#b0ee50', '11px');
+    T(8, 125, 'Mob 1       (M1) · ATK', '#80c030');
+    T(8, 140, 'Mob 2       (M2) · ATK', '#80c030');
+    T(8, 155, 'Cassowary   (CW) · DEF', '#80c030');
+    sep(174);
+
+    T(8, 178, 'TERRAIN', '#c8a050', '11px');
+    T(8, 194, '██ Hard  — impassable (blocks ray)', '#b0a080');
+    T(8, 207, '▪▪ Soft  — absorbs hit (2 hits)', '#c8d860');
+    sep(222);
+
+    T(8, 226, 'TIER UPGRADES', '#c8a050', '11px');
+
+    // Dynamic texts (updated each frame)
+    this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
+    this.scoreText  = T(8, H - 174, 'P1 razed: 0/30  P2 razed: 0/30', '#ffb060', '10px');
+    this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
+    this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
+
+    // Tier display
+    this.p1TierTxt = T(8,  244, 'P1 Tier: 1', '#f0c060');
+    this.p2TierTxt = T(8,  258, 'P2 Tier: 1', '#90e050');
+
+    // Tier +/− buttons  (manual override for demo)
+    const mkBtn = (label, x, y, cb, col) => {
+      const btn = this.add.text(PANEL_X + x, y, label,
+        { fontSize: '11px', fontFamily: 'Georgia', color: col,
+          backgroundColor: '#2a2010', padding: { x: 4, y: 2 } })
+        .setInteractive({ useHandCursor: true });
+      btn.on('pointerdown', cb);
+      btn.on('pointerover', () => btn.setColor('#ffffff'));
+      btn.on('pointerout',  () => btn.setColor(col));
+      return btn;
+    };
+
+    // Tier state is now authoritative on the server — local cache only used
+    // for rendering the DEF zone radius until the first state arrives.
+    this._p1Tier = 1;
+    this._p2Tier = 1;
+    mkBtn('[P1 +Tier]', 8,  272, () => this._changeTier(1,  1), '#f0c060');
+    mkBtn('[P1 −Tier]', 90, 272, () => this._changeTier(1, -1), '#c8a040');
+    mkBtn('[P2 +Tier]', 8,  288, () => this._changeTier(2,  1), '#90e050');
+    mkBtn('[P2 −Tier]', 90, 288, () => this._changeTier(2, -1), '#70c030');
+
+    // Token position info texts
+    const infoStyle = { fontSize: '10px', fontFamily: 'monospace', color: '#908060' };
+    this.p1AtkAInfo = this.add.text(PANEL_X + 8, 53,  '', infoStyle);
+    this.p1AtkBInfo = this.add.text(PANEL_X + 8, 68,  '', infoStyle);
+    this.p1DefInfo  = this.add.text(PANEL_X + 8, 83,  '', infoStyle);
+    this.p2AtkAInfo = this.add.text(PANEL_X + 8, 125, '', infoStyle);
+    this.p2AtkBInfo = this.add.text(PANEL_X + 8, 140, '', infoStyle);
+    this.p2DefInfo  = this.add.text(PANEL_X + 8, 155, '', infoStyle);
+  }
+
+  _changeTier(player, delta) {
+    // Server is authoritative — just send the request
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+      wsInstance.send(JSON.stringify({ type: 'tier', player, delta }));
+    }
+    SFX.lock();
+  }
+
+  // ── Token labels (repositioned each frame) ──────────────────────
+  _buildLabels() {
+    const style = { fontSize: '10px', fontFamily: 'monospace', color: '#ffffff',
+                    fontStyle: 'bold', stroke: '#000000', strokeThickness: 2 };
+    this.labels = {
+      p1_atk_a : this.add.text(0, 0, 'R1', style).setDepth(10).setVisible(false),
+      p1_atk_b : this.add.text(0, 0, 'R2', style).setDepth(10).setVisible(false),
+      p1_def   : this.add.text(0, 0, 'OM', style).setDepth(10).setVisible(false),
+      p2_atk_a : this.add.text(0, 0, 'M1', style).setDepth(10).setVisible(false),
+      p2_atk_b : this.add.text(0, 0, 'M2', style).setDepth(10).setVisible(false),
+      p2_def   : this.add.text(0, 0, 'CW', style).setDepth(10).setVisible(false),
+    };
+
+    // ── Unicode direction arrows (ATK only) — same proven approach as old version
+    const arrStyle = {
+      fontSize: '32px', fontFamily: 'Arial', fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 5,
+    };
+    this.arrows = {
+      p1_atk_a : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5)
+                     .setDepth(12).setVisible(false).setColor('#ffdc40'),
+      p1_atk_b : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5)
+                     .setDepth(12).setVisible(false).setColor('#ffdc40'),
+      p2_atk_a : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5)
+                     .setDepth(12).setVisible(false).setColor('#b8ff60'),
+      p2_atk_b : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5)
+                     .setDepth(12).setVisible(false).setColor('#b8ff60'),
+    };
+  }
+
+  _placeLabel(key, col, row) {
+    const lbl = this.labels[key];
+    if (col == null) { lbl.setVisible(false); return; }
+    const { x, y } = cc(col, row);
+    lbl.setPosition(x - 7, y - 7).setVisible(true);
+  }
+
+  /** Place Unicode arrow beside token, in the direction of fire */
+  _placeArrow(key, tok) {
+    const arr = this.arrows[key];
+    if (!arr) return;
+    if (!tok || tok.col == null || !tok.direction) { arr.setVisible(false); return; }
+    const { x, y } = cc(tok.col, tok.row);
+    const [dc, dr] = DIR_VEC[tok.direction] || [0, 0];
+    // Arrow sits ~0.6 cell away from the token in the firing direction
+    arr.setPosition(x + dc * CELL * 0.55, y + dr * CELL * 0.55);
+    arr.setText(ARROW_CHAR[tok.direction] || '?');
+    arr.setVisible(true);
+  }
+
+  // ── Control buttons ─────────────────────────────────────────────
+  _buildLockButton() {
+    // "NEW MAP" button — asks server to regenerate terrain
+    const bx = PANEL_X + 8, by = H - 108, bw = PW - 16, bh = 36;
+
+    this.newMapBtnGfx = this.add.graphics().setDepth(5);
+    this.newMapBtnGfx.fillStyle(0x3a5aa0, 1);
+    this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    this.newMapBtnGfx.setInteractive(
+      new Phaser.Geom.Rectangle(bx, by, bw, bh),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.newMapBtnTxt = this.add.text(bx + 12, by + 9,
+      '🎲  NEW RANDOM MAP', {
+        fontSize: '12px', fontFamily: 'Georgia',
+        color: '#e0e8ff', fontStyle: 'bold'
+      }).setDepth(6);
+
+    // Keep the alias so existing tween targeting lockBtnGfx keeps working
+    this.lockBtnGfx = this.newMapBtnGfx;
+
+    const redraw = (fill) => {
+      this.newMapBtnGfx.clear();
+      this.newMapBtnGfx.fillStyle(fill, 1);
+      this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    };
+    this.newMapBtnGfx.on('pointerover', () => redraw(0x5c7cc8));
+    this.newMapBtnGfx.on('pointerout',  () => redraw(0x3a5aa0));
+    this.newMapBtnGfx.on('pointerdown', () => this._requestNewMap());
+
+    // Fire button (demo sound trigger)
+    const fbx = PANEL_X + 8, fby = H - 60, fbw = PW - 16, fbh = 28;
+    const fireGfx = this.add.graphics().setDepth(5);
+    fireGfx.fillStyle(0x882200, 1);
+    fireGfx.fillRoundedRect(fbx, fby, fbw, fbh, 6);
+    fireGfx.setInteractive(
+      new Phaser.Geom.Rectangle(fbx, fby, fbw, fbh),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.add.text(fbx + 12, fby + 6, '🔫  FIRE  (demo sound)', {
+      fontSize: '11px', fontFamily: 'Georgia', color: '#ffccaa', fontStyle: 'bold'
+    }).setDepth(6);
+    fireGfx.on('pointerdown', () => { SFX.fire(); setTimeout(() => SFX.hit(), 280); });
+  }
+
+  _requestNewMap() {
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+      wsInstance.send(JSON.stringify({ type: 'new_map' }));
+    }
+    // Visual feedback — quick flash
+    this.tweens.add({
+      targets: this.newMapBtnGfx,
+      alpha: { from: 0.5, to: 1 }, duration: 250, ease: 'Sine.easeOut',
+    });
+    SFX.lock();   // reuse the three rising tones for a "new map" chime
+  }
+
+  // ── WebSocket ───────────────────────────────────────────────────
+  _connectWS() {
+    wsInstance = new WebSocket('ws://localhost:8765');
+    wsInstance.onopen = () => {
+      this.wsText.setText('● connected').setColor('#44ff88');
+    };
+    wsInstance.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        detectSoundEvents(prevState, data);
+        prevState  = gameState;
+        gameState  = data;
+      } catch(_) {}
+    };
+    wsInstance.onclose = () => {
+      this.wsText.setText('◌ disconnected — retry…').setColor('#ff8844');
+      setTimeout(() => this._connectWS(), 2000);
+    };
+    wsInstance.onerror = () => {
+      this.wsText.setText('✕ WS error').setColor('#ff2200');
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MAIN STATE APPLY  (called at 20 fps)
+  // ═══════════════════════════════════════════════════════════════
+  _applyState() {
+    if (!gameState) return;
+    const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
+    const G = game || {};
+
+    // Redraw board when a new random map arrives (target cells shift).
+    if (terrain && map_seed !== this._drawnSeed) {
+      this._drawStaticBoard(terrain);
+      this._drawnSeed = map_seed;
+    }
+
+    // Sync tiers from server (authoritative)
+    if (G.tier_p1 != null) {
+      this._p1Tier = G.tier_p1;
+      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : ''}`);
+    }
+    if (G.tier_p2 != null) {
+      this._p2Tier = G.tier_p2;
+      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : ''}`);
+    }
+
+    // ── Turn / corner / score texts ──────────────────────────────
+    const thr = G.attrition_threshold ?? 30;
+    const s1 = G.score_p2_destroyed ?? 0;  // cells P1 razed (in P2 territory)
+    const s2 = G.score_p1_destroyed ?? 0;  // cells P2 razed (in P1 territory)
+    this.scoreText?.setText(`P1 razed: ${s1}/${thr}   P2 razed: ${s2}/${thr}`);
+
+    // Fire sound on new attack events coming from the server
+    if (Array.isArray(gameState.events)) {
+      for (const ev of gameState.events) {
+        if (ev.type === 'cell_destroyed')    SFX.hit();
+        else if (ev.type === 'cell_damaged') SFX.fire();
+        else if (ev.type === 'hq_destroyed') SFX.nuke();
+        else if (ev.type === 'soft_destroyed') SFX.block();
+      }
+    }
+
+    // Win banner
+    this._updateWinBanner(G);
+
+    if (turn === 1)       this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
+    else if (turn === 2)  this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
+    else                  this.turnText.setText('Turn: — waiting —').setColor('#807060');
+
+    this.cornerText.setText(`Corners: ${corners_found || 0}/4`)
+      .setColor(corners_found === 4 ? '#44ff88' : '#ff8844');
+
+    // ── Build terrain lookup maps ─────────────────────────────────
+    const hardMap = {}, softMap = {};
+    if (terrain) {
+      [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
+        if (t.col != null) hardMap[`${t.col},${t.row}`] = t;
+      });
+      [...(terrain.p1_soft || []), ...(terrain.p2_soft || [])].forEach(t => {
+        if (t.col != null) softMap[`${t.col},${t.row}`] = t;
+      });
+    }
+
+    // ── Enemy token cell maps (ray targets) ───────────────────────
+    const p1Map = {}, p2Map = {};
+    if (p1) Object.values(p1).forEach(tok => { if (tok.col != null) p1Map[`${tok.col},${tok.row}`] = true; });
+    if (p2) Object.values(p2).forEach(tok => { if (tok.col != null) p2Map[`${tok.col},${tok.row}`] = true; });
+
+    // ── Clear dynamic layer ───────────────────────────────────────
+    this.dynGfx.clear();
+
+    // ── 0. Scorched earth + damaged cells + revealed HQ ───────────
+    this._drawDamageLayer(G);
+
+    // ── 1. Terrain (skip destroyed soft pieces) ───────────────────
+    this._drawTerrain(terrain, new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`)));
+
+    // ── 2. Defense zones ───────────────────────────────────────────
+    if (p1?.def?.col != null)
+      this._drawDefZone(p1.def.col, p1.def.row, this._p1Tier, C.p1_zone);
+    if (p2?.def?.col != null)
+      this._drawDefZone(p2.def.col, p2.def.row, this._p2Tier, C.p2_zone);
+
+    // ── 3. Rays (battle phase only) ────────────────────────────────
+    const inBattle = (phase === 'game' || phase == null);
+    if (inBattle) {
+      ['atk_a', 'atk_b'].forEach(role => {
+        if (p1?.[role]?.col != null && p1[role].direction) {
+          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, p2Map);
+          this._drawRay(p1[role].col, p1[role].row, ray);
+        }
+        if (p2?.[role]?.col != null && p2[role].direction) {
+          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, p1Map);
+          this._drawRay(p2[role].col, p2[role].row, ray);
+        }
+      });
+    }
+
+    // ── 4. Tokens + direction arrows ───────────────────────────────
+    const drawTok = (tok, role, p1side) => {
+      if (!tok || tok.col == null) return;
+      this._drawToken(tok.col, tok.row, tok.angle, role, p1side, !!tok.stale);
+    };
+    if (p1) { drawTok(p1.atk_a, 'atk', true);  drawTok(p1.atk_b, 'atk', true);  drawTok(p1.def, 'def', true);  }
+    if (p2) { drawTok(p2.atk_a, 'atk', false); drawTok(p2.atk_b, 'atk', false); drawTok(p2.def, 'def', false); }
+
+    // ── 5. Token labels ────────────────────────────────────────────
+    this._placeLabel('p1_atk_a', p1?.atk_a?.col, p1?.atk_a?.row);
+    this._placeLabel('p1_atk_b', p1?.atk_b?.col, p1?.atk_b?.row);
+    this._placeLabel('p1_def',   p1?.def?.col,   p1?.def?.row);
+    this._placeLabel('p2_atk_a', p2?.atk_a?.col, p2?.atk_a?.row);
+    this._placeLabel('p2_atk_b', p2?.atk_b?.col, p2?.atk_b?.row);
+    this._placeLabel('p2_def',   p2?.def?.col,   p2?.def?.row);
+
+    // Unicode direction arrows (ATK tokens only)
+    this._placeArrow('p1_atk_a', p1?.atk_a);
+    this._placeArrow('p1_atk_b', p1?.atk_b);
+    this._placeArrow('p2_atk_a', p2?.atk_a);
+    this._placeArrow('p2_atk_b', p2?.atk_b);
+
+    // ── 6. Panel token-position info texts ────────────────────────
+    const colName = (c) => c != null ? String.fromCharCode(65 + c) : '?';
+    const rowName = (r) => r != null ? String(r + 1) : '?';
+    const posStr  = (tok) => tok?.col != null
+      ? `  ${colName(tok.col)}${rowName(tok.row)} →${tok.direction || '?'}`
+      : '';
+    this.p1AtkAInfo.setText(posStr(p1?.atk_a));
+    this.p1AtkBInfo.setText(posStr(p1?.atk_b));
+    this.p1DefInfo .setText(posStr(p1?.def));
+    this.p2AtkAInfo.setText(posStr(p2?.atk_a));
+    this.p2AtkBInfo.setText(posStr(p2?.atk_b));
+    this.p2DefInfo .setText(posStr(p2?.def));
+
+    // Placement-guide overlays are no longer used — terrain is server-generated
+    this._hidePlacementLabels();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAW HELPERS
+  // ═══════════════════════════════════════════════════════════════
+
+  /** Terrain pieces: hard = filled + X, soft = lighter + dots.
+   *  softGoneKeys = Set of "c,r" strings for destroyed soft terrain (skip them). */
+  _drawTerrain(terrain, softGoneKeys = new Set()) {
+    if (!terrain) return;
+    const g = this.dynGfx;
+
+    const drawPiece = (col, row, isHard, isP1side) => {
+      if (col == null) return;
+      if (!isHard && softGoneKeys.has(`${col},${row}`)) return;   // destroyed
+      const x = BX + col * CELL, y = BY + row * CELL;
+      const pad = 3, s = CELL - 1 - pad * 2;
+
+      if (isHard) {
+        // Hard terrain — dark fill + thick ✕
+        g.fillStyle(isP1side ? 0x907050 : 0x606050, 0.90);
+        g.fillRect(x + pad, y + pad, s, s);
+        g.lineStyle(2, isP1side ? 0xd0b880 : 0xa09070, 1);
+        g.strokeRect(x + pad, y + pad, s, s);
+
+        // Big dark shadow ✕ for depth
+        const m = 7;
+        g.lineStyle(5, 0x000000, 0.50);
+        g.lineBetween(x + m, y + m, x + CELL - m, y + CELL - m);
+        g.lineBetween(x + CELL - m, y + m, x + m, y + CELL - m);
+        // White ✕ on top
+        g.lineStyle(3.5, 0xffffff, 0.85);
+        g.lineBetween(x + m, y + m, x + CELL - m, y + CELL - m);
+        g.lineBetween(x + CELL - m, y + m, x + m, y + CELL - m);
+
+      } else {
+        // Soft terrain — lighter fill + dashed border + diagonal hatch lines
+        g.fillStyle(isP1side ? 0xc8be38 : 0x80c448, 0.70);
+        g.fillRect(x + pad + 2, y + pad + 2, s - 4, s - 4);
+
+        // Dashed border
+        g.lineStyle(1.5, isP1side ? 0xe8e060 : 0xa0e870, 0.9);
+        this._dashRect(g, x + pad + 2, y + pad + 2, s - 4, s - 4, 5, 3);
+
+        // Hatch lines (//)
+        g.lineStyle(1.5, 0xffffff, 0.40);
+        const hx = x + CELL / 2, hy = y + CELL / 2, hr = 10;
+        g.lineBetween(hx - hr - 4, hy + hr, hx + hr - 4, hy - hr);
+        g.lineBetween(hx - hr,     hy + hr, hx + hr,     hy - hr);
+        g.lineBetween(hx - hr + 4, hy + hr, hx + hr + 4, hy - hr);
+      }
+    };
+
+    (terrain.p1_hard || []).forEach(t => drawPiece(t.col, t.row, true,  true));
+    (terrain.p1_soft || []).forEach(t => drawPiece(t.col, t.row, false, true));
+    (terrain.p2_hard || []).forEach(t => drawPiece(t.col, t.row, true,  false));
+    (terrain.p2_soft || []).forEach(t => drawPiece(t.col, t.row, false, false));
+  }
+
+  /** Cracked / damaged cell look (took damage but not destroyed yet) */
+  _drawDamageLayer(G) {
+    const g = this.dynGfx;
+    // Damaged (partial HP) — single crack overlay
+    const dmg = G.damage || {};
+    for (const key in dmg) {
+      const [c, r] = key.split(',').map(Number);
+      if ((G.destroyed || []).some(d => d[0] === c && d[1] === r)) continue;   // skip fully destroyed
+      const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+      // Dark smoky overlay
+      g.fillStyle(0x000000, 0.28);
+      g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+      // Crack line
+      g.lineStyle(1.5, 0x201008, 0.8);
+      g.lineBetween(x + 6, y + 10, x + CELL - 12, y + CELL - 8);
+      g.lineBetween(x + CELL - 14, y + 12, x + CELL - 6, y + CELL - 14);
+    }
+
+    // Scorched earth (destroyed)
+    (G.destroyed || []).forEach(([c, r]) => this._drawScorched(c, r));
+
+    // Revealed HQ (once destroyed)
+    const hqR = G.hq_revealed || {};
+    Object.entries(hqR).forEach(([side, pos]) => {
+      if (!pos) return;
+      const [c, r] = pos;
+      const cx = BX + c * CELL + CELL / 2, cy = BY + r * CELL + CELL / 2;
+      // Golden ring
+      g.lineStyle(3, 0xffd060, 0.95);
+      g.strokeCircle(cx, cy, CELL * 0.38);
+      g.lineStyle(1.5, 0xffffff, 0.8);
+      g.strokeCircle(cx, cy, CELL * 0.28);
+    });
+  }
+
+  /** Draw a single scorched-earth cell (destroyed forever) */
+  _drawScorched(c, r) {
+    const g = this.dynGfx;
+    const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+    const w = CELL - 3, h = CELL - 3;
+    // Deep black base
+    g.fillStyle(0x0a0603, 0.92);
+    g.fillRoundedRect(x, y, w, h, 3);
+    // Ember specks (deterministic by cell)
+    const rnd = (k) => {
+      const v = Math.sin((c * 91 + r * 17 + k * 131) * 12.97) * 43758.55;
+      return v - Math.floor(v);
+    };
+    for (let i = 0; i < 5; i++) {
+      const ex = x + 4 + rnd(i) * (w - 8);
+      const ey = y + 4 + rnd(i + 10) * (h - 8);
+      g.fillStyle(0xff6a20, 0.55);
+      g.fillCircle(ex, ey, 1.4);
+    }
+    // Cracks
+    g.lineStyle(1, 0x502010, 0.8);
+    g.lineBetween(x + 4, y + 8,  x + w - 8, y + h - 6);
+    g.lineBetween(x + w - 6, y + 10, x + 10, y + h - 10);
+    // Faint skull hint — small '×' burn mark
+    g.lineStyle(2, 0x802010, 0.55);
+    g.lineBetween(x + w / 2 - 5, y + h / 2 - 5, x + w / 2 + 5, y + h / 2 + 5);
+    g.lineBetween(x + w / 2 + 5, y + h / 2 - 5, x + w / 2 - 5, y + h / 2 + 5);
+  }
+
+  /** Defense zone — semi-transparent highlighted rectangle */
+  _drawDefZone(defCol, defRow, tier, color) {
+    const g   = this.dynGfx;
+    const rad = tier >= 2 ? 2 : 1;
+    const sx  = BX + (defCol - rad) * CELL;
+    const sy  = BY + (defRow - rad) * CELL;
+    const sz  = (rad * 2 + 1) * CELL;
+
+    g.fillStyle(color, 0.10);
+    g.fillRect(sx, sy, sz, sz);
+    g.lineStyle(2, color, 0.65);
+    g.strokeRect(sx, sy, sz, sz);
+
+    // Corner ticks
+    g.lineStyle(3, color, 0.9);
+    [[sx, sy], [sx + sz, sy], [sx, sy + sz], [sx + sz, sy + sz]].forEach(([cx, cy]) => {
+      const dx = cx === sx ? 6 : -6, dy = cy === sy ? 6 : -6;
+      g.lineBetween(cx, cy, cx + dx, cy);
+      g.lineBetween(cx, cy, cx, cy + dy);
+    });
+  }
+
+  /**
+   * Ray visualisation
+   *  path    → light green cell fill + dashed centre-line
+   *  hit     → red cell fill + ✕ + explosion burst
+   *  blocked → dark grey cell fill + bold ✕ (hard terrain stops)
+   *  soft    → orange cell fill + ▲ warning (soft terrain absorbed)
+   */
+  _drawRay(startCol, startRow, rayCells) {
+    const g = this.dynGfx;
+    if (!rayCells || rayCells.length === 0) return;
+
+    // ── Pass 1: fill cell backgrounds ──────────────────────────────
+    for (const cell of rayCells) {
+      const x = BX + cell.col * CELL, y = BY + cell.row * CELL;
+      const w = CELL - 1, h = CELL - 1;
+
+      if      (cell.type === 'path')    { g.fillStyle(C.ray_path,    0.28); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'hit')     { g.fillStyle(C.ray_hit,     0.55); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'blocked') { g.fillStyle(0x303030,      0.70); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'soft')    { g.fillStyle(C.ray_soft,    0.45); g.fillRect(x, y, w, h); }
+    }
+
+    // ── Pass 2: centre-to-centre connecting line ───────────────────
+    let px = BX + startCol * CELL + CELL / 2;
+    let py = BY + startRow * CELL + CELL / 2;
+
+    for (const cell of rayCells) {
+      const cx = BX + cell.col * CELL + CELL / 2;
+      const cy = BY + cell.row * CELL + CELL / 2;
+
+      if (cell.type === 'path') {
+        g.lineStyle(2, C.ray_path, 0.9);
+        this._dashLine(g, px, py, cx, cy, 7, 4);
+      } else {
+        // Solid line for terminal cells
+        g.lineStyle(2.5, cell.type === 'blocked' ? C.ray_blocked : C.ray_hit, 1);
+        g.lineBetween(px, py, cx, cy);
+      }
+      px = cx; py = cy;
+    }
+
+    // ── Pass 3: markers on terminal cell ──────────────────────────
+    const last = rayCells[rayCells.length - 1];
+    const lx = BX + last.col * CELL + CELL / 2;
+    const ly = BY + last.row * CELL + CELL / 2;
+    const m  = CELL * 0.30;   // marker half-size
+
+    if (last.type === 'hit') {
+      // Bold white ✕ + red outline + explosion spikes
+      g.lineStyle(5, 0x000000, 0.5);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      g.lineStyle(4, 0xffffff, 1);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      // Burst spikes
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        g.lineStyle(2, 0xffffff, 0.75);
+        g.lineBetween(lx + Math.cos(a) * (m + 2), ly + Math.sin(a) * (m + 2),
+                      lx + Math.cos(a) * (m + 10), ly + Math.sin(a) * (m + 10));
+      }
+
+    } else if (last.type === 'blocked') {
+      // Bold red ✕ — hard terrain stops the shot
+      g.lineStyle(5, 0x000000, 0.5);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      g.lineStyle(4, C.ray_blocked, 1);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      // Circle around X
+      g.lineStyle(2, C.ray_blocked, 0.7);
+      g.strokeCircle(lx, ly, m + 5);
+
+    } else if (last.type === 'soft') {
+      // Orange ▲ — soft terrain absorbed the hit
+      const tr = m + 2;
+      g.lineStyle(3, 0x000000, 0.4);
+      g.fillStyle(C.ray_soft, 1);
+      g.fillTriangle(lx, ly - tr, lx - tr, ly + tr * 0.7, lx + tr, ly + tr * 0.7);
+      g.lineStyle(2.5, 0xffffff, 0.9);
+      g.strokeTriangle(lx, ly - tr, lx - tr, ly + tr * 0.7, lx + tr, ly + tr * 0.7);
+      // Exclamation in triangle
+      g.fillStyle(0x000000, 0.7);
+      g.fillRect(lx - 1.5, ly - tr * 0.45, 3, tr * 0.5);
+      g.fillCircle(lx, ly + tr * 0.25, 2);
+    }
+  }
+
+  /** Token — rounded square (ATK) or diamond (DEF) with bob + shadow.
+   *  If `stale` is true (cached position, marker briefly lost), draw semi-transparent. */
+  _drawToken(col, row, angle, role, isP1, stale = false) {
+    const g = this.dynGfx;
+    const { x: cx0, y: cy0 } = cc(col, row);
+    const r16    = CELL * 0.36;
+    const fill   = isP1 ? (role === 'atk' ? C.p1_atk : C.p1_def)
+                        : (role === 'atk' ? C.p2_atk : C.p2_def);
+    const border = isP1 ? C.p1_border : C.p2_border;
+
+    // Subtle bob — each token phased differently by its cell id
+    const phase = (col * 7 + row * 13) * 0.3;
+    const bob   = Math.sin(this.time.now / 450 + phase) * 1.4;
+    const cx = cx0, cy = cy0 + bob;
+
+    const bodyA   = stale ? 0.45 : 1.0;   // fade out cached tokens
+    const borderA = stale ? 0.6  : 1.0;
+
+    // Shadow under token
+    g.fillStyle(0x000000, 0.28 * bodyA);
+    g.fillEllipse(cx + 1, cy0 + r16 + 3, r16 * 1.6, r16 * 0.45);
+
+    if (role === 'atk') {
+      // Rounded square body
+      g.fillStyle(fill, bodyA);
+      g.fillRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
+      // Highlight strip (top)
+      g.fillStyle(0xffffff, 0.20 * bodyA);
+      g.fillRoundedRect(cx - r16 + 2, cy - r16 + 2, r16 * 2 - 4, r16 * 0.7, 5);
+      // Border
+      g.lineStyle(2.5, border, borderA);
+      g.strokeRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
+    } else {
+      // Diamond (rotated square) — DEF
+      g.fillStyle(fill, bodyA);
+      g.fillPoints([
+        { x: cx,       y: cy - r16 }, { x: cx + r16, y: cy },
+        { x: cx,       y: cy + r16 }, { x: cx - r16, y: cy }
+      ], true);
+      // Top highlight (smaller diamond)
+      g.fillStyle(0xffffff, 0.22 * bodyA);
+      g.fillPoints([
+        { x: cx,           y: cy - r16 + 2 }, { x: cx + r16 * 0.6, y: cy - r16 * 0.2 },
+        { x: cx,           y: cy },           { x: cx - r16 * 0.6, y: cy - r16 * 0.2 }
+      ], true);
+      // Border
+      g.lineStyle(2.5, border, borderA);
+      g.strokePoints([
+        { x: cx,       y: cy - r16 }, { x: cx + r16, y: cy },
+        { x: cx,       y: cy + r16 }, { x: cx - r16, y: cy }
+      ], true);
+    }
+  }
+
+  /** Placement-phase overlay — highlight valid/invalid cells with glow + labels */
+  _drawPlacementGuide(p1, p2) {
+    const g = this.dynGfx;
+
+    // Gentle pulse tied to time
+    const t      = this.time.now;
+    const pulseA = 0.18 + 0.10 * Math.sin(t / 350);
+    const pulseB = 0.18 + 0.10 * Math.sin(t / 350 + Math.PI);
+
+    // ── P1 valid zone (below diagonal) — yellow glow + tiny ✓ ────
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (c + r < 11) {
+        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+        g.fillStyle(C.p1_border, pulseA);
+        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+        // tiny check mark top-right corner
+        g.lineStyle(1.5, 0x40a040, 0.85);
+        g.lineBetween(x + CELL - 11, y + 6, x + CELL - 8, y + 9);
+        g.lineBetween(x + CELL - 8,  y + 9, x + CELL - 4, y + 4);
+      }
+    }
+
+    // ── P2 valid zone (above diagonal) — green glow + tiny ✓ ─────
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (c + r > 11) {
+        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+        g.fillStyle(C.p2_border, pulseB);
+        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+        g.lineStyle(1.5, 0x40a040, 0.85);
+        g.lineBetween(x + 4, y + 7, x + 7, y + 10);
+        g.lineBetween(x + 7, y + 10, x + 11, y + 5);
+      }
+    }
+
+    // ── Fence line (c+r == 11) — no-placement zone ───────────────
+    const noPlaceA = 0.30 + 0.10 * Math.sin(t / 250);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (c + r === 11) {
+        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+        // Red-tinted overlay
+        g.fillStyle(0xff4040, noPlaceA * 0.35);
+        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+        // Diagonal forbid bars (⊘ look)
+        g.lineStyle(2, 0xff3030, noPlaceA);
+        g.lineBetween(x + 6, y + CELL - 9, x + CELL - 9, y + 6);
+      }
+    }
+
+    // ── Lazily create zone-label text objects once ────────────────
+    if (!this._zoneLabels) {
+      const mk = (x, y, txt, col) => this.add.text(x, y, txt, {
+        fontSize: '12px', fontFamily: 'Georgia', fontStyle: 'bold',
+        color: col, backgroundColor: 'rgba(20,14,4,0.78)',
+        padding: { x: 8, y: 4 },
+        stroke: '#000', strokeThickness: 2,
+      }).setDepth(9).setOrigin(0.5, 0.5);
+
+      this._zoneLabels = {
+        p1:   mk(BX + CELL * 3,    BY + CELL * 9.5,
+                 '🌾 OLD MICK — place Fences / Scarecrows', '#f8d870'),
+        p2:   mk(BX + CELL * 9,    BY + CELL * 2.5,
+                 '🐦 THE MOB — place Mounds / Spinifex', '#b8ff60'),
+        fence:mk(BX + CELL * 6,    BY + CELL * 6,
+                 '🚫 NO-PLACE ZONE (fence line)', '#ff9090'),
+        banner: this.add.text(BX + COLS * CELL / 2, BY + ROWS * CELL / 2,
+                 '📍 PHASE 1 — PLACE TERRAIN THEN CLICK LOCK', {
+                   fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'bold',
+                   color: '#fff8d0', backgroundColor: 'rgba(40,22,10,0.85)',
+                   padding: { x: 14, y: 8 },
+                   stroke: '#6a4020', strokeThickness: 3,
+                 }).setDepth(9).setOrigin(0.5, 0.5),
+      };
+
+      // Banner gentle breathing
+      this.tweens.add({
+        targets: this._zoneLabels.banner,
+        scale: { from: 1, to: 1.04 },
+        yoyo: true, repeat: -1, duration: 700, ease: 'Sine.easeInOut',
+      });
+    }
+
+    Object.values(this._zoneLabels).forEach(l => l.setVisible(true));
+  }
+
+  /** Hide placement labels when battle starts */
+  _hidePlacementLabels() {
+    if (this._zoneLabels)
+      Object.values(this._zoneLabels).forEach(l => l.setVisible(false));
+  }
+
+  /** Big victory banner on top of the board when the game ends */
+  _updateWinBanner(G) {
+    const winner = G.winner;
+    if (!winner) {
+      if (this._winBanner) { this._winBanner.setVisible(false); this._winSub?.setVisible(false); }
+      return;
+    }
+
+    if (!this._winBanner) {
+      const bgCol = 'rgba(12,6,2,0.88)';
+      this._winBanner = this.add.text(
+        BX + COLS * CELL / 2, BY + ROWS * CELL / 2 - 16, '',
+        { fontSize: '28px', fontFamily: 'Georgia', fontStyle: 'bold',
+          color: '#ffe070', backgroundColor: bgCol,
+          padding: { x: 22, y: 12 },
+          stroke: '#3a2010', strokeThickness: 4 }
+      ).setOrigin(0.5, 0.5).setDepth(20);
+      this._winSub = this.add.text(
+        BX + COLS * CELL / 2, BY + ROWS * CELL / 2 + 28, '',
+        { fontSize: '13px', fontFamily: 'Georgia', fontStyle: 'italic',
+          color: '#f0c080', backgroundColor: bgCol, padding: { x: 14, y: 6 } }
+      ).setOrigin(0.5, 0.5).setDepth(20);
+      this.tweens.add({
+        targets: this._winBanner, scale: { from: 0.5, to: 1 },
+        duration: 400, ease: 'Back.easeOut',
+      });
+    }
+
+    const msgs = {
+      homestead_destroyed: ['🐦 THE MOB WINS', 'Old Mick\'s homestead burns — no shelter, no grain.'],
+      nest_destroyed:      ['🌾 OLD MICK WINS', 'The hidden Nest is gone. The emu breeding heart is dead.'],
+      attrition:           winner === 'p1'
+          ? ['🌾 OLD MICK WINS', 'Feeding grounds razed. The Mob starves.']
+          : ['🐦 THE MOB WINS', 'Paddocks trampled. Old Mick can\'t fund another shot.'],
+    };
+    const [title, sub] = msgs[G.win_reason] || [`${winner.toUpperCase()} WINS`, ''];
+    this._winBanner.setText(title).setVisible(true);
+    this._winSub.setText(sub).setVisible(true);
+  }
+
+  // ─── Utility: dashed line ────────────────────────────────────────
+  _dashLine(g, x1, y1, x2, y2, dashLen, gapLen) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return;
+    const ux = dx / len, uy = dy / len;
+    let d = 0, draw = true;
+    while (d < len) {
+      const seg = Math.min(draw ? dashLen : gapLen, len - d);
+      if (draw)
+        g.lineBetween(x1 + ux * d, y1 + uy * d,
+                      x1 + ux * (d + seg), y1 + uy * (d + seg));
+      d += seg; draw = !draw;
+    }
+  }
+
+  // ─── Utility: dashed rectangle outline ──────────────────────────
+  _dashRect(g, x, y, w, h, dashLen, gapLen) {
+    this._dashLine(g, x,     y,     x + w, y,     dashLen, gapLen);
+    this._dashLine(g, x + w, y,     x + w, y + h, dashLen, gapLen);
+    this._dashLine(g, x + w, y + h, x,     y + h, dashLen, gapLen);
+    this._dashLine(g, x,     y + h, x,     y,     dashLen, gapLen);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PHASER INIT
+// ═══════════════════════════════════════════════════════════════════
+new Phaser.Game({
+  type      : Phaser.AUTO,
+  width     : W,
+  height    : H,
+  parent    : 'game-container',
+  backgroundColor: '#1a1008',
+  scene     : GameScene,
+});
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@ Run:
 """
 
 import asyncio
+import os
 import time
 
 import cv2
@@ -32,11 +33,13 @@ from python_tracker.state_output.tracker_snapshot import (
     apply_calibration_fallback,
     build_tracker_preview,
 )
+from python_tracker.tracked_markers import TOKEN_MARKERS
 
 
 CAMERA_ID = 1
 SEND_FPS = 10
 CONFIRM_HOLD_SECONDS = 5.0
+HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 
 _CONFIRM_PLAYER_ID = {mid: PlayerId.P1 if pnum == 1 else PlayerId.P2
                       for mid, pnum in CONFIRM_PLAYER_MAP.items()}
@@ -168,16 +171,18 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
             await broadcast(build_board_state_message(serialize_game_state(game, last_unit_metadata)))
             await broadcast(build_tracker_message(snapshot_for_ui))
 
-            cv2.imshow("Old Mick MVP — Camera View  [Q to quit]", annotated)
-            key = cv2.waitKey(1) & 0xFF
-            if key in (ord("q"), ord("Q"), 27):
-                print("[Camera] Quit signal received.")
-                break
+            if not HEADLESS:
+                cv2.imshow("Old Mick MVP — Camera View  [Q to quit]", annotated)
+                key = cv2.waitKey(1) & 0xFF
+                if key in (ord("q"), ord("Q"), 27):
+                    print("[Camera] Quit signal received.")
+                    break
 
             await asyncio.sleep(interval)
     finally:
         release_camera(cap)
-        cv2.destroyAllWindows()
+        if not HEADLESS:
+            cv2.destroyAllWindows()
         print("[Camera] Released.")
 
 
@@ -192,8 +197,8 @@ async def async_main():
     print("    ID 2 = bottom-left  ID 3 = bottom-right")
     print()
     print("  Token markers:")
-    print("    ID 10=P1 ATK")
-    print("    ID 14=P2 ATK")
+    for marker in TOKEN_MARKERS:
+        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
     print(f"  Confirm markers (hold {CONFIRM_HOLD_SECONDS:.0f}s to end turn):")
     print("    ID 13=P1 CONFIRM")

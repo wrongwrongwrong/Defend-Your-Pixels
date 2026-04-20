@@ -78,7 +78,8 @@ class Unit:
     kind: UnitKind
 
     ap: int = 1
-    move_points: float = 2.0
+    # Testing-friendly default: allow broad repositioning on a 12x12 board.
+    move_points: float = 12.0
     heat: int = 0  # 0..100+, increments by 33 per use
     overload_streak: int = 0  # consecutive overload attempts
     paralyzed_turns: int = 0
@@ -93,7 +94,7 @@ class Unit:
 
     def new_turn(self) -> None:
         self.ap = 1
-        self.move_points = 2.0
+        self.move_points = 12.0
         self.on_highway = False
         if self.paralyzed_turns > 0:
             self.paralyzed_turns -= 1
