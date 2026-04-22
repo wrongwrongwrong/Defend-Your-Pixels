@@ -14,6 +14,38 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 | `tracker_frame` | 僅 marker → 合併 **位置 / 朝向**（現有 `applyTrackedTokens`）。 |
 | `game_state` | **Legacy**：與 `tracker_frame` 相同合併語意，保留舊 bridge 相容。 |
 
+## Setup metadata
+
+The runtime payload may include:
+
+- `phase`
+- `setup`
+- `errors`
+
+`setup` carries safe setup progress only.
+It must not reveal hidden HQ coordinates once they are confirmed.
+
+Example safe shape:
+
+```json
+{
+  "phase": "hq_placement",
+  "setup": {
+    "board_scan_ready": true,
+    "side_selection_complete": true,
+    "first_player_side": "old_mick",
+    "active_setup_side": "p2",
+    "hq": {
+      "p1": { "has_candidate": true, "confirmed": true },
+      "p2": { "has_candidate": false, "confirmed": false }
+    },
+    "status_code": "waiting_for_hq_candidate",
+    "status_message": "The Mob must choose an HQ location."
+  },
+  "errors": []
+}
+```
+
 ## Authoritative JSON（Python / bridge 輸出建議形狀）
 
 欄位命名採 **snake_case**，與 `model_backend` 對齊；React 端 adapter 負責轉成現有 camelCase UI shape（見下節）。v1 authoritative payload 固定以 `units[]` 表示棋盤單位，不直接輸出 React 專用的 `players[].tokens[]` 形狀。

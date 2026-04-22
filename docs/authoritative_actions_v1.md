@@ -21,6 +21,48 @@
 
 ## 已實作 action
 
+### Live setup actions
+
+The live Old Mick tracker/manual runtime now also accepts setup actions before gameplay starts.
+
+### `choose_side`
+
+用途：選擇第一個 setup 玩家是 `old_mick` 或 `mob`，並進入 HQ placement flow。
+
+```json
+{
+  "action": "choose_side",
+  "first_player_side": "old_mick"
+}
+```
+
+### `set_hq_candidate`
+
+用途：為目前 active setup side 提交 HQ 候選格位。
+
+```json
+{
+  "action": "set_hq_candidate",
+  "side": "p1",
+  "position": { "x": 3, "y": 4 }
+}
+```
+
+### `confirm_hq`
+
+用途：確認目前 side 的 HQ 候選位置。確認後 HQ 仍保持 hidden，不會出現在公開 gameplay payload。
+
+```json
+{
+  "action": "confirm_hq",
+  "side": "p1"
+}
+```
+
+### `reset_setup`
+
+用途：重設 HQ placement flow，保留目前 map 與 side choice，重新開始 HQ setup。
+
 ### `end_turn`
 
 用途：請 Python model 推進回合，並重新廣播最新 `board_state`。
@@ -109,3 +151,9 @@ Step 6 下一階段應改成：
 - 輸出新 `board_state`
 
 也就是 tracker 不應直接覆寫 authoritative model，而應只提供 intent。
+
+## Old Mick setup notes
+
+- `runner/run_live_tracker.py` 現在在 `scan` / `side_selection` / `hq_placement` / `game` 間切換。
+- `yu_test1/game_model.py` 的 live path 可接受外部提供的 HQ positions；setup 完成前不建立 live model。
+- HQ 在 setup 確認後仍維持 hidden，直到 `hq_revealed` 事件發生。

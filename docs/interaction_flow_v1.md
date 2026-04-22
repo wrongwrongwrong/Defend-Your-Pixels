@@ -15,6 +15,22 @@ This flow should answer five core questions:
 - how the player understands the DEF zone
 - how the player sees turn state and win state
 
+## Pre-game setup flow
+
+Before gameplay begins, the backend now requires:
+
+1. board scan readiness
+2. side selection
+3. sequential HQ placement with confirmation
+4. transition to `game`
+
+Backend responsibility during setup:
+
+- wait for a valid board scan before allowing setup
+- track which side sets HQ first
+- validate that each HQ stays on its own side and off the fence
+- keep both confirmed HQ locations hidden from the public payload
+
 ## Core interaction model
 
 The MVP uses a two-mode interaction model:
@@ -220,6 +236,16 @@ React currently shows:
 ### Validation goal
 
 Players should never be confused about whose turn it is or why the match ended.
+
+## Turn integrity
+
+During gameplay, accidental movement of the inactive side's physical markers does not change authoritative state.
+
+The backend now:
+
+- ignores inactive-side token position or rotation changes
+- keeps the last accepted state for that side
+- reports a validation status through `inactive_side_token_changed`
 
 ## Current validation checklist
 
