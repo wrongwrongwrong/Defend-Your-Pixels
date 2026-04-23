@@ -15,6 +15,40 @@ This flow should answer five core questions:
 - how the player understands the DEF zone
 - how the player sees turn state and win state
 
+## Pre-game setup flow
+
+Before gameplay begins, the backend now requires:
+
+1. board scan readiness
+2. side selection
+3. sequential HQ placement with confirmation
+4. transition to `game`
+
+Required setup sequence:
+
+1. The runtime stays in `scan` until the board markers are readable.
+2. Players choose whether Old Mick or The Mob places an HQ first.
+3. The active setup side chooses an HQ on its own territory and confirms it.
+4. Setup control moves to the other side.
+5. After both HQs are confirmed, gameplay starts.
+
+Confirmed hidden-information rule:
+
+- HQ locations are chosen during setup.
+- HQ coordinates remain hidden during normal play.
+- HQ coordinates are only exposed later through `hq_revealed` when destroyed.
+
+Current live frontend behavior:
+
+- `yu_test1/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
+- the placeholder shows backend setup status and safe HQ progress only
+- the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
+- during `side_selection`, the browser can choose which side places an HQ first
+- during `hq_placement`, the browser can click a board cell to send an HQ candidate for the active side
+- during `hq_placement`, the browser can confirm or restart setup from panel controls
+- a transient local preview ring may mark the currently clicked candidate before confirmation
+- recoverable backend/tracker validation issues are surfaced through a temporary warning layover and a recent-warning line in the side panel
+
 ## Core interaction model
 
 The MVP uses a two-mode interaction model:
@@ -190,6 +224,16 @@ React currently shows:
 
 Players should never be confused about whose turn it is or why the match ended.
 
+## Turn integrity
+
+During gameplay, accidental movement of the inactive side's physical markers does not change authoritative state.
+
+- only the active side's tokens may move or rotate
+- inactive-side token changes are ignored by the backend
+- the runtime reports `inactive_side_token_changed` as a recoverable validation status
+- the frontend shows this as a warning layover so players understand that the movement was ignored rather than applied
+- `hq_setup_complete` is surfaced as a success-style alert so setup completion reads as progression rather than failure
+
 ## Current validation checklist
 
 The interaction flow is good enough for MVP testing if players can do the following without verbal rescue:
@@ -208,7 +252,7 @@ The following are still known gaps, not blockers:
 - React does not yet draw a dedicated attack-line overlay
 - React does not yet draw a dedicated defender-zone overlay
 - resource tiles are not yet surfaced as first-class frontend objects
-- hidden information flow is not yet designed
+- HQ setup still depends on backend validation; browser-side previews are temporary and non-authoritative
 
 These should be treated as later refinements, not blockers for MVP validation.
 

@@ -40,8 +40,8 @@ const H       = BY + ROWS * CELL + 28;   // total canvas height
 const C = {
   farmer_cell : 0xe8c890,   // pale wheat (safe / non-target, washed out)
   emu_cell    : 0xb8d090,   // pale sage (safe / non-target, washed out)
-  p1_target   : 0xc84818,   // vivid dark orange — attackable P1 cells
-  p2_target   : 0x0f4a10,   // deep forest green — attackable P2 cells
+  p1_target   : 0xc84818,   // vivid dark orange — P1 resource cells
+  p2_target   : 0x0f4a10,   // deep forest green — P2 resource cells
   fence_cell  : 0xe8d068,   // golden fence line
   board_bg    : 0x2a1e0e,   // dark earth background
   panel_bg    : 0x1e1408,   // panel background
@@ -106,6 +106,127 @@ const ARROW_CHAR = {
 let gameState  = null;
 let prevState  = null;
 let wsInstance = null;
+
+const PHASE_LABEL = {
+  scan: 'Board Scan',
+  side_selection: 'Choose First HQ Side',
+  hq_placement: 'Hidden HQ Placement',
+  game: 'Battle',
+};
+
+const SIDE_LABEL = {
+  p1: 'Old Mick',
+  p2: 'The Mob',
+  old_mick: 'Old Mick',
+  mob: 'The Mob',
+};
+
+const ERROR_PRIORITY = [
+  'camera_unavailable',
+  'marker_map_scan_failed',
+  'token_detection_failed',
+  'inactive_side_token_changed',
+  'hq_wrong_side',
+  'old_mick_token_invalid_zone',
+  'mob_token_invalid_zone',
+  'old_mick_attack_direction_invalid',
+  'mob_attack_direction_invalid',
+  'hq_setup_complete',
+];
+
+const ERROR_TITLE = {
+  camera_unavailable: 'Camera Unavailable',
+  marker_map_scan_failed: 'Board Scan Failed',
+  token_detection_failed: 'Token Detection Failed',
+  inactive_side_token_changed: 'Wrong Turn Movement',
+  hq_wrong_side: 'Invalid HQ Placement',
+  old_mick_token_invalid_zone: 'Old Mick Position Invalid',
+  mob_token_invalid_zone: 'Mob Position Invalid',
+  old_mick_attack_direction_invalid: 'Old Mick Aim Invalid',
+  mob_attack_direction_invalid: 'Mob Aim Invalid',
+  hq_setup_complete: 'HQ Setup Complete',
+};
+
+const ERROR_MESSAGE_OVERRIDE = {
+  inactive_side_token_changed: 'Only the active player may move this turn. Opponent movement was ignored.',
+  hq_setup_complete: 'Both HQs are locked in. Battle setup is complete.',
+};
+
+const WARNING_SHOW_MS = 1800;
+const WARNING_REPEAT_GAP_MS = 900;
+const WARNING_RECENT_MS = 3600;
+
+function isIgnoredErrorCode(code) {
+  return code === 'token_detection_failed' || code === 'inactive_side_token_changed';
+}
+
+function phaseLabel(phase) {
+  return PHASE_LABEL[phase] || 'Setup';
+}
+
+function sideLabel(side) {
+  return SIDE_LABEL[side] || 'Not chosen';
+}
+
+function setupFlag(flag, readyText, waitingText) {
+  return flag ? readyText : waitingText;
+}
+
+function hqProgressLabel(sideState) {
+  if (!sideState) return 'waiting';
+  if (sideState.confirmed) return 'confirmed (hidden)';
+  if (sideState.has_candidate) return 'candidate saved';
+  return 'waiting';
+}
+
+function cellLabel(col, row) {
+  if (col == null || row == null) return '--';
+  return `${String.fromCharCode(65 + col)}${row + 1}`;
+}
+
+function sideOwnsCell(side, col, row) {
+  if (side === 'p1') return isP1(col, row);
+  if (side === 'p2') return isP2(col, row);
+  return false;
+}
+
+function dedupeErrorsByCode(errors) {
+  const deduped = [];
+  const seen = new Set();
+  for (const error of Array.isArray(errors) ? errors : []) {
+    const code = error?.code;
+    if (!code || isIgnoredErrorCode(code) || seen.has(code)) continue;
+    seen.add(code);
+    deduped.push(error);
+  }
+  return deduped;
+}
+
+function errorPriority(code) {
+  const index = ERROR_PRIORITY.indexOf(code);
+  return index === -1 ? ERROR_PRIORITY.length : index;
+}
+
+function primaryError(errors) {
+  const deduped = dedupeErrorsByCode(errors);
+  deduped.sort((left, right) => errorPriority(left.code) - errorPriority(right.code));
+  return deduped[0] || null;
+}
+
+function errorTitle(code) {
+  return ERROR_TITLE[code] || 'Live Warning';
+}
+
+function errorMessage(error) {
+  const code = error?.code;
+  return ERROR_MESSAGE_OVERRIDE[code] || error?.message || 'Live validation warning.';
+}
+
+function errorTone(code) {
+  if (code === 'hq_setup_complete') return 'success';
+  if (code === 'inactive_side_token_changed') return 'warning';
+  return 'error';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  WEB AUDIO SOUND ENGINE  (no audio files needed)
@@ -194,21 +315,25 @@ function isP2(col, row) { return col + row > 11; }
  * Trace a ray from (startCol, startRow) in direction dir.
  * Returns array of { col, row, type } where type is:
  *   'path'    — free cell
- *   'hit'     — first enemy token cell
+ *   'hit'     — first undestroyed enemy cell
  *   'soft'    — first soft-terrain cell (absorbed, stops ray)
  *   'blocked' — hard terrain (stops ray, shows X)
  */
-function computeRay(startCol, startRow, dir, hardMap, softMap, enemyMap) {
+function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, destroyedMap) {
   if (!dir || !DIR_VEC[dir]) return [];
   const [dc, dr] = DIR_VEC[dir];
   const cells = [];
   let c = startCol + dc, r = startRow + dr;
+  const isEnemyCell = attackerSide === 'p1' ? isP2 : isP1;
 
   while (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
     const k = `${c},${r}`;
     if (hardMap[k])  { cells.push({ col: c, row: r, type: 'blocked' }); break; }
     if (softMap[k])  { cells.push({ col: c, row: r, type: 'soft'    }); break; }
-    if (enemyMap[k]) { cells.push({ col: c, row: r, type: 'hit'     }); break; }
+    if (isEnemyCell(c, r) && !destroyedMap[k]) {
+      cells.push({ col: c, row: r, type: 'hit' });
+      break;
+    }
     cells.push({ col: c, row: r, type: 'path' });
     c += dc; r += dr;
   }
@@ -278,12 +403,16 @@ class GameScene extends Phaser.Scene {
     this._drawBoardLabels();          // one-shot text labels (A–L, 1–12)
     this._drawStaticBoard();          // initial draw (before terrain arrives)
     this._buildPanel();
+    this._buildSetupUi();
+    this._buildWarningUi();
     this._buildLabels();
     this._buildLockButton();
     this._connectWS();
 
     // Refresh UI at 20 fps
     this.time.addEvent({ delay: 50, callback: this._applyState, callbackScope: this, loop: true });
+
+    this.input.on('pointerdown', this._handleBoardPointerDown, this);
 
     // Pulsing effect on LOCK button during terrain phase
     this.tweens.add({
@@ -306,15 +435,15 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── Static board (re-callable when terrain/targets change) ────
+  // ── Static board (re-callable when terrain/resources change) ────
   _drawStaticBoard(terrain) {
     const g = this.boardGfx;
     g.clear();
 
-    // Build target lookup sets (empty when terrain not yet received)
-    const targetKey = (c, r) => `${c},${r}`;
-    const p1Targets = new Set((terrain?.p1_targets ?? []).map(t => targetKey(t.col, t.row)));
-    const p2Targets = new Set((terrain?.p2_targets ?? []).map(t => targetKey(t.col, t.row)));
+    // Build resource lookup sets (empty when terrain not yet received)
+    const resourceKey = (c, r) => `${c},${r}`;
+    const p1Resources = new Set((terrain?.p1_resources ?? terrain?.p1_targets ?? []).map(t => resourceKey(t.col, t.row)));
+    const p2Resources = new Set((terrain?.p2_resources ?? terrain?.p2_targets ?? []).map(t => resourceKey(t.col, t.row)));
 
     // ── Soft vignette behind whole board ──────────────────────────
     g.fillStyle(0x0c0804, 1);
@@ -327,13 +456,13 @@ class GameScene extends Phaser.Scene {
         const w = CELL - 1, h = CELL - 1;
         const onFence  = (c + r === 11);
         const p1side   = isP1(c, r);
-        const key      = targetKey(c, r);
-        const isTarget = p1side ? p1Targets.has(key) : p2Targets.has(key);
+        const key        = resourceKey(c, r);
+        const isResource = p1side ? p1Resources.has(key) : p2Resources.has(key);
 
-        // Base fill: targets get vivid colour; everything else muted
+        // Base fill: resource cells get vivid colour; everything else muted
         let baseFill;
         if (onFence)       baseFill = C.fence_cell;
-        else if (isTarget) baseFill = p1side ? C.p1_target : C.p2_target;
+        else if (isResource) baseFill = p1side ? C.p1_target : C.p2_target;
         else               baseFill = p1side ? C.farmer_cell : C.emu_cell;
 
         g.fillStyle(baseFill, 1);
@@ -345,8 +474,8 @@ class GameScene extends Phaser.Scene {
         g.fillStyle(0x000000, 0.10);
         g.fillRect(x + 2, y + h - 4, w - 3, 3);
 
-        // Border — thicker on targets so they pop
-        if (isTarget) {
+        // Border — thicker on resource cells so they pop
+        if (isResource) {
           g.lineStyle(1.5, 0x000000, 0.35);
         } else {
           g.lineStyle(1, 0x000000, 0.12);
@@ -459,7 +588,7 @@ class GameScene extends Phaser.Scene {
 
     // Dynamic texts (updated each frame)
     this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
-    this.scoreText  = T(8, H - 174, 'P1 razed: 0/30  P2 razed: 0/30', '#ffb060', '10px');
+    this.scoreText  = T(8, H - 174, 'Paddocks razed: 0/33  Feeding grounds razed: 0/33', '#ffb060', '10px');
     this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
     this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
 
@@ -496,6 +625,427 @@ class GameScene extends Phaser.Scene {
     this.p2AtkAInfo = this.add.text(PANEL_X + 8, 125, '', infoStyle);
     this.p2AtkBInfo = this.add.text(PANEL_X + 8, 140, '', infoStyle);
     this.p2DefInfo  = this.add.text(PANEL_X + 8, 155, '', infoStyle);
+
+    T(8, 320, 'LATEST ALERT', '#c89060', '11px');
+    this.warningMiniTxt = this.add.text(PANEL_X + 8, 338, 'Recent alert: none', {
+      fontSize: '10px', fontFamily: 'Georgia', color: '#9a7a58',
+      wordWrap: { width: PW - 16 },
+    });
+
+    T(8, 382, 'SETUP CONTROLS', '#c8a050', '11px');
+    this.setupControlTxt = this.add.text(PANEL_X + 8, 400, 'Waiting for setup phase.', {
+      fontSize: '10px', fontFamily: 'Georgia', color: '#9e8868',
+      wordWrap: { width: PW - 16 },
+    });
+    this.setupCandidateTxt = this.add.text(PANEL_X + 8, 440, '', {
+      fontSize: '10px', fontFamily: 'monospace', color: '#d8c890',
+      wordWrap: { width: PW - 16 },
+    }).setVisible(false);
+
+    const mkActionBtn = (label, x, y, width, bgColor, color, onClick) => {
+      const btn = this.add.text(PANEL_X + x, y, label, {
+        fontSize: '11px', fontFamily: 'Georgia', color,
+        backgroundColor: bgColor, padding: { x: 6, y: 4 }, fontStyle: 'bold',
+      }).setInteractive({ useHandCursor: true }).setVisible(false);
+      btn._baseColor = color;
+      btn._baseBgColor = bgColor;
+      btn._enabled = true;
+      btn._fullWidth = width;
+      btn.setFixedSize(width, 24);
+      btn.setAlign('center');
+      btn.on('pointerdown', () => { if (btn._enabled) onClick(); });
+      btn.on('pointerover', () => {
+        if (btn._enabled) btn.setColor('#fff8dc');
+      });
+      btn.on('pointerout', () => {
+        btn.setColor(btn._enabled ? btn._baseColor : '#8a7a68');
+      });
+      return btn;
+    };
+
+    this.chooseOldMickBtn = mkActionBtn('Old Mick First', 8, 472, 92, '#5c3414', '#ffd878', () => {
+      this._sendAction({ action: 'choose_side', first_player_side: 'old_mick' });
+    });
+    this.chooseMobBtn = mkActionBtn('Mob First', 112, 472, 90, '#294016', '#b8ff78', () => {
+      this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
+    });
+    this.confirmHqBtn = mkActionBtn('Confirm HQ', 8, 504, 194, '#6a3812', '#ffe0a0', () => {
+      const activeSide = gameState?.setup?.active_setup_side;
+      if (activeSide) this._sendAction({ action: 'confirm_hq', side: activeSide });
+    });
+    this.resetSetupBtn = mkActionBtn('Restart Setup', 8, 536, 194, '#402318', '#f0c8b0', () => {
+      this.setupSelection.pendingBySide = { p1: null, p2: null };
+      this._sendAction({ action: 'reset_setup' });
+    });
+  }
+
+  _buildSetupUi() {
+    const tx = BX + 24;
+    const ty = BY + 18;
+    const titleStyle = {
+      fontSize: '16px', fontFamily: 'Georgia', fontStyle: 'bold', color: '#fff0b0',
+      stroke: '#2a1408', strokeThickness: 3,
+    };
+    const bodyStyle = {
+      fontSize: '12px', fontFamily: 'Georgia', color: '#f2d8a0',
+      stroke: '#241208', strokeThickness: 2,
+    };
+    const monoStyle = {
+      fontSize: '11px', fontFamily: 'monospace', color: '#e6d2a8',
+      stroke: '#1e0e06', strokeThickness: 2,
+    };
+
+    this.setupCardGfx = this.add.graphics().setDepth(18).setVisible(false);
+    this.setupTitleTxt = this.add.text(tx, ty, '', titleStyle).setDepth(19).setVisible(false);
+    this.setupStatusTxt = this.add.text(tx, ty + 24, '', {
+      ...bodyStyle,
+      wordWrap: { width: COLS * CELL - 110 },
+    }).setDepth(19).setVisible(false);
+    this.setupScanTxt = this.add.text(tx, ty + 80, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupSideTxt = this.add.text(tx, ty + 98, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupActiveTxt = this.add.text(tx, ty + 116, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupP1Txt = this.add.text(tx, ty + 134, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupP2Txt = this.add.text(tx, ty + 152, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupHintTxt = this.add.text(tx, ty + 174, 'Confirmed HQ cells stay hidden until an HQ is destroyed.', {
+      fontSize: '11px', fontFamily: 'Georgia', fontStyle: 'italic', color: '#ffdf90',
+      stroke: '#2a1408', strokeThickness: 2,
+    }).setDepth(19).setVisible(false);
+  }
+
+  _updateSetupUi(phase, setup = {}) {
+    const isSetupPhase = phase != null && phase !== 'game';
+    const texts = [
+      this.setupTitleTxt,
+      this.setupStatusTxt,
+      this.setupScanTxt,
+      this.setupSideTxt,
+      this.setupActiveTxt,
+      this.setupP1Txt,
+      this.setupP2Txt,
+      this.setupHintTxt,
+    ];
+
+    if (!isSetupPhase) {
+      this.setupCardGfx.clear();
+      this.setupCardGfx.setVisible(false);
+      texts.forEach((txt) => txt.setVisible(false));
+      return;
+    }
+
+    const statusMessage = setup.status_message || 'Waiting for backend setup state.';
+    const activeSide = setup.active_setup_side ? sideLabel(setup.active_setup_side) : 'Waiting';
+    const firstSide = setup.side_selection_complete ? sideLabel(setup.first_player_side) : 'Pending';
+    const p1Hq = hqProgressLabel(setup.hq?.p1);
+    const p2Hq = hqProgressLabel(setup.hq?.p2);
+
+    this.setupCardGfx.clear();
+    this.setupCardGfx.fillStyle(0x120904, 0.90);
+    this.setupCardGfx.fillRoundedRect(BX + 12, BY + 10, COLS * CELL - 24, 206, 14);
+    this.setupCardGfx.lineStyle(2, 0xb88338, 0.85);
+    this.setupCardGfx.strokeRoundedRect(BX + 12, BY + 10, COLS * CELL - 24, 206, 14);
+    this.setupCardGfx.lineStyle(1, 0xf0d070, 0.22);
+    this.setupCardGfx.strokeRoundedRect(BX + 18, BY + 16, COLS * CELL - 36, 194, 12);
+    this.setupCardGfx.setVisible(true);
+
+    this.setupTitleTxt.setText(`HQ Setup Placeholder  |  ${phaseLabel(phase)}`).setVisible(true);
+    this.setupStatusTxt.setText(statusMessage).setVisible(true);
+    this.setupScanTxt
+      .setText(`Board scan: ${setupFlag(!!setup.board_scan_ready, 'ready', 'waiting')}`)
+      .setColor(setup.board_scan_ready ? '#8cf0a0' : '#ffcc88')
+      .setVisible(true);
+    this.setupSideTxt
+      .setText(`First HQ side: ${firstSide}`)
+      .setColor(setup.side_selection_complete ? '#f2df9a' : '#ffcc88')
+      .setVisible(true);
+    this.setupActiveTxt
+      .setText(`Active setup side: ${activeSide}`)
+      .setColor(setup.active_setup_side === 'p2' ? '#b8ff78' : '#ffd878')
+      .setVisible(true);
+    this.setupP1Txt
+      .setText(`Old Mick HQ: ${p1Hq}`)
+      .setColor(setup.hq?.p1?.confirmed ? '#8cf0a0' : '#f2df9a')
+      .setVisible(true);
+    this.setupP2Txt
+      .setText(`The Mob HQ:  ${p2Hq}`)
+      .setColor(setup.hq?.p2?.confirmed ? '#8cf0a0' : '#d8ef9a')
+      .setVisible(true);
+    this.setupHintTxt.setVisible(true);
+  }
+
+  _hideSetupUi() {
+    this._hidePlacementLabels();
+    this._updateSetupUi('game');
+  }
+
+  _buildWarningUi() {
+    this.warningState = {
+      activeCode: null,
+      activeTitle: '',
+      activeMessage: '',
+      activeTone: 'error',
+      showUntil: 0,
+      suppressUntil: 0,
+      recentTitle: '',
+      recentMessage: '',
+      recentTone: 'error',
+      recentUntil: 0,
+    };
+
+    this.setupSelection = {
+      pendingBySide: { p1: null, p2: null },
+    };
+
+    const centerX = BX + COLS * CELL / 2;
+    const topY = BY + 96;
+    this.warningCardGfx = this.add.graphics().setDepth(24).setVisible(false);
+    this.warningTitleTxt = this.add.text(centerX, topY, '', {
+      fontSize: '18px', fontFamily: 'Georgia', fontStyle: 'bold', color: '#ffe0a0',
+      stroke: '#2a1008', strokeThickness: 3,
+    }).setOrigin(0.5, 0).setDepth(25).setVisible(false);
+    this.warningBodyTxt = this.add.text(centerX, topY + 28, '', {
+      fontSize: '13px', fontFamily: 'Georgia', color: '#ffd0a0', align: 'center',
+      wordWrap: { width: 380 }, stroke: '#220c06', strokeThickness: 2,
+    }).setOrigin(0.5, 0).setDepth(25).setVisible(false);
+  }
+
+  _hideWarningOverlay() {
+    this.warningCardGfx.clear();
+    this.warningCardGfx.setVisible(false);
+    this.warningTitleTxt.setVisible(false);
+    this.warningBodyTxt.setVisible(false);
+  }
+
+  _renderWarningOverlay(title, message, alpha, tone = 'error') {
+    const width = 470;
+    const height = 108;
+    const x = BX + COLS * CELL / 2 - width / 2;
+    const y = BY + 82;
+    const palette = tone === 'success'
+      ? {
+          fill: 0x0b1608,
+          border: 0x5ad060,
+          inner: 0xc8f8b8,
+          stripe: 0x1f5e1a,
+          title: '#dcffcf',
+          body: '#c6f0bc',
+        }
+      : tone === 'warning'
+        ? {
+            fill: 0x1a1105,
+            border: 0xe0a040,
+            inner: 0xffe0a0,
+            stripe: 0x6a3812,
+            title: '#ffe7b8',
+            body: '#ffd4a8',
+          }
+        : {
+            fill: 0x1a0905,
+            border: 0xe0883a,
+            inner: 0xffd080,
+            stripe: 0x6a1e08,
+            title: '#ffe0a0',
+            body: '#ffd0a0',
+          };
+
+    this.warningCardGfx.clear();
+    this.warningCardGfx.fillStyle(palette.fill, 0.86 * alpha);
+    this.warningCardGfx.fillRoundedRect(x, y, width, height, 14);
+    this.warningCardGfx.lineStyle(3, palette.border, 0.95 * alpha);
+    this.warningCardGfx.strokeRoundedRect(x, y, width, height, 14);
+    this.warningCardGfx.lineStyle(1, palette.inner, 0.35 * alpha);
+    this.warningCardGfx.strokeRoundedRect(x + 7, y + 7, width - 14, height - 14, 10);
+    this.warningCardGfx.fillStyle(palette.stripe, 0.65 * alpha);
+    this.warningCardGfx.fillRoundedRect(x + 14, y + 14, width - 28, 24, 8);
+    this.warningCardGfx.setVisible(true).setAlpha(alpha);
+
+    this.warningTitleTxt.setText(title).setColor(palette.title).setVisible(true).setAlpha(alpha);
+    this.warningBodyTxt.setText(message).setColor(palette.body).setVisible(true).setAlpha(alpha);
+  }
+
+  _updateWarningPanel(now) {
+    if (now <= this.warningState.recentUntil && this.warningState.recentMessage) {
+      this.warningMiniTxt
+        .setText(`Recent alert: ${this.warningState.recentTitle} — ${this.warningState.recentMessage}`)
+        .setColor(this.warningState.recentTone === 'success' ? '#98d48a' : '#e0a070');
+      return;
+    }
+    this.warningMiniTxt.setText('Recent alert: none').setColor('#9a7a58');
+  }
+
+  _updateWarningUi(errors) {
+    const now = this.time.now;
+    const currentError = primaryError(errors);
+
+    if (!currentError) {
+      this.warningState.activeCode = null;
+      this.warningState.showUntil = 0;
+      this.warningState.suppressUntil = 0;
+      this._hideWarningOverlay();
+      this._updateWarningPanel(now);
+      return;
+    }
+
+    const title = errorTitle(currentError.code);
+    const message = errorMessage(currentError);
+    const tone = errorTone(currentError.code);
+    this.warningState.recentTitle = title;
+    this.warningState.recentMessage = message;
+    this.warningState.recentTone = tone;
+    this.warningState.recentUntil = now + WARNING_RECENT_MS;
+
+    const sameWarning = this.warningState.activeCode === currentError.code;
+    const shouldShowNow = !sameWarning || now >= this.warningState.suppressUntil;
+
+    if (shouldShowNow) {
+      this.warningState.activeCode = currentError.code;
+      this.warningState.activeTitle = title;
+      this.warningState.activeMessage = message;
+      this.warningState.activeTone = tone;
+      this.warningState.showUntil = now + WARNING_SHOW_MS;
+      this.warningState.suppressUntil = now + WARNING_SHOW_MS + WARNING_REPEAT_GAP_MS;
+    }
+
+    if (this.warningState.activeCode !== currentError.code || now > this.warningState.showUntil) {
+      this._hideWarningOverlay();
+      this._updateWarningPanel(now);
+      return;
+    }
+
+    const elapsed = this.warningState.showUntil - now;
+    let alpha = 1;
+    if (elapsed < 260) alpha = Math.max(0, elapsed / 260);
+    else if (elapsed > WARNING_SHOW_MS - 180) alpha = Math.min(1, (WARNING_SHOW_MS - elapsed) / 180);
+    alpha = 0.35 + alpha * 0.65;
+
+    this._renderWarningOverlay(this.warningState.activeTitle, this.warningState.activeMessage, alpha, this.warningState.activeTone);
+    this._updateWarningPanel(now);
+  }
+
+  _sendAction(data) {
+    if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) return;
+    wsInstance.send(JSON.stringify({ type: 'action', data }));
+  }
+
+  _setActionButtonState(button, { visible, enabled, label = null }) {
+    if (!button) return;
+    if (label != null) button.setText(label);
+    button._enabled = enabled;
+    button.setVisible(visible);
+    button.setAlpha(enabled ? 1 : 0.45);
+    button.setColor(enabled ? button._baseColor : '#8a7a68');
+    button.setBackgroundColor(enabled ? button._baseBgColor : '#241812');
+  }
+
+  _syncSetupSelection(phase, setup = {}) {
+    const hq = setup.hq || {};
+    ['p1', 'p2'].forEach((side) => {
+      const sideState = hq[side] || {};
+      if (phase !== 'hq_placement') {
+        this.setupSelection.pendingBySide[side] = null;
+        return;
+      }
+      if (sideState.confirmed || sideState.has_candidate === false) {
+        this.setupSelection.pendingBySide[side] = null;
+      }
+    });
+  }
+
+  _updateSetupControls(phase, setup = {}) {
+    const activeSide = setup.active_setup_side;
+    const hasActiveCandidate = activeSide && !!setup.hq?.[activeSide]?.has_candidate;
+    const localCandidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
+
+    this.setupControlTxt.setVisible(true);
+    this.setupCandidateTxt.setVisible(false);
+
+    if (phase === 'scan') {
+      this.setupControlTxt.setText('Waiting for a valid board scan before browser setup controls can be used.').setColor('#9e8868');
+      this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      return;
+    }
+
+    if (phase === 'side_selection') {
+      this.setupControlTxt.setText('Choose which side places a hidden HQ first.').setColor('#d8c890');
+      this._setActionButtonState(this.chooseOldMickBtn, { visible: true, enabled: true });
+      this._setActionButtonState(this.chooseMobBtn, { visible: true, enabled: true });
+      this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      return;
+    }
+
+    if (phase === 'hq_placement') {
+      const activeLabel = sideLabel(activeSide);
+      this.setupControlTxt
+        .setText(`${activeLabel}: click a board cell in your territory, then confirm the hidden HQ.`)
+        .setColor(activeSide === 'p2' ? '#b8ff78' : '#ffd878');
+      this.setupCandidateTxt
+        .setVisible(true)
+        .setText(
+          localCandidate
+            ? `Selected cell: ${cellLabel(localCandidate.col, localCandidate.row)} (local preview)`
+            : hasActiveCandidate
+              ? 'Candidate saved on backend. Confirm when ready.'
+              : 'Selected cell: --'
+        )
+        .setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
+      this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
+      this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
+      return;
+    }
+
+    this.setupControlTxt.setText('Setup complete. Browser controls are hidden during battle.').setColor('#8fb890');
+    this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
+    this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
+    this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+    this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+  }
+
+  _handleBoardPointerDown(pointer) {
+    if (!gameState || gameState.phase !== 'hq_placement') return;
+    const activeSide = gameState.setup?.active_setup_side;
+    if (!activeSide) return;
+
+    const col = Math.floor((pointer.x - BX) / CELL);
+    const row = Math.floor((pointer.y - BY) / CELL);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+    this._sendAction({
+      action: 'set_hq_candidate',
+      side: activeSide,
+      position: { x: col, y: row },
+    });
+
+    if (sideOwnsCell(activeSide, col, row)) {
+      this.setupSelection.pendingBySide[activeSide] = { col, row };
+    }
+  }
+
+  _drawPendingHqCandidate(phase, setup = {}) {
+    if (phase !== 'hq_placement') return;
+    const activeSide = setup.active_setup_side;
+    const candidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
+    if (!candidate) return;
+
+    const { col, row } = candidate;
+    const g = this.dynGfx;
+    const x = BX + col * CELL + 2;
+    const y = BY + row * CELL + 2;
+    const ring = activeSide === 'p2' ? 0xb8ff60 : 0xffdc70;
+    const cx = x + (CELL - 4) / 2;
+    const cy = y + (CELL - 4) / 2;
+    const pulse = 0.55 + 0.20 * Math.sin(this.time.now / 170);
+
+    g.fillStyle(0x120904, 0.25);
+    g.fillRoundedRect(x, y, CELL - 4, CELL - 4, 5);
+    g.lineStyle(3, ring, pulse);
+    g.strokeRoundedRect(x, y, CELL - 4, CELL - 4, 5);
+    g.lineStyle(1.5, 0xffffff, 0.82);
+    g.strokeCircle(cx, cy, CELL * 0.18);
   }
 
   _changeTier(player, delta) {
@@ -642,9 +1192,13 @@ class GameScene extends Phaser.Scene {
   _applyState() {
     if (!gameState) return;
     const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
+    const setup = gameState.setup || {};
     const G = game || {};
+    const inBattle = (phase === 'game' || phase == null);
 
-    // Redraw board when a new random map arrives (target cells shift).
+    this._syncSetupSelection(phase, setup);
+
+    // Redraw board when a new random map arrives (resource cells shift).
     if (terrain && map_seed !== this._drawnSeed) {
       this._drawStaticBoard(terrain);
       this._drawnSeed = map_seed;
@@ -661,10 +1215,14 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── Turn / corner / score texts ──────────────────────────────
-    const thr = G.attrition_threshold ?? 30;
-    const s1 = G.score_p2_destroyed ?? 0;  // cells P1 razed (in P2 territory)
-    const s2 = G.score_p1_destroyed ?? 0;  // cells P2 razed (in P1 territory)
-    this.scoreText?.setText(`P1 razed: ${s1}/${thr}   P2 razed: ${s2}/${thr}`);
+    const thr = G.attrition_threshold ?? 33;
+    const s1 = G.score_p2_attrition ?? 0;  // P1 paddocks razed by The Mob
+    const s2 = G.score_p1_attrition ?? 0;  // P2 feeding grounds razed by Old Mick
+    if (inBattle) {
+      this.scoreText?.setText(`Paddocks razed: ${s1}/${thr}   Feeding grounds razed: ${s2}/${thr}`).setColor('#ffb060');
+    } else {
+      this.scoreText?.setText('Setup: backend-guided hidden HQ flow').setColor('#d8c890');
+    }
 
     // Fire sound on new attack events coming from the server
     if (Array.isArray(gameState.events)) {
@@ -679,28 +1237,37 @@ class GameScene extends Phaser.Scene {
     // Win banner
     this._updateWinBanner(G);
 
-    if (turn === 1)       this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
-    else if (turn === 2)  this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
-    else                  this.turnText.setText('Turn: — waiting —').setColor('#807060');
+    if (!inBattle) {
+      this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
+    } else if (turn === 1) {
+      this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
+    } else if (turn === 2) {
+      this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
+    } else {
+      this.turnText.setText('Turn: — waiting —').setColor('#807060');
+    }
 
     this.cornerText.setText(`Corners: ${corners_found || 0}/4`)
       .setColor(corners_found === 4 ? '#44ff88' : '#ff8844');
 
     // ── Build terrain lookup maps ─────────────────────────────────
     const hardMap = {}, softMap = {};
+    const softGoneKeys = new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`));
     if (terrain) {
       [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
         if (t.col != null) hardMap[`${t.col},${t.row}`] = t;
       });
       [...(terrain.p1_soft || []), ...(terrain.p2_soft || [])].forEach(t => {
-        if (t.col != null) softMap[`${t.col},${t.row}`] = t;
+        if (t.col != null && !softGoneKeys.has(`${t.col},${t.row}`)) {
+          softMap[`${t.col},${t.row}`] = t;
+        }
       });
     }
 
-    // ── Enemy token cell maps (ray targets) ───────────────────────
-    const p1Map = {}, p2Map = {};
-    if (p1) Object.values(p1).forEach(tok => { if (tok.col != null) p1Map[`${tok.col},${tok.row}`] = true; });
-    if (p2) Object.values(p2).forEach(tok => { if (tok.col != null) p2Map[`${tok.col},${tok.row}`] = true; });
+    const destroyedMap = {};
+    (G.destroyed || []).forEach(([c, r]) => {
+      destroyedMap[`${c},${r}`] = true;
+    });
 
     // ── Clear dynamic layer ───────────────────────────────────────
     this.dynGfx.clear();
@@ -709,24 +1276,23 @@ class GameScene extends Phaser.Scene {
     this._drawDamageLayer(G);
 
     // ── 1. Terrain (skip destroyed soft pieces) ───────────────────
-    this._drawTerrain(terrain, new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`)));
+    this._drawTerrain(terrain, softGoneKeys);
 
     // ── 2. Defense zones ───────────────────────────────────────────
-    if (p1?.def?.col != null)
+    if (inBattle && p1?.def?.col != null)
       this._drawDefZone(p1.def.col, p1.def.row, this._p1Tier, C.p1_zone);
-    if (p2?.def?.col != null)
+    if (inBattle && p2?.def?.col != null)
       this._drawDefZone(p2.def.col, p2.def.row, this._p2Tier, C.p2_zone);
 
     // ── 3. Rays (battle phase only) ────────────────────────────────
-    const inBattle = (phase === 'game' || phase == null);
     if (inBattle) {
       ['atk_a', 'atk_b'].forEach(role => {
         if (p1?.[role]?.col != null && p1[role].direction) {
-          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, p2Map);
+          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, 'p1', destroyedMap);
           this._drawRay(p1[role].col, p1[role].row, ray);
         }
         if (p2?.[role]?.col != null && p2[role].direction) {
-          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, p1Map);
+          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, 'p2', destroyedMap);
           this._drawRay(p2[role].col, p2[role].row, ray);
         }
       });
@@ -749,10 +1315,14 @@ class GameScene extends Phaser.Scene {
     this._placeLabel('p2_def',   p2?.def?.col,   p2?.def?.row);
 
     // Unicode direction arrows (ATK tokens only)
-    this._placeArrow('p1_atk_a', p1?.atk_a);
-    this._placeArrow('p1_atk_b', p1?.atk_b);
-    this._placeArrow('p2_atk_a', p2?.atk_a);
-    this._placeArrow('p2_atk_b', p2?.atk_b);
+    if (inBattle) {
+      this._placeArrow('p1_atk_a', p1?.atk_a);
+      this._placeArrow('p1_atk_b', p1?.atk_b);
+      this._placeArrow('p2_atk_a', p2?.atk_a);
+      this._placeArrow('p2_atk_b', p2?.atk_b);
+    } else {
+      Object.values(this.arrows).forEach((arrow) => arrow.setVisible(false));
+    }
 
     // ── 6. Panel token-position info texts ────────────────────────
     const colName = (c) => c != null ? String.fromCharCode(65 + c) : '?';
@@ -767,8 +1337,17 @@ class GameScene extends Phaser.Scene {
     this.p2AtkBInfo.setText(posStr(p2?.atk_b));
     this.p2DefInfo .setText(posStr(p2?.def));
 
-    // Placement-guide overlays are no longer used — terrain is server-generated
-    this._hidePlacementLabels();
+    if (inBattle) {
+      this._hideSetupUi();
+    } else {
+      this._drawPlacementGuide(phase, setup);
+      this._drawPendingHqCandidate(phase, setup);
+      this._updateSetupUi(phase, setup);
+    }
+
+    this._updateSetupControls(phase, setup);
+
+    this._updateWarningUi(gameState.errors || []);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1058,51 +1637,61 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Placement-phase overlay — highlight valid/invalid cells with glow + labels */
-  _drawPlacementGuide(p1, p2) {
+  /** Setup overlay — highlight HQ-valid territory while setup is active. */
+  _drawPlacementGuide(phase, setup = {}) {
     const g = this.dynGfx;
+    const isScan = phase === 'scan';
+    const isHqPlacement = phase === 'hq_placement';
+    const activeSide = setup.active_setup_side;
 
     // Gentle pulse tied to time
     const t      = this.time.now;
     const pulseA = 0.18 + 0.10 * Math.sin(t / 350);
     const pulseB = 0.18 + 0.10 * Math.sin(t / 350 + Math.PI);
 
-    // ── P1 valid zone (below diagonal) — yellow glow + tiny ✓ ────
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      if (c + r < 11) {
-        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
-        g.fillStyle(C.p1_border, pulseA);
-        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
-        // tiny check mark top-right corner
-        g.lineStyle(1.5, 0x40a040, 0.85);
-        g.lineBetween(x + CELL - 11, y + 6, x + CELL - 8, y + 9);
-        g.lineBetween(x + CELL - 8,  y + 9, x + CELL - 4, y + 4);
-      }
-    }
+    g.fillStyle(0x120904, isScan ? 0.44 : 0.24);
+    g.fillRoundedRect(BX + 1, BY + 1, COLS * CELL - 2, ROWS * CELL - 2, 8);
 
-    // ── P2 valid zone (above diagonal) — green glow + tiny ✓ ─────
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      if (c + r > 11) {
-        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
-        g.fillStyle(C.p2_border, pulseB);
-        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
-        g.lineStyle(1.5, 0x40a040, 0.85);
-        g.lineBetween(x + 4, y + 7, x + 7, y + 10);
-        g.lineBetween(x + 7, y + 10, x + 11, y + 5);
+    if (!isScan) {
+      // ── P1 valid zone (below diagonal) — yellow glow + tiny ✓ ────
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r < 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          const p1Alpha = activeSide === 'p2' ? pulseA * 0.45 : pulseA;
+          g.fillStyle(C.p1_border, p1Alpha);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          // tiny check mark top-right corner
+          g.lineStyle(1.5, 0x40a040, 0.85);
+          g.lineBetween(x + CELL - 11, y + 6, x + CELL - 8, y + 9);
+          g.lineBetween(x + CELL - 8,  y + 9, x + CELL - 4, y + 4);
+        }
       }
-    }
 
-    // ── Fence line (c+r == 11) — no-placement zone ───────────────
-    const noPlaceA = 0.30 + 0.10 * Math.sin(t / 250);
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      if (c + r === 11) {
-        const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
-        // Red-tinted overlay
-        g.fillStyle(0xff4040, noPlaceA * 0.35);
-        g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
-        // Diagonal forbid bars (⊘ look)
-        g.lineStyle(2, 0xff3030, noPlaceA);
-        g.lineBetween(x + 6, y + CELL - 9, x + CELL - 9, y + 6);
+      // ── P2 valid zone (above diagonal) — green glow + tiny ✓ ─────
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r > 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          const p2Alpha = activeSide === 'p1' ? pulseB * 0.45 : pulseB;
+          g.fillStyle(C.p2_border, p2Alpha);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          g.lineStyle(1.5, 0x40a040, 0.85);
+          g.lineBetween(x + 4, y + 7, x + 7, y + 10);
+          g.lineBetween(x + 7, y + 10, x + 11, y + 5);
+        }
+      }
+
+      // ── Fence line (c+r == 11) — no-placement zone ───────────────
+      const noPlaceA = 0.30 + 0.10 * Math.sin(t / 250);
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r === 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          // Red-tinted overlay
+          g.fillStyle(0xff4040, noPlaceA * 0.35);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          // Diagonal forbid bars (⊘ look)
+          g.lineStyle(2, 0xff3030, noPlaceA);
+          g.lineBetween(x + 6, y + CELL - 9, x + CELL - 9, y + 6);
+        }
       }
     }
 
@@ -1117,16 +1706,16 @@ class GameScene extends Phaser.Scene {
 
       this._zoneLabels = {
         p1:   mk(BX + CELL * 3,    BY + CELL * 9.5,
-                 '🌾 OLD MICK — place Fences / Scarecrows', '#f8d870'),
+                 '🌾 OLD MICK TERRITORY', '#f8d870'),
         p2:   mk(BX + CELL * 9,    BY + CELL * 2.5,
-                 '🐦 THE MOB — place Mounds / Spinifex', '#b8ff60'),
+                 '🐦 THE MOB TERRITORY', '#b8ff60'),
         fence:mk(BX + CELL * 6,    BY + CELL * 6,
-                 '🚫 NO-PLACE ZONE (fence line)', '#ff9090'),
+                 '🚫 FENCE LINE — NO HQ', '#ff9090'),
         banner: this.add.text(BX + COLS * CELL / 2, BY + ROWS * CELL / 2,
-                 '📍 PHASE 1 — PLACE TERRAIN THEN CLICK LOCK', {
-                   fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'bold',
-                   color: '#fff8d0', backgroundColor: 'rgba(40,22,10,0.85)',
-                   padding: { x: 14, y: 8 },
+                 'HQ SETUP PLACEHOLDER', {
+                    fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'bold',
+                    color: '#fff8d0', backgroundColor: 'rgba(40,22,10,0.85)',
+                    padding: { x: 14, y: 8 },
                    stroke: '#6a4020', strokeThickness: 3,
                  }).setDepth(9).setOrigin(0.5, 0.5),
       };
@@ -1139,7 +1728,27 @@ class GameScene extends Phaser.Scene {
       });
     }
 
-    Object.values(this._zoneLabels).forEach(l => l.setVisible(true));
+    this._zoneLabels.banner.setText(
+      isScan
+        ? 'SCAN THE BOARD TO START HQ SETUP'
+        : isHqPlacement
+          ? `${sideLabel(activeSide)} IS CHOOSING A HIDDEN HQ`
+          : 'CHOOSE WHICH SIDE PLACES AN HQ FIRST'
+    );
+    this._zoneLabels.p1.setText(
+      isHqPlacement && activeSide === 'p1'
+        ? '🌾 OLD MICK TERRITORY — ACTIVE HQ SIDE'
+        : '🌾 OLD MICK TERRITORY'
+    );
+    this._zoneLabels.p2.setText(
+      isHqPlacement && activeSide === 'p2'
+        ? '🐦 THE MOB TERRITORY — ACTIVE HQ SIDE'
+        : '🐦 THE MOB TERRITORY'
+    );
+    this._zoneLabels.banner.setVisible(true);
+    this._zoneLabels.p1.setVisible(!isScan);
+    this._zoneLabels.p2.setVisible(!isScan);
+    this._zoneLabels.fence.setVisible(!isScan);
   }
 
   /** Hide placement labels when battle starts */

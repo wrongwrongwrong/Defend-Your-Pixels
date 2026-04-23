@@ -3,7 +3,7 @@
 Note: the broader Old Mick frontend/backend contract is now documented in
 `docs/frontend_backend_contract_v1.md`. This file remains the narrower board-state payload reference.
 
-供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。第一版刻意**不**包含：`phase`、完整規則樹、動畫專用欄位、tracker 校準細節（校準可續用現有 `tracker_frame`）。
+供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。Live Old Mick runtime 現在會在既有 payload 上額外包含 `phase`、`setup`、`errors`。tracker 校準細節仍沿用目前 snapshot / camera preview 路徑。
 
 ## WebSocket 訊息
 
@@ -69,6 +69,55 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 - `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 UI 顯示。
 - `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
+## Setup metadata
+
+Live payload 現在可額外包含：
+
+- `phase`
+- `setup`
+- `errors`
+
+`setup` 只攜帶安全的 setup 進度資訊，不得在一般遊戲中暴露已確認 HQ 座標。
+
+Example:
+
+```json
+{
+  "phase": "hq_placement",
+  "setup": {
+    "board_scan_ready": true,
+    "side_selection_complete": true,
+    "first_player_side": "old_mick",
+    "active_setup_side": "p2",
+    "hq": {
+      "p1": { "has_candidate": true, "confirmed": true },
+      "p2": { "has_candidate": false, "confirmed": false }
+    },
+    "status_code": "waiting_for_hq_confirmation",
+    "status_message": "The Mob must choose and confirm an HQ location."
+  },
+  "errors": []
+}
+```
+
+- `phase`：`scan` | `side_selection` | `hq_placement` | `game`
+- `errors[]`：stable `{ "code", "message" }` objects for recoverable validation / tracker issues
+- `setup.hq.*`：只公開 candidate/confirmed flags，不公開 hidden HQ coordinates
+- `game.hq_revealed`：仍是 HQ 被摧毀後才公開座標的唯一 public path
+
+目前 `yu_test1/index.html` 對這些欄位的 live consume 行為為：
+
+- `phase !== "game"` 時顯示 pre-game setup placeholder card
+- `side_selection` / `hq_placement` 時在棋盤上疊加 territory/fence guide overlay
+- `setup.status_message` 與 safe HQ progress 會直接顯示給玩家
+- `setup.hq.*` 只用於顯示 `has_candidate` / `confirmed`，不顯示任何 HQ 座標
+- `side_selection` 會顯示 browser controls 並送出 `choose_side`
+- `hq_placement` 會接受棋盤點擊並送出 `set_hq_candidate`，再透過 confirm/reset controls 送出 `confirm_hq` / `reset_setup`
+- frontend 可在 active setup side 上顯示暫時性的 local candidate preview，但 confirm 後不再保留或暴露該座標
+- `errors[]` 會以單一優先 warning layover 顯示在棋盤上方，並在 side panel 保留 recent warning 文本
+- `inactive_side_token_changed` 在前端只作為 recoverable warning surfaced，說明 opponent movement was ignored，不代表 authoritative state 有被改寫
+- `hq_setup_complete` 會以 success-style alert 顯示，而不是 warning-style alert
+
 ## UI consume 形狀（legacy bridge path）
 
 下列欄位是舊版 `board_state` consume 形狀，保留給 legacy bridge 文件參考：
@@ -121,7 +170,7 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 
 ## Step 2 定案摘要
 
-- `phase` 不進 v1 authoritative contract。
+- live Old Mick runtime 會額外輸出 `phase`、`setup`、`errors`。
 - `units[].id` 固定為 `string`。
 - authoritative payload 固定輸出 `units[]`；legacy adapter 轉成 `players[].tokens[]`。
 - `players[]` 不放 `color` / `zone`；由前端補 UI-only 欄位。

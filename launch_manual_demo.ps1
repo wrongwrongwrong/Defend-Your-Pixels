@@ -64,7 +64,7 @@ function Show-Failure {
     param([string]$Message)
 
     Write-Host ""
-    Write-Host "[launch_live_demo] $Message" -ForegroundColor Red
+    Write-Host "[launch_manual_demo] $Message" -ForegroundColor Red
     Write-Host ""
     Read-Host "Press Enter to close"
     exit 1
@@ -96,12 +96,12 @@ if (-not (Test-Path $uiPath)) {
 }
 
 $escapedPythonExe = $pythonExe.Replace("'", "''")
-$trackerCommand = "Set-Location -LiteralPath '$repoRoot'; & '$escapedPythonExe' -m runner.run_live_tracker"
+$manualCommand = "Set-Location -LiteralPath '$repoRoot'; & '$escapedPythonExe' -m runner.run_manual_play"
 
-Write-Host "Starting live demo services..." -ForegroundColor Cyan
+Write-Host "Starting manual demo services..." -ForegroundColor Cyan
 Write-Host "Using Python: $pythonExe" -ForegroundColor DarkGray
 
-Start-PowerShellWindow -WorkingDirectory $repoRoot -Command $trackerCommand
+Start-PowerShellWindow -WorkingDirectory $repoRoot -Command $manualCommand
 Start-Process $uiPath
 
 Write-Host "Browser opened at $uiPath" -ForegroundColor Green

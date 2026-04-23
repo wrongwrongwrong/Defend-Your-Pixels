@@ -18,6 +18,7 @@ from python_tracker.camera.camera_runtime import configure_camera, open_camera, 
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import TOKEN_MARKERS, TURN_MARKER_ID
+from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, make_error, new_side_state, sanitize_token_states
 from yu_test1 import game_model, terrain_gen
 
 
@@ -52,22 +53,35 @@ def _snapshot_has_detected_markers(snapshot: dict) -> bool:
 
 def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict) -> dict:
     if cached_snapshot is None:
-        return current_snapshot
+        merged_snapshot = dict(current_snapshot)
+        merged_snapshot["markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("markers", [])]
+        turn_marker = current_snapshot.get("turn_marker")
+        if isinstance(turn_marker, dict):
+            merged_snapshot["turn_marker"] = {**turn_marker, "stale": False}
+        return merged_snapshot
 
     merged_markers: dict[int, dict] = {
-        int(marker["id"]): marker
+        int(marker["id"]): {**marker, "stale": True}
         for marker in cached_snapshot.get("markers", [])
         if isinstance(marker, dict) and isinstance(marker.get("id"), int)
     }
     for marker in current_snapshot.get("markers", []):
         if isinstance(marker, dict) and isinstance(marker.get("id"), int):
-            merged_markers[int(marker["id"])] = marker
+            merged_markers[int(marker["id"])] = {**marker, "stale": False}
+
+    current_turn_marker = current_snapshot.get("turn_marker")
+    cached_turn_marker = cached_snapshot.get("turn_marker")
+    turn_marker = None
+    if isinstance(current_turn_marker, dict):
+        turn_marker = {**current_turn_marker, "stale": False}
+    elif isinstance(cached_turn_marker, dict):
+        turn_marker = {**cached_turn_marker, "stale": True}
 
     return {
         **cached_snapshot,
         **current_snapshot,
         "markers": list(merged_markers.values()),
-        "turn_marker": current_snapshot.get("turn_marker") or cached_snapshot.get("turn_marker"),
+        "turn_marker": turn_marker,
         "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
         "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
         "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
@@ -101,49 +115,9 @@ def _grid_index(value: float | int | None) -> int | None:
     return max(0, min(11, int(round(float(value)))))
 
 
-def _empty_token() -> dict:
-    return {
-        "col": None,
-        "row": None,
-        "angle": None,
-        "direction": None,
-        "stale": True,
-    }
-
-
-class Session:
-    def __init__(self):
-        self.reset()
-
-    def reset(self) -> None:
-        self.seed = int(time.time() * 1000) % (2 ** 31)
-        self.terrain = terrain_gen.generate(seed=self.seed)
-        self.model = game_model.new_game(self.terrain, seed=self.seed)
-        print(f"[MAP] New game (seed={self.seed}) HQ p1={self.model.hq_p1} p2={self.model.hq_p2}")
-
-    def apply_command(self, command: dict) -> None:
-        command_type = command.get("type")
-        if command_type == "new_map":
-            self.reset()
-            return
-        if command_type != "tier":
-            return
-
-        try:
-            player = int(command.get("player"))
-            delta = int(command.get("delta"))
-        except (TypeError, ValueError):
-            return
-
-        if player == 1:
-            self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
-        elif player == 2:
-            self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
-
-
 def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
-    p1 = {"atk_a": _empty_token(), "atk_b": _empty_token(), "def": _empty_token()}
-    p2 = {"atk_a": _empty_token(), "atk_b": _empty_token(), "def": _empty_token()}
+    p1 = new_side_state()
+    p2 = new_side_state()
 
     for marker in snapshot.get("markers", []):
         role = ROLE_BY_MARKER_ID.get(marker.get("id"))
@@ -162,7 +136,7 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
             "row": row,
             "angle": round(float(rotation), 1) if isinstance(rotation, (int, float)) else None,
             "direction": _snap_direction_8(float(rotation)) if isinstance(rotation, (int, float)) else None,
-            "stale": False,
+            "stale": bool(marker.get("stale", False)),
         }
 
     turn_marker = snapshot.get("turn_marker") if isinstance(snapshot.get("turn_marker"), dict) else None
@@ -171,16 +145,145 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
     return p1, p2, turn
 
 
+class Session:
+    def __init__(self):
+        self.setup = SetupState()
+        self.reset(board_scan_ready=False)
+
+    def reset(self, *, board_scan_ready: bool) -> None:
+        self.seed = int(time.time() * 1000) % (2**31)
+        self.terrain = terrain_gen.generate(seed=self.seed)
+        self.accepted_p1 = new_side_state()
+        self.accepted_p2 = new_side_state()
+        self.turn: int | None = None
+        self.model: game_model.GameModel | None = None
+        self.setup.reset(board_scan_ready=board_scan_ready)
+        print(f"[MAP] New game (seed={self.seed})")
+
+    def apply_command(self, command: dict, *, board_scan_ready: bool) -> list[dict]:
+        errors: list[dict] = []
+        command_type = command.get("type")
+        action_name = command.get("action")
+
+        if command_type == "new_map":
+            self.reset(board_scan_ready=board_scan_ready)
+            return errors
+
+        if command_type == "tier":
+            if self.model is None:
+                return errors
+            try:
+                player = int(command.get("player"))
+                delta = int(command.get("delta"))
+            except (TypeError, ValueError):
+                return errors
+
+            if player == 1:
+                self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
+            elif player == 2:
+                self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
+            return errors
+
+        if action_name == "choose_side":
+            first_player_side = command.get("first_player_side")
+            if isinstance(first_player_side, str):
+                self.setup.choose_side(first_player_side)
+            return errors
+
+        if action_name == "set_hq_candidate":
+            side = command.get("side")
+            position = command.get("position") if isinstance(command.get("position"), dict) else None
+            if side in PLAYERS:
+                error = self.setup.set_hq_candidate(side, position, self.terrain)
+                if error is not None:
+                    errors.append(error)
+            return errors
+
+        if action_name == "confirm_hq":
+            side = command.get("side")
+            if side in PLAYERS:
+                game_ready, setup_event = self.setup.confirm_hq(side)
+                if setup_event is not None:
+                    errors.append(setup_event)
+                if game_ready:
+                    self._ensure_model_started()
+            return errors
+
+        if action_name in {"reset_setup", "cancel_hq"}:
+            self.model = None
+            self.setup.reset_hq_setup()
+            return errors
+
+        return errors
+
+    def sync_scan_state(self, board_scan_ready: bool) -> None:
+        self.setup.set_board_scan_ready(board_scan_ready)
+
+    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None) -> list[dict]:
+        self.turn = turn
+        active_side = None
+        if self.setup.phase == PHASE_GAME and turn in (1, 2):
+            active_side = "p1" if turn == 1 else "p2"
+
+        self.accepted_p1, self.accepted_p2, errors = sanitize_token_states(
+            raw_p1,
+            raw_p2,
+            self.accepted_p1,
+            self.accepted_p2,
+            active_side=active_side,
+            require_full_detection=self.setup.phase in {PHASE_HQ_PLACEMENT, PHASE_GAME},
+        )
+        return errors
+
+    def game_events(self) -> list[dict]:
+        if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
+            return []
+        return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+
+    def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
+        return {
+            "phase": self.setup.phase,
+            "corners_found": corners_found,
+            "turn": self.turn,
+            "turn_angle": turn_angle,
+            "p1": self.accepted_p1,
+            "p2": self.accepted_p2,
+            "terrain": self.terrain,
+            "map_seed": self.seed,
+            "game": self.model.snapshot() if self.model is not None else {},
+            "events": events,
+            "setup": self.setup.public_payload(),
+            "errors": dedupe_errors(errors),
+        }
+
+    def _ensure_model_started(self) -> None:
+        if self.model is not None:
+            return
+        hidden_hq_positions = self.setup.hidden_hq_positions()
+        if hidden_hq_positions is None:
+            return
+        hq_p1, hq_p2 = hidden_hq_positions
+        self.model = game_model.new_game(self.terrain, seed=self.seed, hq_p1=hq_p1, hq_p2=hq_p2)
+        if self.turn in (1, 2):
+            self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+        print("[MAP] HQ setup complete. Hidden HQs locked in.")
+
+
 async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_FPS):
+    session = Session()
+    interval = 1.0 / send_fps
     cap = open_camera(camera_id)
     if cap is None:
         print(f"[Camera] ERROR: Cannot open camera (index {camera_id})")
-        return
+        while True:
+            frame_errors = [make_error("camera_unavailable")]
+            for command in await drain_actions():
+                frame_errors.extend(session.apply_command(command, board_scan_ready=False))
+            await broadcast(json.dumps(session.payload(corners_found=0, turn_angle=None, errors=frame_errors, events=[])))
+            await asyncio.sleep(interval)
 
-    session = Session()
     configure_camera(cap)
     detector = create_detector()
-    interval = 1.0 / send_fps
     last_visible_snapshot: dict | None = None
     last_calibrated_snapshot: dict | None = None
 
@@ -194,9 +297,6 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
                 await asyncio.sleep(0.1)
                 continue
 
-            for command in await drain_actions():
-                session.apply_command(command)
-
             snapshot, _ = build_tracker_preview(frame, detector)
             if snapshot.get("calibration_ready"):
                 last_calibrated_snapshot = snapshot
@@ -206,21 +306,27 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
                 last_visible_snapshot = _merge_visible_snapshot(last_visible_snapshot, effective_snapshot)
 
             snapshot_for_ui = last_visible_snapshot or effective_snapshot
-            p1, p2, turn = _build_token_state(snapshot_for_ui)
-            events = session.model.on_turn_change(turn, p1, p2) if turn else []
-            payload = {
-                "phase": "game",
-                "corners_found": len(snapshot_for_ui.get("board_corners", [])),
-                "turn": turn,
-                "turn_angle": snapshot_for_ui.get("turn_marker", {}).get("rotation") if isinstance(snapshot_for_ui.get("turn_marker"), dict) else None,
-                "p1": p1,
-                "p2": p2,
-                "terrain": session.terrain,
-                "map_seed": session.seed,
-                "game": session.model.snapshot(),
-                "events": events,
-            }
+            board_scan_ready = bool(snapshot_for_ui.get("calibration_ready"))
+            turn_angle = snapshot_for_ui.get("turn_marker", {}).get("rotation") if isinstance(snapshot_for_ui.get("turn_marker"), dict) else None
 
+            session.sync_scan_state(board_scan_ready)
+            raw_p1, raw_p2, turn = _build_token_state(snapshot_for_ui)
+
+            frame_errors: list[dict] = []
+            if not board_scan_ready and session.setup.phase != PHASE_GAME:
+                frame_errors.append(make_error("marker_map_scan_failed"))
+            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn))
+
+            for command in await drain_actions():
+                frame_errors.extend(session.apply_command(command, board_scan_ready=board_scan_ready))
+
+            events = session.game_events()
+            payload = session.payload(
+                corners_found=len(snapshot_for_ui.get("board_corners", [])),
+                turn_angle=turn_angle,
+                errors=frame_errors,
+                events=events,
+            )
             await broadcast(json.dumps(payload))
 
             if not HEADLESS:
