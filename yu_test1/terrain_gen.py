@@ -13,7 +13,6 @@ GRID_ROWS = 12
 
 N_HARD_PER_SIDE    = 2
 N_SOFT_PER_SIDE    = 2
-N_TARGETS_PER_SIDE = 20   # attackable cells per side (rest are untargetable pass-through)
 FENCE_BUFFER       = 2    # minimum cells away from the diagonal fence (terrain only)
 DEF_CENTRE_EXCL    = True # keep the DEF spawn zone clear (terrain only)
 
@@ -43,20 +42,16 @@ def generate(seed: int | None = None) -> dict:
 
     mirror = lambda cells: [(11 - c, 11 - r) for c, r in cells]
 
-    # ── Target cells: anywhere in P1's triangle that isn't terrain ────────
+    # Resource cells are every non-fence, non-terrain cell on a side.
     terrain_set = set(p1_hard_cells) | set(p1_soft_cells)
-    target_pool = [(c, r) for r in range(GRID_ROWS) for c in range(GRID_COLS)
-                   if c + r < 11 and (c, r) not in terrain_set]
-    if len(target_pool) < N_TARGETS_PER_SIDE:
-        raise RuntimeError("Not enough cells for target generation")
-    rng.shuffle(target_pool)
-    p1_target_cells = target_pool[:N_TARGETS_PER_SIDE]
+    p1_resource_cells = [(c, r) for r in range(GRID_ROWS) for c in range(GRID_COLS)
+                         if c + r < 11 and (c, r) not in terrain_set]
 
     def pack(cells, prefix):
         return [{"id": f"{prefix}_{i}", "name": f"{prefix}_{i}",
                  "col": c, "row": r} for i, (c, r) in enumerate(cells)]
 
-    def pack_targets(cells):
+    def pack_cells(cells):
         return [{"col": c, "row": r} for c, r in cells]
 
     return {
@@ -64,7 +59,10 @@ def generate(seed: int | None = None) -> dict:
         "p1_soft":    pack(p1_soft_cells,         "scarecrow"),
         "p2_hard":    pack(mirror(p1_hard_cells), "mound"),
         "p2_soft":    pack(mirror(p1_soft_cells), "spinifex"),
-        "p1_targets": pack_targets(p1_target_cells),
-        "p2_targets": pack_targets(mirror(p1_target_cells)),
+        "p1_resources": pack_cells(p1_resource_cells),
+        "p2_resources": pack_cells(mirror(p1_resource_cells)),
+        # Legacy alias kept while callers transition off the old target-cell naming.
+        "p1_targets": pack_cells(p1_resource_cells),
+        "p2_targets": pack_cells(mirror(p1_resource_cells)),
         "seed":       seed,
     }

@@ -13,14 +13,14 @@ Rules implemented:
   - Hard terrain: permanently blocks attacks (never destroyed).
   - Hidden HQ: one random cell per side, unknown to both players.
     Destroying the enemy HQ is an INSTANT WIN.
-  - Attrition: destroy 30 enemy cells to win.
+  - Attrition: destroy 33 enemy resource cells to win.
 """
 
 import random
 from dataclasses import dataclass, field
 
 GRID_COLS, GRID_ROWS = 12, 12
-ATTRITION_THRESHOLD  = 30
+ATTRITION_THRESHOLD  = 33
 DEF_ZONE_RADIUS_T1   = 1   # 3×3
 DEF_ZONE_RADIUS_T2   = 2   # 5×5 after tier 2
 
@@ -81,13 +81,6 @@ class GameModel:
                     return True
         return False
 
-    def _is_target(self, cell, side):
-        """Only cells flagged as targets for this side are attackable."""
-        for t in self.terrain.get(f"{side}_targets", []):
-            if (t["col"], t["row"]) == cell:
-                return True
-        return False
-
     # ── Attack resolution ────────────────────────────────────────────────
 
     def _resolve_shot(self, attacker: str, start, direction: str, defender_def_pos):
@@ -115,9 +108,7 @@ class GameModel:
                 return events
 
             # Only enemy-side cells take damage; own cells / fence line are skipped.
-            # Non-target enemy cells let the ray pass through (safe zones).
-            if (_side_of(c, r) == enemy_side and cell not in self.destroyed
-                    and self._is_target(cell, enemy_side)):
+            if _side_of(c, r) == enemy_side and cell not in self.destroyed:
                 req = self._cell_required_hp(cell, enemy_side, defender_def_pos)
                 self.damage[cell] = self.damage.get(cell, 0) + 1
                 if self.damage[cell] >= req:
@@ -131,7 +122,7 @@ class GameModel:
                         self.win_reason = ("homestead" if enemy_side == "p1"
                                            else "nest") + "_destroyed"
                         events.append({"type": "hq_destroyed", "side": enemy_side})
-                    elif self._enemy_destroyed_count(enemy_side) >= ATTRITION_THRESHOLD:
+                    elif self._enemy_destroyed_resource_count(enemy_side) >= ATTRITION_THRESHOLD:
                         self.winner = attacker
                         self.win_reason = "attrition"
                         events.append({"type": "attrition_win", "side": enemy_side})
@@ -141,8 +132,17 @@ class GameModel:
             c += dc; r += dr
         return events
 
+    def _is_resource_cell(self, cell, side):
+        for resource in self.terrain.get(f"{side}_resources", []):
+            if (resource["col"], resource["row"]) == cell:
+                return True
+        return False
+
     def _enemy_destroyed_count(self, side):
         return sum(1 for cell in self.destroyed if _side_of(*cell) == side)
+
+    def _enemy_destroyed_resource_count(self, side):
+        return sum(1 for cell in self.destroyed if self._is_resource_cell(cell, side))
 
     # ── Turn handler (called by server when turn marker flips) ───────────
 
@@ -189,8 +189,10 @@ class GameModel:
             "damage":       {f"{c},{r}": v for (c, r), v in self.damage.items()},
             "soft_damage":  {f"{c},{r}": v for (c, r), v in self.soft_damage.items()},
             "soft_gone":    [list(c) for c in self.soft_gone],
-            "score_p1_destroyed": self._enemy_destroyed_count("p1"),  # cells P2 destroyed
-            "score_p2_destroyed": self._enemy_destroyed_count("p2"),  # cells P1 destroyed
+            "score_p1_destroyed": self._enemy_destroyed_count("p1"),
+            "score_p2_destroyed": self._enemy_destroyed_count("p2"),
+            "score_p1_attrition": self._enemy_destroyed_resource_count("p1"),
+            "score_p2_attrition": self._enemy_destroyed_resource_count("p2"),
             "attrition_threshold": ATTRITION_THRESHOLD,
             "tier_p1":      self.tier_p1,
             "tier_p2":      self.tier_p2,
@@ -204,18 +206,24 @@ class GameModel:
 # ─── Factory ─────────────────────────────────────────────────────────────────
 
 def make_hq(side: str, terrain: dict, rng: random.Random) -> tuple:
-    """Pick a random TARGET cell as HQ (so HQ is always reachable by attacks)."""
-    targets = terrain.get(f"{side}_targets", [])
-    if not targets:
-        raise RuntimeError(f"No target cells defined for {side}")
-    pick = rng.choice(targets)
+    """Pick a random resource cell as HQ for non-setup callers."""
+    resources = terrain.get(f"{side}_resources", [])
+    if not resources:
+        raise RuntimeError(f"No resource cells defined for {side}")
+    pick = rng.choice(resources)
     return (pick["col"], pick["row"])
 
 
-def new_game(terrain: dict, seed: int | None = None) -> GameModel:
+def new_game(
+    terrain: dict,
+    seed: int | None = None,
+    *,
+    hq_p1: tuple[int, int] | None = None,
+    hq_p2: tuple[int, int] | None = None,
+) -> GameModel:
     rng = random.Random(seed)
     return GameModel(
         terrain=terrain,
-        hq_p1=make_hq("p1", terrain, rng),
-        hq_p2=make_hq("p2", terrain, rng),
+        hq_p1=tuple(hq_p1) if hq_p1 is not None else make_hq("p1", terrain, rng),
+        hq_p2=tuple(hq_p2) if hq_p2 is not None else make_hq("p2", terrain, rng),
     )
