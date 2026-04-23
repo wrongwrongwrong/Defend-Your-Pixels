@@ -59,6 +59,18 @@ def make_error(code: str) -> dict:
     return {"code": code, "message": ERROR_MESSAGES[code]}
 
 
+def dedupe_errors(errors: list[dict]) -> list[dict]:
+    deduped_errors: list[dict] = []
+    seen_codes: set[str] = set()
+    for error in errors:
+        code = error.get("code")
+        if not isinstance(code, str) or code in seen_codes:
+            continue
+        seen_codes.add(code)
+        deduped_errors.append(error)
+    return deduped_errors
+
+
 def empty_token(*, stale: bool = True) -> dict:
     return {
         "col": None,
@@ -203,16 +215,7 @@ def sanitize_token_states(
     if require_full_detection and (_has_missing_token_data(candidate["p1"]) or _has_missing_token_data(candidate["p2"])):
         errors.append(make_error("token_detection_failed"))
 
-    deduped_errors: list[dict] = []
-    seen_codes: set[str] = set()
-    for error in errors:
-        code = error["code"]
-        if code in seen_codes:
-            continue
-        seen_codes.add(code)
-        deduped_errors.append(error)
-
-    return candidate["p1"], candidate["p2"], deduped_errors
+    return candidate["p1"], candidate["p2"], dedupe_errors(errors)
 
 
 @dataclass

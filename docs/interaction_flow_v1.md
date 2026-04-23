@@ -24,12 +24,30 @@ Before gameplay begins, the backend now requires:
 3. sequential HQ placement with confirmation
 4. transition to `game`
 
-Backend responsibility during setup:
+Required setup sequence:
 
-- wait for a valid board scan before allowing setup
-- track which side sets HQ first
-- validate that each HQ stays on its own side and off the fence
-- keep both confirmed HQ locations hidden from the public payload
+1. The runtime stays in `scan` until the board markers are readable.
+2. Players choose whether Old Mick or The Mob places an HQ first.
+3. The active setup side chooses an HQ on its own territory and confirms it.
+4. Setup control moves to the other side.
+5. After both HQs are confirmed, gameplay starts.
+
+Confirmed hidden-information rule:
+
+- HQ locations are chosen during setup.
+- HQ coordinates remain hidden during normal play.
+- HQ coordinates are only exposed later through `hq_revealed` when destroyed.
+
+Current live frontend behavior:
+
+- `yu_test1/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
+- the placeholder shows backend setup status and safe HQ progress only
+- the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
+- during `side_selection`, the browser can choose which side places an HQ first
+- during `hq_placement`, the browser can click a board cell to send an HQ candidate for the active side
+- during `hq_placement`, the browser can confirm or restart setup from panel controls
+- a transient local preview ring may mark the currently clicked candidate before confirmation
+- recoverable backend/tracker validation issues are surfaced through a temporary warning layover and a recent-warning line in the side panel
 
 ## Core interaction model
 
@@ -78,11 +96,6 @@ Example:
 
 - `Selected Riflemen u0 at (4, 11)`
 
-### Current pygame prototype behavior
-
-- `Q / E` cycles active-player units.
-- The currently selected unit is the one used for move or attack actions.
-
 ### Validation goal
 
 Players should never need to guess which token is currently selected.
@@ -117,14 +130,6 @@ Current accepted directions:
 - `down_left`
 - `down_right`
 
-### Current pygame prototype behavior
-
-- Player switches to attack mode with `1`.
-- Player chooses direction with:
-  - `W A S D` for orthogonal directions
-  - `Q E Z C` for diagonal directions
-- `Enter` confirms the attack.
-
 ### Validation goal
 
 The player should understand that they are choosing a direction, not choosing an arbitrary target tile.
@@ -149,12 +154,6 @@ The frontend should make it clear that:
 - Example feedback:
   - invalid click -> `Act mode only accepts straight or diagonal lines from the selected token.`
   - valid click -> `Attack queued: Riflemen -> up right`
-
-### Current pygame prototype behavior
-
-- Attack mode highlights reachable line cells for the selected direction family.
-- Preview follows the chosen direction.
-- HUD explains that attack uses directional line attack.
 
 ### MVP limitation
 
@@ -184,11 +183,6 @@ The frontend should communicate that:
   - footer / role text
 - The React validation layer does **not** yet draw a dedicated DEF-zone overlay.
 
-### Current pygame prototype behavior
-
-- Debug HUD states that defenders provide passive `3x3` protection.
-- Protected resource tiles are drawn brighter.
-
 ### MVP limitation
 
 Current frontend state does not yet expose a dedicated protection overlay payload.
@@ -198,7 +192,6 @@ For now, the prototype validates understanding through:
 - rules text
 - HUD wording
 - backend result text
-- brighter protected resource tiles in pygame
 
 ### Validation goal
 
@@ -227,12 +220,6 @@ React currently shows:
 - move countdown box
 - game-over overlay
 
-### Current pygame prototype behavior
-
-- HUD shows turn number and active player
-- HUD shows current status text
-- HUD shows game-over state and winner
-
 ### Validation goal
 
 Players should never be confused about whose turn it is or why the match ended.
@@ -241,11 +228,11 @@ Players should never be confused about whose turn it is or why the match ended.
 
 During gameplay, accidental movement of the inactive side's physical markers does not change authoritative state.
 
-The backend now:
-
-- ignores inactive-side token position or rotation changes
-- keeps the last accepted state for that side
-- reports a validation status through `inactive_side_token_changed`
+- only the active side's tokens may move or rotate
+- inactive-side token changes are ignored by the backend
+- the runtime reports `inactive_side_token_changed` as a recoverable validation status
+- the frontend shows this as a warning layover so players understand that the movement was ignored rather than applied
+- `hq_setup_complete` is surfaced as a success-style alert so setup completion reads as progression rather than failure
 
 ## Current validation checklist
 
@@ -265,7 +252,7 @@ The following are still known gaps, not blockers:
 - React does not yet draw a dedicated attack-line overlay
 - React does not yet draw a dedicated defender-zone overlay
 - resource tiles are not yet surfaced as first-class frontend objects
-- hidden information flow is not yet designed
+- HQ setup still depends on backend validation; browser-side previews are temporary and non-authoritative
 
 These should be treated as later refinements, not blockers for MVP validation.
 

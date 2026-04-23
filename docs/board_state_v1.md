@@ -3,7 +3,7 @@
 Note: the broader Old Mick frontend/backend contract is now documented in
 `docs/frontend_backend_contract_v1.md`. This file remains the narrower board-state payload reference.
 
-供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。第一版刻意**不**包含：`phase`、完整規則樹、動畫專用欄位、tracker 校準細節（校準可續用現有 `tracker_frame`）。
+供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。Live Old Mick runtime 現在會在既有 payload 上額外包含 `phase`、`setup`、`errors`。tracker 校準細節仍沿用目前 snapshot / camera preview 路徑。
 
 ## WebSocket 訊息
 
@@ -13,38 +13,6 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 | `action` | React / tracker 送往 Python 的 authoritative action。見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。 |
 | `tracker_frame` | 僅 marker → 合併 **位置 / 朝向**（現有 `applyTrackedTokens`）。 |
 | `game_state` | **Legacy**：與 `tracker_frame` 相同合併語意，保留舊 bridge 相容。 |
-
-## Setup metadata
-
-The runtime payload may include:
-
-- `phase`
-- `setup`
-- `errors`
-
-`setup` carries safe setup progress only.
-It must not reveal hidden HQ coordinates once they are confirmed.
-
-Example safe shape:
-
-```json
-{
-  "phase": "hq_placement",
-  "setup": {
-    "board_scan_ready": true,
-    "side_selection_complete": true,
-    "first_player_side": "old_mick",
-    "active_setup_side": "p2",
-    "hq": {
-      "p1": { "has_candidate": true, "confirmed": true },
-      "p2": { "has_candidate": false, "confirmed": false }
-    },
-    "status_code": "waiting_for_hq_candidate",
-    "status_message": "The Mob must choose an HQ location."
-  },
-  "errors": []
-}
-```
 
 ## Authoritative JSON（Python / bridge 輸出建議形狀）
 
@@ -69,6 +37,15 @@ Example safe shape:
       "command_tower_max_hp": 20
     }
   ],
+  "resource_tiles": [
+    {
+      "id": "px0",
+      "owner": 1,
+      "theme_name": "Wheat Paddock",
+      "position": { "x": 4, "y": 10 },
+      "protection_layers": 1
+    }
+  ],
   "units": [
     {
       "id": "A1",
@@ -87,13 +64,63 @@ Example safe shape:
 - `last_action`：optional；有值時供 HUD / debug 顯示，沒有時前端可忽略。
 - `units[].id`：固定使用 `string`，與 `model_backend` 既有 unit id（如 `A1`、`D2`）一致。
 - `units[].rotation_deg`：optional；若無，adapter 預設轉成 UI `rotation: "forward"`，或由 tracker 補。
+- `resource_tiles[]`：authoritative destructible objectives，提供 owner、position、theme name 與 protection layer。
 - **塔**：v1 固定摺進 `players[]` 的 `command_tower_position` / `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
-- `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 React / Phaser 顯示。
+- `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 UI 顯示。
 - `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
-## UI consume 形狀（React 現狀）
+## Setup metadata
 
-與 [`createInitialGameState`](../react_frontend/src/game/turns.js) 對齊，精簡列出：
+Live payload 現在可額外包含：
+
+- `phase`
+- `setup`
+- `errors`
+
+`setup` 只攜帶安全的 setup 進度資訊，不得在一般遊戲中暴露已確認 HQ 座標。
+
+Example:
+
+```json
+{
+  "phase": "hq_placement",
+  "setup": {
+    "board_scan_ready": true,
+    "side_selection_complete": true,
+    "first_player_side": "old_mick",
+    "active_setup_side": "p2",
+    "hq": {
+      "p1": { "has_candidate": true, "confirmed": true },
+      "p2": { "has_candidate": false, "confirmed": false }
+    },
+    "status_code": "waiting_for_hq_confirmation",
+    "status_message": "The Mob must choose and confirm an HQ location."
+  },
+  "errors": []
+}
+```
+
+- `phase`：`scan` | `side_selection` | `hq_placement` | `game`
+- `errors[]`：stable `{ "code", "message" }` objects for recoverable validation / tracker issues
+- `setup.hq.*`：只公開 candidate/confirmed flags，不公開 hidden HQ coordinates
+- `game.hq_revealed`：仍是 HQ 被摧毀後才公開座標的唯一 public path
+
+目前 `yu_test1/index.html` 對這些欄位的 live consume 行為為：
+
+- `phase !== "game"` 時顯示 pre-game setup placeholder card
+- `side_selection` / `hq_placement` 時在棋盤上疊加 territory/fence guide overlay
+- `setup.status_message` 與 safe HQ progress 會直接顯示給玩家
+- `setup.hq.*` 只用於顯示 `has_candidate` / `confirmed`，不顯示任何 HQ 座標
+- `side_selection` 會顯示 browser controls 並送出 `choose_side`
+- `hq_placement` 會接受棋盤點擊並送出 `set_hq_candidate`，再透過 confirm/reset controls 送出 `confirm_hq` / `reset_setup`
+- frontend 可在 active setup side 上顯示暫時性的 local candidate preview，但 confirm 後不再保留或暴露該座標
+- `errors[]` 會以單一優先 warning layover 顯示在棋盤上方，並在 side panel 保留 recent warning 文本
+- `inactive_side_token_changed` 在前端只作為 recoverable warning surfaced，說明 opponent movement was ignored，不代表 authoritative state 有被改寫
+- `hq_setup_complete` 會以 success-style alert 顯示，而不是 warning-style alert
+
+## UI consume 形狀（legacy bridge path）
+
+下列欄位是舊版 `board_state` consume 形狀，保留給 legacy bridge 文件參考：
 
 | UI 欄位 | 說明 |
 |---------|------|
@@ -101,10 +128,11 @@ Example safe shape:
 | `activePlayer` | `1` \| `2` |
 | `gameOver` | boolean |
 | `players[]` | `id`, `color`, `zone`, `ether`, `incomePerTurn`, `hqName`, `resourceName`, `commandTowerPosition`, `commandTowerHp`, `commandTowerMaxHp`, `tokens[]` |
+| `resourceTiles[]` | `id`, `owner`, `themeName`, `position`, `protectionLayers` |
 | `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation`（字串 facing 或相容格式） |
 | `units[]` | 棋盤上非 marker 單位（目前多為 `[]`） |
 
-- `color`、`zone` 為 UI-only 欄位，由 React adapter 依 `player.id` 補上；不由 Python authoritative payload 提供。
+- `color`、`zone` 為 UI-only 欄位，由前端 adapter 依 `player.id` 補上；不由 Python authoritative payload 提供。
 
 ## Adapter：`units` → `players[].tokens[]`（概念）
 
@@ -117,18 +145,18 @@ Example safe shape:
 | `units[].rotation_deg` | `rotation`：經 `degreesToFacing` 或對照表 → `forward` / `right` / … |
 | `units[].hp` / `max_hp` | `hp` / `maxHp` |
 
-定案：authoritative payload 維持 `units[]`；`react_frontend/src/bridge/adaptBoardStateToUi.js` 負責組裝 `players[].tokens[]`，保留現有 React UI consume 形狀。
+定案：authoritative payload 維持 `units[]`；舊版前端 adapter 會再組裝 `players[].tokens[]`。
 
 ## HP 尺度策略
 
 | 來源 | 範例 |
 |------|------|
 | `model_backend` `Unit` | 預設 `hp` / `max_hp` 為小整數（如 3）。 |
-| 現有 React token | 如 30 / 40（展示用條較細緻）。 |
+| 舊版 UI token | 如 30 / 40（展示用條較細緻）。 |
 
 **建議（擇一，團隊定案）：**
 
-1. **單一權威整數**：Python 與 contract 只用一套數字；React 僅顯示比例 `hp / max_hp`（推薦，簡單一致）。
+1. **單一權威整數**：Python 與 contract 只用一套數字；前端僅顯示比例 `hp / max_hp`（推薦，簡單一致）。
 2. **Contract 加 `display_scale`**：後端傳倍率，前端乘上再畫條（兩套數字並存，易混亂）。
 3. **僅在 adapter 乘常數**：過渡期把 3 → 30 顯示；需在文件中寫死倍率並與機制稿同步。
 
@@ -136,14 +164,14 @@ Example safe shape:
 
 ## 與目前整合狀態的對應
 
-- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出 React validation 主線。
+- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出目前主線。
 - 目前 authoritative action 已有 `end_turn`、`move_unit`、`attack_in_direction`；見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。
 - Tracker：仍走 `tracker_frame`，不與 `board_state` 混成同一條「全量又只改位置」的路徑。
 
 ## Step 2 定案摘要
 
-- `phase` 不進 v1 authoritative contract。
+- live Old Mick runtime 會額外輸出 `phase`、`setup`、`errors`。
 - `units[].id` 固定為 `string`。
-- authoritative payload 固定輸出 `units[]`；React adapter 轉成 `players[].tokens[]`。
+- authoritative payload 固定輸出 `units[]`；legacy adapter 轉成 `players[].tokens[]`。
 - `players[]` 不放 `color` / `zone`；由前端補 UI-only 欄位。
 - 塔資料固定摺進 `players[]`。

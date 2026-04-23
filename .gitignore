@@ -8,12 +8,19 @@ __pycache__/
 .env
 venv/
 .venv/
+*.egg-info/
+
+# Local environment artifacts (not source)
+dyp/
 
 # macOS
 .DS_Store
 
 # Node (react_frontend; any stray root node_modules from old setups)
 node_modules/
+
+# Stray root lockfile from old setups
+/package-lock.json
 
 # IDE
 .idea/

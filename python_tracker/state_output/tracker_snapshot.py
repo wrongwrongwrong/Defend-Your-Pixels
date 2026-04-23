@@ -14,42 +14,20 @@ The snapshot includes:
 import cv2
 import numpy as np
 
+from python_tracker.tracked_markers import TOKEN_IDS, TURN_MARKER_ID, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
     build_homography,
     build_playable_corners,
-    pixel_to_grid,
     pixel_to_grid_with_bounds,
 )
 from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
-TOKEN_IDS = {
-    10,
-    14,
-    # 11,
-    # 12,
-    # 15,
-    # 16,
-}
 
-ATTACKER_IDS = {
-    10,
-    14,
-    # 11,
-    # 15,
-}
-DEFENDER_IDS = {
-    # 12,
-    # 16,
-}
-
-CONFIRM_IDS = {13, 17}
-CONFIRM_PLAYER_MAP = {13: 1, 17: 2}
-
-ALL_TRACKED_IDS = TOKEN_IDS | CONFIRM_IDS
+ALL_TRACKED_IDS = TOKEN_IDS | {TURN_MARKER_ID}
 
 
 def build_tracker_snapshot(corners, ids):
@@ -84,14 +62,17 @@ def build_tracker_snapshot(corners, ids):
     H = build_homography(board_corners_px)
     playable_corners = build_playable_corners(board_corners_px)
 
-    confirm_markers_out = []
+    turn_marker_out = None
 
     for i, mid in enumerate(ids.flatten()):
-        if mid in CONFIRM_IDS:
-            confirm_markers_out.append({
+        if mid == TURN_MARKER_ID:
+            center = corners[i][0].mean(axis=0)
+            rotation_deg = compute_rotation_deg(corners[i][0])
+            turn_marker_out = {
                 "id": int(mid),
-                "player": CONFIRM_PLAYER_MAP[int(mid)],
-            })
+                "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
+                "rotation": round(rotation_deg, 1),
+            }
             continue
 
         if mid not in TOKEN_IDS:
@@ -100,13 +81,14 @@ def build_tracker_snapshot(corners, ids):
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
         rotation_deg = compute_rotation_deg(corners[i][0])
-        gx, gy = pixel_to_grid(px, py, H)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
 
         if gx is not None:
             markers_out.append({
                 "id": int(mid),
-                "position": {"x": gx, "y": gy},
+                "position": {"x": gx, "y": gy} if in_bounds else None,
                 "raw_position": {"x": round(px, 1), "y": round(py, 1)},
+                "in_bounds": in_bounds,
                 "rotation": round(rotation_deg, 1),
             })
         else:
@@ -114,13 +96,14 @@ def build_tracker_snapshot(corners, ids):
                 "id": int(mid),
                 "position": {"x": round(px, 1), "y": round(py, 1)},
                 "raw_position": {"x": round(px, 1), "y": round(py, 1)},
+                "in_bounds": False,
                 "rotation": round(rotation_deg, 1),
             })
 
     return {
         "calibration_ready": H is not None,
         "markers": markers_out,
-        "confirm_markers": confirm_markers_out,
+        "turn_marker": turn_marker_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -152,14 +135,15 @@ def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -
             remapped_markers.append(marker)
             continue
 
-        gx, gy = pixel_to_grid(float(raw_x), float(raw_y), fallback_h)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(float(raw_x), float(raw_y), fallback_h)
         if gx is None or gy is None:
             remapped_markers.append(marker)
             continue
 
         remapped_markers.append({
             **marker,
-            "position": {"x": gx, "y": gy},
+            "position": {"x": gx, "y": gy} if in_bounds else None,
+            "in_bounds": in_bounds,
         })
 
     return {
@@ -199,7 +183,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
 
-        if mid in CONFIRM_IDS:
+        if mid == TURN_MARKER_ID:
             label = token_label(int(mid))
             cv2.putText(frame, label, (int(px) + 5, int(py) - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 200, 255), 2, cv2.LINE_AA)
@@ -262,17 +246,27 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
             cv2.LINE_AA,
         )
 
+    turn_marker = snapshot.get("turn_marker")
+    if isinstance(turn_marker, dict) and isinstance(turn_marker.get("raw_position"), dict):
+        px = turn_marker["raw_position"].get("x")
+        py = turn_marker["raw_position"].get("y")
+        if isinstance(px, (int, float)) and isinstance(py, (int, float)):
+            cv2.putText(
+                frame,
+                token_label(int(turn_marker.get("id", -1))),
+                (int(px) + 5, int(py) - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (80, 200, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
     return frame
 
 
 def token_label(marker_id: int) -> str:
-    if marker_id in ATTACKER_IDS:
-        return "ATK"
-    if marker_id in DEFENDER_IDS:
-        return "DEF"
-    if marker_id in CONFIRM_IDS:
-        return f"CONFIRM P{CONFIRM_PLAYER_MAP[marker_id]}"
-    return f"ID:{marker_id}"
+    return marker_label(marker_id)
 
 
 def draw_grid_overlay(frame, H):

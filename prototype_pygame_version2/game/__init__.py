@@ -1,1 +1,0 @@
-# PixelWar game package

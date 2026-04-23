@@ -1,7 +1,8 @@
-"""Manual no-marker runtime: terminal commands -> yu_test1 rules -> WebSocket UI.
+"""Manual runtime entrypoint: terminal/browser setup -> yu_test1 rules -> WebSocket UI.
 
-This add-only runner keeps the existing browser UI unchanged while replacing the
-camera/marker input with simple terminal commands.
+This runner is the no-camera fallback for local UI testing. It keeps the same payload shape
+as the live tracker path, but token/setup input comes from terminal commands and browser
+actions instead of ArUco markers.
 """
 
 from __future__ import annotations
@@ -13,7 +14,17 @@ import threading
 import time
 
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
-from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, ATTACKER_SLOTS, SLOTS, SetupState, clone_side_state, new_side_state, sanitize_token_states
+from runner.setup_flow import (
+    ATTACKER_SLOTS,
+    PHASE_GAME,
+    PLAYERS,
+    SLOTS,
+    SetupState,
+    clone_side_state,
+    dedupe_errors,
+    new_side_state,
+    sanitize_token_states,
+)
 from yu_test1 import game_model, terrain_gen
 
 
@@ -33,6 +44,16 @@ ANGLE_BY_DIRECTION = {
     "N": 270.0,
     "NE": 315.0,
 }
+
+
+def _manual_empty_token() -> dict:
+    return {
+        "col": None,
+        "row": None,
+        "angle": None,
+        "direction": None,
+        "stale": False,
+    }
 
 
 def _parse_cell(cell_text: str) -> tuple[int, int]:
@@ -77,7 +98,7 @@ def _print_help() -> None:
     print("  confirm_hq p1")
     print("  reset_setup")
     print("  set p1 atk_a A3 E")
-    print("  set p1 atk_b C4 NW")
+    print("  set p1 atk_b C4 SW")
     print("  set p1 def D5")
     print("  set p2 atk_a J9 W")
     print("  clear p1 atk_a")
@@ -223,30 +244,44 @@ def _parse_terminal_command(line: str) -> dict | None:
 
 class Session:
     def __init__(self):
-        self.accepted_p1 = new_side_state(stale=False)
-        self.accepted_p2 = new_side_state(stale=False)
-        self.turn = 1
-        self.quit_requested = False
         self.setup = SetupState()
-        self.model: game_model.GameModel | None = None
+        self.quit_requested = False
         self.reset()
 
     def reset(self) -> None:
         self.seed = int(time.time() * 1000) % (2**31)
         self.terrain = terrain_gen.generate(seed=self.seed)
-        self.model = None
+        self.raw_p1 = new_side_state(stale=False)
+        self.raw_p2 = new_side_state(stale=False)
+        self.accepted_p1 = new_side_state(stale=False)
+        self.accepted_p2 = new_side_state(stale=False)
         self.turn = 1
+        self.model: game_model.GameModel | None = None
         self.setup.reset(board_scan_ready=True)
         print(f"[MAP] New game (seed={self.seed})")
-
-    def side(self, player: str) -> dict:
-        return self.accepted_p1 if player == "p1" else self.accepted_p2
 
     def apply_command(self, command: dict, *, source: str) -> tuple[list[dict], list[dict]]:
         events: list[dict] = []
         errors: list[dict] = []
         command_type = command.get("type")
         action_name = command.get("action")
+
+        if command_type == "help":
+            _print_help()
+            return events, errors
+
+        if command_type == "show":
+            self._print_state_summary()
+            return events, errors
+
+        if command_type == "show_setup":
+            self._print_setup_summary()
+            return events, errors
+
+        if command_type == "quit":
+            self.quit_requested = True
+            print(f"[{source}] Quit requested")
+            return events, errors
 
         if command_type == "new_map":
             self.reset()
@@ -278,6 +313,8 @@ class Session:
             first_player_side = command.get("first_player_side")
             if isinstance(first_player_side, str) and self.setup.choose_side(first_player_side):
                 print(f"[{source}] First setup side -> {first_player_side}")
+            else:
+                print(f"[{source}] {self.setup.status_message}")
             return events, errors
 
         if action_name == "set_hq_candidate":
@@ -285,8 +322,8 @@ class Session:
             position = command.get("position") if isinstance(command.get("position"), dict) else None
             if side in PLAYER_SET:
                 error = self.setup.set_hq_candidate(side, position)
-                expected_position = (position.get("x"), position.get("y")) if position is not None else None
-                if error is None and position is not None and self.setup.hq_candidates.get(side) == expected_position:
+                expected_position = None if position is None else (position.get("x"), position.get("y"))
+                if error is None and expected_position == self.setup.hq_candidates.get(side):
                     print(f"[{source}] HQ candidate {side} -> {_format_cell(position.get('x'), position.get('y'))}")
                 elif error is not None:
                     print(f"[{source}] {error['message']}")
@@ -299,104 +336,113 @@ class Session:
             side = command.get("side")
             if side in PLAYER_SET:
                 game_ready, setup_event = self.setup.confirm_hq(side)
-                if game_ready:
-                    self._ensure_model_started()
-                    print(f"[{source}] HQ setup complete")
-                elif self.setup.hq_confirmed.get(side):
-                    print(f"[{source}] Confirmed {side} HQ")
-                elif setup_event is not None:
+                if setup_event is not None:
                     print(f"[{source}] {setup_event['message']}")
                     errors.append(setup_event)
+                else:
+                    print(f"[{source}] {self.setup.status_message}")
+                if game_ready:
+                    self._ensure_model_started()
             return events, errors
 
         if action_name in {"reset_setup", "cancel_hq"}:
             self.model = None
             self.setup.reset_hq_setup()
-            print(f"[{source}] Reset HQ setup")
+            print(f"[{source}] Setup reset")
             return events, errors
 
         if command_type == "set":
-            player = command["player"]
-            slot = command["slot"]
-            col = int(command["col"])
-            row = int(command["row"])
-            direction = command.get("direction")
-            raw_p1 = clone_side_state(self.accepted_p1)
-            raw_p2 = clone_side_state(self.accepted_p2)
-            token = raw_p1[slot] if player == "p1" else raw_p2[slot]
-            token["col"] = col
-            token["row"] = row
-            token["stale"] = False
-            if slot in ATTACKER_SLOT_SET:
-                token["direction"] = direction
-                token["angle"] = ANGLE_BY_DIRECTION[direction]
-                print(f"[{source}] Set {player} {slot} -> {_format_cell(col, row)} {direction}")
-            else:
-                token["direction"] = None
-                token["angle"] = None
-                print(f"[{source}] Set {player} {slot} -> {_format_cell(col, row)}")
-            errors.extend(self._apply_candidate_tokens(raw_p1, raw_p2))
+            player = command.get("player")
+            slot = command.get("slot")
+            if player in PLAYER_SET and slot in SLOT_SET:
+                target = self.raw_p1 if player == "p1" else self.raw_p2
+                direction = command.get("direction")
+                target[slot] = {
+                    "col": command.get("col"),
+                    "row": command.get("row"),
+                    "angle": ANGLE_BY_DIRECTION.get(direction) if isinstance(direction, str) else None,
+                    "direction": direction,
+                    "stale": False,
+                }
+                print(f"[{source}] {player}.{slot} -> {_format_token(target[slot])}")
+                errors.extend(self._sync_tokens())
             return events, errors
 
         if command_type == "clear":
-            player = command["player"]
-            slot = command["slot"]
-            raw_p1 = clone_side_state(self.accepted_p1)
-            raw_p2 = clone_side_state(self.accepted_p2)
-            if player == "p1":
-                raw_p1[slot] = {"col": None, "row": None, "angle": None, "direction": None, "stale": False}
-            else:
-                raw_p2[slot] = {"col": None, "row": None, "angle": None, "direction": None, "stale": False}
-            errors.extend(self._apply_candidate_tokens(raw_p1, raw_p2))
-            print(f"[{source}] Cleared {player} {slot}")
+            player = command.get("player")
+            slot = command.get("slot")
+            if player in PLAYER_SET and slot in SLOT_SET:
+                target = self.raw_p1 if player == "p1" else self.raw_p2
+                target[slot] = _manual_empty_token()
+                print(f"[{source}] Cleared {player}.{slot}")
+                errors.extend(self._sync_tokens())
             return events, errors
 
         if command_type == "turn":
-            new_turn = int(command["turn"])
-            if new_turn not in (1, 2):
-                print(f"[{source}] Ignored invalid turn")
+            try:
+                new_turn = int(command.get("turn"))
+            except (TypeError, ValueError):
                 return events, errors
-            if new_turn == self.turn:
-                print(f"[{source}] Turn already {new_turn}")
-                return events, errors
-            self.turn = new_turn
-            print(f"[{source}] Turn -> {self.turn}")
-            events.extend(self._maybe_resolve_turn())
+            events.extend(self._set_turn(new_turn, source))
+            errors.extend(self._sync_tokens())
             return events, errors
 
         if command_type == "flip":
-            self.turn = 2 if self.turn == 1 else 1
-            print(f"[{source}] Turn -> {self.turn}")
-            events.extend(self._maybe_resolve_turn())
+            new_turn = 2 if self.turn == 1 else 1
+            events.extend(self._set_turn(new_turn, source))
+            errors.extend(self._sync_tokens())
             return events, errors
 
-        if command_type == "quit":
-            self.quit_requested = True
-            print(f"[{source}] Quitting manual play")
-            return events, errors
-
-        print(f"[{source}] Ignored unsupported command: {command_type}")
         return events, errors
 
-    def _apply_candidate_tokens(self, raw_p1: dict, raw_p2: dict) -> list[dict]:
+    def payload(self, *, errors: list[dict], events: list[dict]) -> dict:
+        return {
+            "phase": self.setup.phase,
+            "corners_found": 4 if self.setup.board_scan_ready else 0,
+            "turn": self.turn,
+            "turn_angle": TURN_ANGLE_BY_VALUE.get(self.turn),
+            "p1": self.accepted_p1,
+            "p2": self.accepted_p2,
+            "terrain": self.terrain,
+            "map_seed": self.seed,
+            "game": self.model.snapshot() if self.model is not None else {},
+            "events": events,
+            "setup": self.setup.public_payload(),
+            "errors": dedupe_errors(errors),
+        }
+
+    def _set_turn(self, new_turn: int, source: str) -> list[dict]:
+        if new_turn not in (1, 2):
+            print(f"[{source}] Ignored invalid turn value")
+            return []
+
+        self.turn = new_turn
+        print(f"[{source}] Turn -> {self.turn}")
+        if self.setup.phase != PHASE_GAME or self.model is None:
+            return []
+        return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+
+    def _sync_tokens(self) -> list[dict]:
         active_side = None
         if self.setup.phase == PHASE_GAME and self.turn in (1, 2):
             active_side = "p1" if self.turn == 1 else "p2"
 
         self.accepted_p1, self.accepted_p2, errors = sanitize_token_states(
-            raw_p1,
-            raw_p2,
+            self.raw_p1,
+            self.raw_p2,
             self.accepted_p1,
             self.accepted_p2,
             active_side=active_side,
-            require_full_detection=self.setup.phase in {PHASE_HQ_PLACEMENT, PHASE_GAME},
+            require_full_detection=self.setup.phase == PHASE_GAME,
         )
-        return errors
+        # Keep the manual raw state aligned to the accepted state so invalid moves do not spam
+        # the same warning on every broadcast tick.
+        self.raw_p1 = clone_side_state(self.accepted_p1)
+        self.raw_p2 = clone_side_state(self.accepted_p2)
 
-    def _maybe_resolve_turn(self) -> list[dict]:
-        if self.setup.phase != PHASE_GAME or self.model is None:
-            return []
-        return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+        for error in errors:
+            print(f"[manual] {error['message']}")
+        return errors
 
     def _ensure_model_started(self) -> None:
         if self.model is not None:
@@ -410,100 +456,52 @@ class Session:
             self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
 
-    def print_summary(self) -> None:
-        print("State:")
-        print(f"  map_seed: {self.seed}")
+    def _print_state_summary(self) -> None:
+        print("\nState summary")
         print(f"  phase: {self.setup.phase}")
         print(f"  turn: {self.turn}")
-        print(f"  tiers: p1={self.model.tier_p1 if self.model else 1} p2={self.model.tier_p2 if self.model else 1}")
-        print(f"  winner: {self.model.winner if self.model else None}")
-        print(f"  win_reason: {self.model.win_reason if self.model else None}")
         print(f"  p1 atk_a: {_format_token(self.accepted_p1['atk_a'])}")
         print(f"  p1 atk_b: {_format_token(self.accepted_p1['atk_b'])}")
         print(f"  p1 def:   {_format_token(self.accepted_p1['def'])}")
         print(f"  p2 atk_a: {_format_token(self.accepted_p2['atk_a'])}")
         print(f"  p2 atk_b: {_format_token(self.accepted_p2['atk_b'])}")
         print(f"  p2 def:   {_format_token(self.accepted_p2['def'])}")
-        self.print_setup_summary()
+        if self.model is not None:
+            snapshot = self.model.snapshot()
+            print(f"  destroyed cells: {len(snapshot['destroyed'])}")
+            print(f"  winner: {snapshot['winner']}")
+        else:
+            print("  game: not started")
+        print()
 
-    def print_setup_summary(self) -> None:
-        setup = self.setup.public_payload()
-        print("Setup:")
-        print(f"  board_scan_ready: {setup['board_scan_ready']}")
-        print(f"  side_selection_complete: {setup['side_selection_complete']}")
-        print(f"  first_player_side: {setup['first_player_side']}")
-        print(f"  active_setup_side: {setup['active_setup_side']}")
-        print(f"  p1 hq: candidate={setup['hq']['p1']['has_candidate']} confirmed={setup['hq']['p1']['confirmed']}")
-        print(f"  p2 hq: candidate={setup['hq']['p2']['has_candidate']} confirmed={setup['hq']['p2']['confirmed']}")
-        print(f"  status: {setup['status_code']} - {setup['status_message']}")
-
-    def payload(self, events: list[dict], errors: list[dict]) -> dict:
-        return {
-            "phase": self.setup.phase,
-            "corners_found": 4,
-            "turn": self.turn,
-            "turn_angle": TURN_ANGLE_BY_VALUE.get(self.turn),
-            "p1": self.accepted_p1,
-            "p2": self.accepted_p2,
-            "terrain": self.terrain,
-            "map_seed": self.seed,
-            "game": self.model.snapshot() if self.model is not None else {},
-            "events": events,
-            "setup": self.setup.public_payload(),
-            "errors": _dedupe_errors(errors),
-        }
+    def _print_setup_summary(self) -> None:
+        setup_payload = self.setup.public_payload()
+        print("\nSetup summary")
+        print(f"  phase: {self.setup.phase}")
+        print(f"  board_scan_ready: {setup_payload['board_scan_ready']}")
+        print(f"  side_selection_complete: {setup_payload['side_selection_complete']}")
+        print(f"  first_player_side: {setup_payload['first_player_side']}")
+        print(f"  active_setup_side: {setup_payload['active_setup_side']}")
+        print(f"  p1 hq: {setup_payload['hq']['p1']}")
+        print(f"  p2 hq: {setup_payload['hq']['p2']}")
+        print(f"  status: {setup_payload['status_message']}")
+        print()
 
 
-def _dedupe_errors(errors: list[dict]) -> list[dict]:
-    deduped_errors: list[dict] = []
-    seen_codes: set[str] = set()
-    for error in errors:
-        code = error.get("code")
-        if not isinstance(code, str) or code in seen_codes:
-            continue
-        seen_codes.add(code)
-        deduped_errors.append(error)
-    return deduped_errors
-
-
-def _print_startup_banner() -> None:
-    print("=" * 55)
-    print("  Old Mick Manual Play")
-    print(f"  ws://{WS_HOST}:{WS_PORT}")
-    print("=" * 55)
-    print()
-    print("  Browser UI: yu_test1/index.html")
-    print("  Input mode: terminal commands (no markers required)")
-    print()
-    _print_help()
-    print()
-
-
-async def publish_manual_state(send_fps: int = SEND_FPS) -> None:
+async def publish_manual_play(send_fps: int = SEND_FPS) -> None:
     session = Session()
+    interval = 1.0 / send_fps
     input_queue: queue.Queue[str] = queue.Queue()
     stop_event = threading.Event()
-    input_thread = threading.Thread(
-        target=_read_stdin_forever,
-        args=(input_queue, stop_event),
-        daemon=True,
-        name="manual-play-stdin",
-    )
+    input_thread = threading.Thread(target=_read_stdin_forever, args=(input_queue, stop_event), daemon=True)
     input_thread.start()
 
-    interval = 1.0 / send_fps
-    _print_startup_banner()
-    session.print_summary()
+    print("[Manual] Type 'help' for commands")
 
     try:
         while not session.quit_requested:
-            events: list[dict] = []
-            errors: list[dict] = []
-
-            for command in await drain_actions():
-                command_events, command_errors = session.apply_command(command, source="web")
-                events.extend(command_events)
-                errors.extend(command_errors)
+            frame_events: list[dict] = []
+            frame_errors: list[dict] = []
 
             while True:
                 try:
@@ -514,37 +512,38 @@ async def publish_manual_state(send_fps: int = SEND_FPS) -> None:
                 try:
                     command = _parse_terminal_command(line)
                 except ValueError as exc:
-                    print(f"[terminal] {exc}")
-                    print("[terminal] Type 'help' to list commands")
+                    print(f"[manual] {exc}")
                     continue
 
                 if command is None:
                     continue
+                events, errors = session.apply_command(command, source="manual")
+                frame_events.extend(events)
+                frame_errors.extend(errors)
 
-                command_type = command.get("type")
-                if command_type == "help":
-                    _print_help()
-                    continue
-                if command_type == "show":
-                    session.print_summary()
-                    continue
-                if command_type == "show_setup":
-                    session.print_setup_summary()
-                    continue
+            for command in await drain_actions():
+                events, errors = session.apply_command(command, source="browser")
+                frame_events.extend(events)
+                frame_errors.extend(errors)
 
-                command_events, command_errors = session.apply_command(command, source="terminal")
-                events.extend(command_events)
-                errors.extend(command_errors)
-
-            await broadcast(json.dumps(session.payload(events, errors)))
+            payload = session.payload(errors=frame_errors, events=frame_events)
+            await broadcast(json.dumps(payload))
             await asyncio.sleep(interval)
     finally:
         stop_event.set()
-        print("[Manual] Stopped.")
 
 
 async def async_main() -> None:
-    await run_server(publish_manual_state)
+    print("=" * 55)
+    print("  Old Mick Manual Play")
+    print(f"  ws://{WS_HOST}:{WS_PORT}")
+    print("=" * 55)
+    print()
+    print("  Browser: open yu_test1/index.html")
+    print("  Input: terminal commands and browser setup actions")
+    print()
+
+    await run_server(publish_manual_play)
 
 
 def main() -> int:
