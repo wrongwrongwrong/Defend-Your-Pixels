@@ -12,27 +12,23 @@ Manual mode:
 - keeps using `yu_test1/game_model.py` and `yu_test1/terrain_gen.py`
 - replaces marker input with terminal commands
 
-## Added Files
+## Files
 
 - `runner/run_manual_play.py`
-- `launch_manual_demo.ps1`
-- `launch_manual_demo.cmd`
 - `docs/manual_play.md`
 
 ## How To Launch
 
-From the repository root on Windows, use either of these options:
-
-1. Double-click `launch_manual_demo.cmd`
-2. Run PowerShell directly:
+From the repository root, start the manual runner directly:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\launch_manual_demo.ps1
+.venv\Scripts\python -m runner.run_manual_play
 ```
 
 This will:
-- start `python -m runner.run_manual_play` in a new PowerShell window
-- open `yu_test1/index.html` in your default browser
+- start `runner.run_manual_play`
+
+Open `yu_test1/index.html` separately in your browser.
 
 ## Terminal Commands
 
@@ -93,7 +89,7 @@ quit
 ```
 
 Typical flow:
-1. Launch the manual demo.
+1. Launch the manual runner.
 2. Choose the first setup side with `choose_side old_mick` or `choose_side mob`.
 3. Set and confirm both HQs with `set_hq` and `confirm_hq`.
 4. Place both sides with `set` commands.
