@@ -27,6 +27,8 @@ This starts:
 - the Python live tracker
 - `yu_test1/index.html` in your default browser
 
+Recommended on macOS: use `launch_live_demo.command` (one-time: `chmod +x launch_live_demo.command`), then double-click it in Finder.
+
 ### Windows demo launcher
 
 From the repo root, you can also start the live demo with one double-click:
