@@ -107,6 +107,14 @@ let gameState  = null;
 let prevState  = null;
 let wsInstance = null;
 
+const IS_TUTORIAL = new URLSearchParams(window.location.search).get('tutorial') === '1';
+
+const TUTORIAL_TARGETS = {
+  // Fixed tutorial tiles (col,row). We’ll highlight these and wait for live tracker state.
+  p1AtkStart: { col: 3, row: 3 },  // D4
+  p1DefSpot:  { col: 1, row: 1 },  // B2
+};
+
 const PHASE_LABEL = {
   scan: 'Board Scan',
   side_selection: 'Choose First HQ Side',
@@ -408,6 +416,7 @@ class GameScene extends Phaser.Scene {
     this._buildLabels();
     this._buildLockButton();
     this._connectWS();
+    if (IS_TUTORIAL) this._initConnectedTutorial();
 
     // Refresh UI at 20 fps
     this.time.addEvent({ delay: 50, callback: this._applyState, callbackScope: this, loop: true });
@@ -419,6 +428,192 @@ class GameScene extends Phaser.Scene {
       targets: this.lockBtnGfx, alpha: { from: 1, to: 0.55 },
       yoyo: true, repeat: -1, duration: 800, ease: 'Sine.easeInOut'
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CONNECTED TUTORIAL (live WS + tracker-gated steps)
+  // ═══════════════════════════════════════════════════════════════
+  _initConnectedTutorial() {
+    // Lightweight instruction HUD (no modal popups).
+    this._tut = {
+      step: 0,
+      lastTurn: null,
+      highlightCell: null,      // {col,row}
+      highlightZone: null,      // array of {col,row}
+      expectedHitCell: null,    // {col,row}
+      completed: false,
+    };
+
+    this.tutorialTxt = this.add.text(PANEL_X + 8, 520, '', {
+      fontSize: '12px',
+      fontFamily: 'Georgia',
+      color: '#ffe070',
+      lineSpacing: 6,
+      wordWrap: { width: PW - 16 },
+    }).setDepth(5);
+
+    this.tutorialHintTxt = this.add.text(PANEL_X + 8, 690, '', {
+      fontSize: '11px',
+      fontFamily: 'Georgia',
+      color: '#f0c080',
+      lineSpacing: 5,
+      wordWrap: { width: PW - 16 },
+    }).setDepth(5);
+  }
+
+  _tutorialTick() {
+    if (!this._tut || this._tut.completed) return;
+    if (!gameState) return;
+
+    const phase = gameState.phase;
+    const turn = gameState.turn;
+    const p1 = gameState.p1 || {};
+    const p2 = gameState.p2 || {};
+    const G = gameState.game || {};
+    const events = Array.isArray(gameState.events) ? gameState.events : [];
+
+    // Track turn changes for step gating.
+    if (this._tut.lastTurn == null && turn != null) this._tut.lastTurn = turn;
+    const turnChanged = (turn != null && this._tut.lastTurn != null && turn !== this._tut.lastTurn);
+    if (turnChanged) this._tut.lastTurn = turn;
+
+    const atCell = (tok, col, row) => tok?.col === col && tok?.row === row;
+    const isVisible = (tok) => tok?.col != null && tok?.row != null && !tok?.stale;
+
+    // Helpers: pulsing highlight drawing.
+    const setCellHighlight = (col, row) => {
+      this._tut.highlightZone = null;
+      this._tut.highlightCell = (col == null ? null : { col, row });
+    };
+    const setZoneHighlight = (cells) => {
+      this._tut.highlightCell = null;
+      this._tut.highlightZone = cells || null;
+    };
+
+    // Tutorial requires the runtime to be in battle phase.
+    if (phase != null && phase !== 'game') {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Tutorial (connected)\n\nWaiting for battle phase…');
+      this.tutorialHintTxt?.setText('Finish board scan + HQ setup first.\nThen reopen Tutorial.html.');
+      return;
+    }
+
+    // STEP 0: Place P1 ATK A at D4.
+    if (this._tut.step === 0) {
+      const t = TUTORIAL_TARGETS.p1AtkStart;
+      setCellHighlight(t.col, t.row);
+      this.tutorialTxt?.setText('Step 1/7 — Place ATK\n\nMove P1 ATK A onto D4.');
+      this.tutorialHintTxt?.setText('Watch the pulsing tile.\nWhen the marker is detected in D4, we continue.');
+      if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row)) this._tut.step = 1;
+      return;
+    }
+
+    // STEP 1: Aim P1 ATK A to the right (E).
+    if (this._tut.step === 1) {
+      const t = TUTORIAL_TARGETS.p1AtkStart;
+      setCellHighlight(t.col, t.row);
+      this.tutorialTxt?.setText('Step 2/7 — Aim\n\nRotate P1 ATK A to point → (E).');
+      this.tutorialHintTxt?.setText('Keep it on D4.\nThe on-screen arrow should show →.');
+      if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row) && p1.atk_a.direction === 'E') {
+        this._tut.step = 2;
+      }
+      return;
+    }
+
+    // STEP 2: End P1 turn (physical confirm marker triggers turn change).
+    if (this._tut.step === 2) {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Step 3/7 — End turn\n\nEnd P1 turn using the physical confirm marker.');
+      this.tutorialHintTxt?.setText('When the backend detects the confirm marker hold,\nturn will switch to The Mob.');
+      if (turnChanged && turn === 2) this._tut.step = 3;
+      return;
+    }
+
+    // STEP 3: Quickly end P2 turn so we can place defender as P1.
+    if (this._tut.step === 3) {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Step 4/7 — Skip enemy turn\n\nEnd P2 turn (use P2 confirm marker) to return to P1.');
+      this.tutorialHintTxt?.setText('We want P1 active so defender placement is accepted.');
+      if (turnChanged && turn === 1) this._tut.step = 4;
+      return;
+    }
+
+    // STEP 4: Place P1 defender at B2 and highlight its zone.
+    if (this._tut.step === 4) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      setCellHighlight(d.col, d.row);
+      this.tutorialTxt?.setText('Step 5/7 — Defend\n\nMove P1 DEF to B2.');
+      this.tutorialHintTxt?.setText('After it lands, we will highlight the protected zone.');
+      if (isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
+        const tier = (G.tier_p1 ?? 1);
+        setZoneHighlight(defZoneCells(d.col, d.row, tier));
+        this._tut.step = 5;
+      }
+      return;
+    }
+
+    // STEP 5: End P1 turn so the enemy can attack into the protected zone.
+    if (this._tut.step === 5) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      const tier = (G.tier_p1 ?? 1);
+      setZoneHighlight(defZoneCells(d.col, d.row, tier));
+      this.tutorialTxt?.setText('Step 6/7 — Set up the demo\n\nEnd P1 turn. Then, as P2, aim an ATK ray into the highlighted zone.');
+      this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nThen end P2 turn to resolve the attack.');
+      if (turnChanged && turn === 2) this._tut.step = 6;
+      return;
+    }
+
+    // STEP 6: Wait for a P2-resolved hit that only DAMAGES (not destroys) a protected cell.
+    if (this._tut.step === 6) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      const tier = (G.tier_p1 ?? 1);
+      const zone = defZoneCells(d.col, d.row, tier);
+      setZoneHighlight(zone);
+
+      this.tutorialTxt?.setText('Step 7/7 — Defense negates the first hit\n\nAs P2: aim an ATK into the highlighted zone.\nThen end P2 turn.');
+      this.tutorialHintTxt?.setText('We will complete this step when the backend reports\n`cell_damaged` on a protected tile (first hit absorbed).');
+
+      // Detect “protected first hit”: cell_damaged where cell is inside the DEF zone.
+      const zoneKey = new Set(zone.map(({ col, row }) => `${col},${row}`));
+      const gotDamagedProtected = events.some((ev) => {
+        if (ev?.type !== 'cell_damaged') return false;
+        const cell = ev.cell;
+        const c = Array.isArray(cell) ? cell[0] : cell?.col;
+        const r = Array.isArray(cell) ? cell[1] : cell?.row;
+        return zoneKey.has(`${c},${r}`);
+      });
+
+      if (gotDamagedProtected) {
+        this._tut.completed = true;
+        this._tut.highlightCell = null;
+        this._tut.highlightZone = null;
+        this.tutorialTxt?.setText('Tutorial complete!\n\nYou saw defender protection absorb the first hit.');
+        this.tutorialHintTxt?.setText('Now try the same shot again:\nit should destroy the tile on the second hit.');
+      }
+      return;
+    }
+  }
+
+  _tutorialDrawHighlights() {
+    if (!this._tut) return;
+    const pulse = 0.55 + 0.35 * Math.sin(this.time.now / 180);
+
+    if (this._tut.highlightCell) {
+      const { col, row } = this._tut.highlightCell;
+      const x = BX + col * CELL, y = BY + row * CELL;
+      const pad = 2;
+      this.dynGfx.lineStyle(4, 0xffe070, pulse);
+      this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+    }
+
+    if (Array.isArray(this._tut.highlightZone)) {
+      this.dynGfx.lineStyle(2.5, 0xffe070, 0.22 + 0.25 * pulse);
+      for (const cell of this._tut.highlightZone) {
+        const x = BX + cell.col * CELL, y = BY + cell.row * CELL;
+        const pad = 3;
+        this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+      }
+    }
   }
 
   // ── Board labels (A–L / 1–12), drawn once in create() ──────────
@@ -1234,8 +1429,9 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Win banner
-    this._updateWinBanner(G);
+    // Win banner (hide during tutorial)
+    if (!IS_TUTORIAL) this._updateWinBanner(G);
+    else if (this._winBanner) { this._winBanner.setVisible(false); this._winSub?.setVisible(false); }
 
     if (!inBattle) {
       this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
@@ -1348,6 +1544,11 @@ class GameScene extends Phaser.Scene {
     this._updateSetupControls(phase, setup);
 
     this._updateWarningUi(gameState.errors || []);
+
+    if (IS_TUTORIAL) {
+      this._tutorialTick();
+      this._tutorialDrawHighlights();
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
