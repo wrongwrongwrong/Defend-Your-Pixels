@@ -10,7 +10,6 @@ import asyncio
 import json
 import os
 import time
-import sys
 
 import cv2
 
@@ -23,7 +22,7 @@ from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupStat
 from yu_test1 import game_model, terrain_gen
 
 
-CAMERA_ID = 0 if sys.platform == "darwin" else 1
+CAMERA_ID = 1
 SEND_FPS = 10
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 
