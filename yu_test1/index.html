@@ -327,7 +327,7 @@ function isP2(col, row) { return col + row > 11; }
  *   'soft'    — first soft-terrain cell (absorbed, stops ray)
  *   'blocked' — hard terrain (stops ray, shows X)
  */
-function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, destroyedMap) {
+function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, destroyedMap, resourceMap) {
   if (!dir || !DIR_VEC[dir]) return [];
   const [dc, dr] = DIR_VEC[dir];
   const cells = [];
@@ -338,7 +338,7 @@ function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, des
     const k = `${c},${r}`;
     if (hardMap[k])  { cells.push({ col: c, row: r, type: 'blocked' }); break; }
     if (softMap[k])  { cells.push({ col: c, row: r, type: 'soft'    }); break; }
-    if (isEnemyCell(c, r) && !destroyedMap[k]) {
+    if (isEnemyCell(c, r) && resourceMap[k] && !destroyedMap[k]) {
       cells.push({ col: c, row: r, type: 'hit' });
       break;
     }
@@ -362,6 +362,14 @@ function defZoneCells(col, row, tier) {
 
 /** Convert number colour to CSS hex string */
 function hex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
+function buildResourceMaps(terrain) {
+  const p1 = {};
+  const p2 = {};
+  for (const resource of (terrain?.p1_resources || [])) p1[`${resource.col},${resource.row}`] = resource;
+  for (const resource of (terrain?.p2_resources || [])) p2[`${resource.col},${resource.row}`] = resource;
+  return { p1, p2 };
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  DETECT STATE CHANGES → trigger sounds
@@ -545,7 +553,7 @@ class GameScene extends Phaser.Scene {
       this.tutorialTxt?.setText('Step 5/7 — Defend\n\nMove P1 DEF to B2.');
       this.tutorialHintTxt?.setText('After it lands, we will highlight the protected zone.');
       if (isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
-        const tier = (G.tier_p1 ?? 1);
+        const tier = (G.tier_p1 ?? 0);
         setZoneHighlight(defZoneCells(d.col, d.row, tier));
         this._tut.step = 5;
       }
@@ -555,7 +563,7 @@ class GameScene extends Phaser.Scene {
     // STEP 5: End P1 turn so the enemy can attack into the protected zone.
     if (this._tut.step === 5) {
       const d = TUTORIAL_TARGETS.p1DefSpot;
-      const tier = (G.tier_p1 ?? 1);
+      const tier = (G.tier_p1 ?? 0);
       setZoneHighlight(defZoneCells(d.col, d.row, tier));
       this.tutorialTxt?.setText('Step 6/7 — Set up the demo\n\nEnd P1 turn. Then, as P2, aim an ATK ray into the highlighted zone.');
       this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nThen end P2 turn to resolve the attack.');
@@ -566,7 +574,7 @@ class GameScene extends Phaser.Scene {
     // STEP 6: Wait for a P2-resolved hit that only DAMAGES (not destroys) a protected cell.
     if (this._tut.step === 6) {
       const d = TUTORIAL_TARGETS.p1DefSpot;
-      const tier = (G.tier_p1 ?? 1);
+      const tier = (G.tier_p1 ?? 0);
       const zone = defZoneCells(d.col, d.row, tier);
       setZoneHighlight(zone);
 
@@ -634,11 +642,14 @@ class GameScene extends Phaser.Scene {
   _drawStaticBoard(terrain) {
     const g = this.boardGfx;
     g.clear();
+    if (this._boardBadges) {
+      this._boardBadges.forEach((badge) => badge.destroy());
+      this._boardBadges = [];
+    }
 
     // Build resource lookup sets (empty when terrain not yet received)
     const resourceKey = (c, r) => `${c},${r}`;
-    const p1Resources = new Set((terrain?.p1_resources ?? terrain?.p1_targets ?? []).map(t => resourceKey(t.col, t.row)));
-    const p2Resources = new Set((terrain?.p2_resources ?? terrain?.p2_targets ?? []).map(t => resourceKey(t.col, t.row)));
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
 
     // ── Soft vignette behind whole board ──────────────────────────
     g.fillStyle(0x0c0804, 1);
@@ -651,8 +662,9 @@ class GameScene extends Phaser.Scene {
         const w = CELL - 1, h = CELL - 1;
         const onFence  = (c + r === 11);
         const p1side   = isP1(c, r);
-        const key        = resourceKey(c, r);
-        const isResource = p1side ? p1Resources.has(key) : p2Resources.has(key);
+        const key = resourceKey(c, r);
+        const resource = p1side ? p1ResourceMap[key] : p2ResourceMap[key];
+        const isResource = !!resource;
 
         // Base fill: resource cells get vivid colour; everything else muted
         let baseFill;
@@ -676,6 +688,18 @@ class GameScene extends Phaser.Scene {
           g.lineStyle(1, 0x000000, 0.12);
         }
         g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
+
+        if (resource?.visible && resource?.value === 5) {
+          g.lineStyle(3, 0xffe070, 0.95);
+          g.strokeRoundedRect(x + 3, y + 3, w - 5, h - 5, 6);
+          g.fillStyle(0x120904, 0.55);
+          g.fillRoundedRect(x + 14, y + 12, 22, 16, 5);
+          const badge = this.add.text(x + 25, y + 20, '5', {
+            fontSize: '12px', fontFamily: 'Georgia', color: '#ffe070', fontStyle: 'bold'
+          }).setOrigin(0.5, 0.5).setDepth(1);
+          if (!this._boardBadges) this._boardBadges = [];
+          this._boardBadges.push(badge);
+        }
       }
     }
 
@@ -783,13 +807,13 @@ class GameScene extends Phaser.Scene {
 
     // Dynamic texts (updated each frame)
     this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
-    this.scoreText  = T(8, H - 174, 'Paddocks razed: 0/33  Feeding grounds razed: 0/33', '#ffb060', '10px');
+    this.scoreText  = T(8, H - 174, 'Paddock score: 0/40  Feeding ground score: 0/40', '#ffb060', '10px');
     this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
     this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
 
     // Tier display
-    this.p1TierTxt = T(8,  244, 'P1 Tier: 1', '#f0c060');
-    this.p2TierTxt = T(8,  258, 'P2 Tier: 1', '#90e050');
+    this.p1TierTxt = T(8,  244, 'P1 Tier: 0', '#f0c060');
+    this.p2TierTxt = T(8,  258, 'P2 Tier: 0', '#90e050');
 
     // Tier +/− buttons  (manual override for demo)
     const mkBtn = (label, x, y, cb, col) => {
@@ -805,8 +829,8 @@ class GameScene extends Phaser.Scene {
 
     // Tier state is now authoritative on the server — local cache only used
     // for rendering the DEF zone radius until the first state arrives.
-    this._p1Tier = 1;
-    this._p2Tier = 1;
+    this._p1Tier = 0;
+    this._p2Tier = 0;
     mkBtn('[P1 +Tier]', 8,  272, () => this._changeTier(1,  1), '#f0c060');
     mkBtn('[P1 −Tier]', 90, 272, () => this._changeTier(1, -1), '#c8a040');
     mkBtn('[P2 +Tier]', 8,  288, () => this._changeTier(2,  1), '#90e050');
@@ -872,6 +896,12 @@ class GameScene extends Phaser.Scene {
       this.setupSelection.pendingBySide = { p1: null, p2: null };
       this._sendAction({ action: 'reset_setup' });
     });
+    this.nukeBtn = mkActionBtn('Arm Nuke', 8, 568, 194, '#5a1f12', '#ffd070', () => {
+      const activeSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+      if (!activeSide) return;
+      this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
+    });
+    this._nukeArmingSide = null;
   }
 
   _buildSetupUi() {
@@ -1159,6 +1189,7 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
@@ -1168,6 +1199,7 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: true, enabled: true });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
@@ -1190,24 +1222,50 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
       this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
-    this.setupControlTxt.setText('Setup complete. Browser controls are hidden during battle.').setColor('#8fb890');
+    const activeTurnSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+    const activeTier = activeTurnSide === 'p1' ? (gameState?.game?.tier_p1 ?? 0) : activeTurnSide === 'p2' ? (gameState?.game?.tier_p2 ?? 0) : 0;
+    const nukeUsed = activeTurnSide === 'p1' ? !!gameState?.game?.nuke_used_p1 : activeTurnSide === 'p2' ? !!gameState?.game?.nuke_used_p2 : true;
+    const isArming = !!activeTurnSide && this._nukeArmingSide === activeTurnSide;
+    const canArmNuke = !!activeTurnSide && activeTier >= 4 && !nukeUsed;
+    this.setupControlTxt
+      .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : 'Setup complete. Browser controls are hidden during battle.')
+      .setColor(isArming ? '#ffd878' : '#8fb890');
     this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+    this._setActionButtonState(this.nukeBtn, {
+      visible: !!activeTurnSide,
+      enabled: canArmNuke || isArming,
+      label: isArming ? 'Cancel Nuke' : (nukeUsed ? 'Nuke Spent' : 'Arm Nuke'),
+    });
   }
 
   _handleBoardPointerDown(pointer) {
-    if (!gameState || gameState.phase !== 'hq_placement') return;
-    const activeSide = gameState.setup?.active_setup_side;
-    if (!activeSide) return;
-
     const col = Math.floor((pointer.x - BX) / CELL);
     const row = Math.floor((pointer.y - BY) / CELL);
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+    if (gameState?.phase === 'game' && this._nukeArmingSide) {
+      const enemySide = this._nukeArmingSide === 'p1' ? 'p2' : 'p1';
+      if (sideOwnsCell(enemySide, col, row)) {
+        this._sendAction({
+          action: 'trigger_nuke',
+          side: this._nukeArmingSide,
+          position: { x: col, y: row },
+        });
+      }
+      this._nukeArmingSide = null;
+      return;
+    }
+
+    if (!gameState || gameState.phase !== 'hq_placement') return;
+    const activeSide = gameState.setup?.active_setup_side;
+    if (!activeSide) return;
 
     this._sendAction({
       action: 'set_hq_candidate',
@@ -1400,21 +1458,27 @@ class GameScene extends Phaser.Scene {
     }
 
     // Sync tiers from server (authoritative)
+    const tierThresholds = Array.isArray(G.tier_thresholds) ? G.tier_thresholds : [6, 14, 22, 32];
+    const nextThreshold = (tier) => tier >= 4 ? null : tierThresholds[tier] ?? null;
     if (G.tier_p1 != null) {
       this._p1Tier = G.tier_p1;
-      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : ''}`);
+      const nextP1 = nextThreshold(G.tier_p1);
+      const p1Progress = G.progress_p1 ?? 0;
+      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : nextP1 != null ? ` (${p1Progress}/${nextP1})` : ''}`);
     }
     if (G.tier_p2 != null) {
       this._p2Tier = G.tier_p2;
-      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : ''}`);
+      const nextP2 = nextThreshold(G.tier_p2);
+      const p2Progress = G.progress_p2 ?? 0;
+      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : nextP2 != null ? ` (${p2Progress}/${nextP2})` : ''}`);
     }
 
     // ── Turn / corner / score texts ──────────────────────────────
-    const thr = G.attrition_threshold ?? 33;
-    const s1 = G.score_p2_attrition ?? 0;  // P1 paddocks razed by The Mob
-    const s2 = G.score_p1_attrition ?? 0;  // P2 feeding grounds razed by Old Mick
+    const thr = G.attrition_threshold ?? 40;
+    const s1 = G.score_p2_attrition ?? 0;  // P1 paddock score earned by The Mob
+    const s2 = G.score_p1_attrition ?? 0;  // P2 feeding-ground score earned by Old Mick
     if (inBattle) {
-      this.scoreText?.setText(`Paddocks razed: ${s1}/${thr}   Feeding grounds razed: ${s2}/${thr}`).setColor('#ffb060');
+      this.scoreText?.setText(`Paddock score: ${s1}/${thr}   Feeding ground score: ${s2}/${thr}`).setColor('#ffb060');
     } else {
       this.scoreText?.setText('Setup: backend-guided hidden HQ flow').setColor('#d8c890');
     }
@@ -1426,6 +1490,7 @@ class GameScene extends Phaser.Scene {
         else if (ev.type === 'cell_damaged') SFX.fire();
         else if (ev.type === 'hq_destroyed') SFX.nuke();
         else if (ev.type === 'soft_destroyed') SFX.block();
+        else if (ev.type === 'nuke_triggered') SFX.nuke();
       }
     }
 
@@ -1436,9 +1501,9 @@ class GameScene extends Phaser.Scene {
     if (!inBattle) {
       this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
     } else if (turn === 1) {
-      this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
+      this.turnText.setText(`Turn: 🌾 Old Mick  |  Tier ${G.tier_p1 ?? 0}`).setColor('#f8d060');
     } else if (turn === 2) {
-      this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
+      this.turnText.setText(`Turn: 🐦 The Mob  |  Tier ${G.tier_p2 ?? 0}`).setColor('#90ee40');
     } else {
       this.turnText.setText('Turn: — waiting —').setColor('#807060');
     }
@@ -1448,6 +1513,7 @@ class GameScene extends Phaser.Scene {
 
     // ── Build terrain lookup maps ─────────────────────────────────
     const hardMap = {}, softMap = {};
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
     const softGoneKeys = new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`));
     if (terrain) {
       [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
@@ -1469,7 +1535,7 @@ class GameScene extends Phaser.Scene {
     this.dynGfx.clear();
 
     // ── 0. Scorched earth + damaged cells + revealed HQ ───────────
-    this._drawDamageLayer(G);
+    this._drawDamageLayer(G, terrain);
 
     // ── 1. Terrain (skip destroyed soft pieces) ───────────────────
     this._drawTerrain(terrain, softGoneKeys);
@@ -1484,11 +1550,11 @@ class GameScene extends Phaser.Scene {
     if (inBattle) {
       ['atk_a', 'atk_b'].forEach(role => {
         if (p1?.[role]?.col != null && p1[role].direction) {
-          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, 'p1', destroyedMap);
+          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, 'p1', destroyedMap, p2ResourceMap);
           this._drawRay(p1[role].col, p1[role].row, ray);
         }
         if (p2?.[role]?.col != null && p2[role].direction) {
-          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, 'p2', destroyedMap);
+          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, 'p2', destroyedMap, p1ResourceMap);
           this._drawRay(p2[role].col, p2[role].row, ray);
         }
       });
@@ -1535,6 +1601,8 @@ class GameScene extends Phaser.Scene {
 
     if (inBattle) {
       this._hideSetupUi();
+      const activeSide = turn === 1 ? 'p1' : turn === 2 ? 'p2' : null;
+      if (this._nukeArmingSide && activeSide !== this._nukeArmingSide) this._nukeArmingSide = null;
     } else {
       this._drawPlacementGuide(phase, setup);
       this._drawPendingHqCandidate(phase, setup);
@@ -1609,14 +1677,16 @@ class GameScene extends Phaser.Scene {
   }
 
   /** Cracked / damaged cell look (took damage but not destroyed yet) */
-  _drawDamageLayer(G) {
+  _drawDamageLayer(G, terrain) {
     const g = this.dynGfx;
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
     // Damaged (partial HP) — single crack overlay
     const dmg = G.damage || {};
     for (const key in dmg) {
       const [c, r] = key.split(',').map(Number);
       if ((G.destroyed || []).some(d => d[0] === c && d[1] === r)) continue;   // skip fully destroyed
       const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+      const resource = p1ResourceMap[key] || p2ResourceMap[key];
       // Dark smoky overlay
       g.fillStyle(0x000000, 0.28);
       g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
@@ -1624,6 +1694,20 @@ class GameScene extends Phaser.Scene {
       g.lineStyle(1.5, 0x201008, 0.8);
       g.lineBetween(x + 6, y + 10, x + CELL - 12, y + CELL - 8);
       g.lineBetween(x + CELL - 14, y + 12, x + CELL - 6, y + CELL - 14);
+
+      if (resource?.visible && resource?.value === 5) {
+        const maxHp = resource.max_hp ?? 3;
+        const hits = dmg[key] ?? 0;
+        const remain = Math.max(0, maxHp - hits);
+        for (let i = 0; i < maxHp; i++) {
+          const cx = x + 14 + i * 12;
+          const cy = y + CELL - 12;
+          g.fillStyle(i < remain ? 0xffe070 : 0x4a3010, 0.95);
+          g.fillCircle(cx, cy, 4);
+          g.lineStyle(1, 0x120904, 0.8);
+          g.strokeCircle(cx, cy, 4);
+        }
+      }
     }
 
     // Scorched earth (destroyed)

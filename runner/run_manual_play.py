@@ -190,6 +190,15 @@ def _parse_terminal_command(line: str) -> dict | None:
             raise ValueError("tier player must be 1 or 2")
         return {"type": "tier", "player": player, "delta": delta}
 
+    if name == "nuke":
+        if len(parts) != 3:
+            raise ValueError("usage: nuke p1 H9")
+        side = parts[1].lower()
+        if side not in PLAYER_SET:
+            raise ValueError("side must be p1 or p2")
+        col, row = _parse_cell(parts[2])
+        return {"action": "trigger_nuke", "side": side, "position": {"x": col, "y": row}}
+
     if name == "clear":
         if len(parts) != 3:
             raise ValueError("usage: clear p1 atk_a")
@@ -257,6 +266,7 @@ class Session:
         self.accepted_p2 = new_side_state(stale=False)
         self.turn = 1
         self.model: game_model.GameModel | None = None
+        self.pending_events: list[dict] = []
         self.setup.reset(board_scan_ready=True)
         print(f"[MAP] New game (seed={self.seed})")
 
@@ -300,10 +310,10 @@ class Session:
                 return events, errors
 
             if player == 1:
-                self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
+                self.model.tier_p1 = max(0, min(4, self.model.tier_p1 + delta))
                 print(f"[{source}] P1 tier -> {self.model.tier_p1}")
             elif player == 2:
-                self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
+                self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
                 print(f"[{source}] P2 tier -> {self.model.tier_p2}")
             else:
                 print(f"[{source}] Ignored invalid tier player")
@@ -349,6 +359,21 @@ class Session:
             self.model = None
             self.setup.reset_hq_setup()
             print(f"[{source}] Setup reset")
+            return events, errors
+
+        if action_name == "trigger_nuke":
+            if self.model is None or self.turn not in (1, 2):
+                print(f"[{source}] Ignored nuke command until the game starts")
+                return events, errors
+            side = command.get("side")
+            position = command.get("position") if isinstance(command.get("position"), dict) else None
+            active_side = "p1" if self.turn == 1 else "p2"
+            if side != active_side or not isinstance(position, dict):
+                print(f"[{source}] Nuke must be triggered by the active side")
+                return events, errors
+            nuke_events = self.model.trigger_nuke(active_side, (position.get("x"), position.get("y")))
+            events.extend(nuke_events)
+            print(f"[{source}] {active_side} nuke -> {_format_cell(position.get('x'), position.get('y'))}")
             return events, errors
 
         if command_type == "set":

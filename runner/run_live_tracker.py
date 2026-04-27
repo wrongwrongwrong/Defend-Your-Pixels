@@ -157,6 +157,7 @@ class Session:
         self.accepted_p2 = new_side_state()
         self.turn: int | None = None
         self.model: game_model.GameModel | None = None
+        self.pending_events: list[dict] = []
         self.setup.reset(board_scan_ready=board_scan_ready)
         print(f"[MAP] New game (seed={self.seed})")
 
@@ -179,9 +180,9 @@ class Session:
                 return errors
 
             if player == 1:
-                self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
+                self.model.tier_p1 = max(0, min(4, self.model.tier_p1 + delta))
             elif player == 2:
-                self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
+                self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
             return errors
 
         if action_name == "choose_side":
@@ -214,6 +215,21 @@ class Session:
             self.setup.reset_hq_setup()
             return errors
 
+        if action_name == "trigger_nuke":
+            if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
+                return errors
+            side = command.get("side")
+            position = command.get("position") if isinstance(command.get("position"), dict) else None
+            active_side = "p1" if self.turn == 1 else "p2"
+            if side != active_side or not isinstance(position, dict):
+                return errors
+            col = position.get("x")
+            row = position.get("y")
+            if not isinstance(col, int) or not isinstance(row, int):
+                return errors
+            self.pending_events.extend(self.model.trigger_nuke(active_side, (col, row)))
+            return errors
+
         return errors
 
     def sync_scan_state(self, board_scan_ready: bool) -> None:
@@ -236,9 +252,11 @@ class Session:
         return errors
 
     def game_events(self) -> list[dict]:
+        events = self.pending_events
+        self.pending_events = []
         if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
-            return []
-        return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+            return events
+        return events + self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
 
     def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
         return {
