@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Old Mick — How to Play</title>
+<style>
+  /* ────────────────────────────────────────────────────────────
+     Theme palette  (matches the in-game board)
+     ──────────────────────────────────────────────────────────── */
+  :root {
+    --bg-deep    : #1a1008;
+    --bg-panel   : #2a1a0a;
+    --border-warm: #c8a050;
+    --border-dim : #6a4a20;
+    --text-body  : #ead8b0;
+    --text-head  : #f8d870;
+    --text-soft  : #c8a050;
+    --text-muted : #a08660;
+    --accent-orange: #e0741c;
+    --accent-green : #2d8a30;
+    --shadow     : 0 8px 32px rgba(0,0,0,0.7);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background:
+      radial-gradient(ellipse at top, #2a1a0a 0%, #1a1008 60%, #0c0804 100%);
+    color: var(--text-body);
+    font-family: Georgia, 'Times New Roman', serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 20px;
+    line-height: 1.55;
+  }
+
+  /* ───────── Card ───────── */
+  .card {
+    width: 100%;
+    max-width: 860px;
+    background: var(--bg-panel);
+    border: 2px solid var(--border-warm);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border: 1px solid var(--border-dim);
+    border-radius: 11px;
+    pointer-events: none;
+  }
+
+  /* ───────── Header ───────── */
+  header {
+    text-align: center;
+    padding: 28px 30px 18px;
+    border-bottom: 1px solid var(--border-dim);
+  }
+  header h1 {
+    font-size: 34px;
+    color: var(--text-head);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+    letter-spacing: 1px;
+  }
+  header .subtitle {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 16px;
+    margin-top: 6px;
+  }
+
+  /* ───────── Page nav (dots + arrows) ───────── */
+  .page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 14px 30px;
+    border-bottom: 1px solid var(--border-dim);
+    background: rgba(0,0,0,0.2);
+  }
+  .page-nav button {
+    background: transparent;
+    border: 1px solid var(--border-dim);
+    color: var(--text-soft);
+    font-family: inherit;
+    font-size: 16px;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .page-nav button:hover:not(:disabled) {
+    background: var(--border-warm);
+    color: var(--bg-deep);
+  }
+  .page-nav button:disabled { opacity: 0.3; cursor: default; }
+  .dots { display: flex; gap: 10px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--border-dim);
+    transition: all 0.25s;
+    cursor: pointer;
+  }
+  .dot.active {
+    background: var(--text-head);
+    box-shadow: 0 0 10px rgba(248,216,112,0.5);
+    transform: scale(1.2);
+  }
+
+  /* ───────── Page body ───────── */
+  .pages { padding: 36px 44px; min-height: 460px; }
+  .page { display: none; animation: fadeIn 0.3s; }
+  .page.active { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .page h2 {
+    color: var(--text-head);
+    font-size: 26px;
+    margin-bottom: 18px;
+    letter-spacing: 0.5px;
+  }
+  .page p { font-size: 17px; margin-bottom: 14px; }
+
+  /* ───────── Win conditions block (page 1) ───────── */
+  .win-list {
+    background: rgba(0,0,0,0.25);
+    border-left: 3px solid var(--accent-orange);
+    padding: 14px 18px;
+    margin: 14px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .win-list .win-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+  }
+  .win-list .win-item { font-size: 17px; }
+  .win-list .win-item .icon { font-size: 26px; }
+
+  /* ───────── Step list (page 2) ───────── */
+  .steps { counter-reset: step; padding-left: 0; list-style: none; }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 16px 0 16px 56px;
+    border-bottom: 1px dashed var(--border-dim);
+    font-size: 17px;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 14px;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--text-head);
+    color: var(--bg-deep);
+    font-weight: bold;
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Georgia, serif;
+  }
+  .steps li b { color: var(--text-head); }
+  .steps li .sub {
+    display: block;
+    font-size: 14.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  /* ───────── Legend grid (page 3) ───────── */
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 22px;
+    margin-top: 8px;
+  }
+  .legend .item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    background: rgba(0,0,0,0.18);
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .legend .swatch {
+    width: 36px; height: 36px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .sw-orange { background: #c84818; }
+  .sw-green  { background: #0f4a10; }
+  .sw-pale-y { background: #e8c890; }
+  .sw-pale-g { background: #b8d090; }
+  .sw-soft   { background: #d4a860; border: 2px dashed #f0d070; }
+  .sw-hard   { background: #6a3a10; }
+  .sw-dmg    { background: #5a3010; color: #ff6030; }
+  .sw-dead   { background: #000; color: #c0c0c0; font-weight: bold; }
+  .sw-hq     { background: #2a1a0a; box-shadow: inset 0 0 0 2px gold; color: gold; }
+
+  /* ───────── Tips list (page 4) ───────── */
+  .tips { list-style: none; }
+  .tips li {
+    position: relative;
+    padding: 14px 0 14px 36px;
+    font-size: 17px;
+    border-bottom: 1px dashed var(--border-dim);
+  }
+  .tips li:last-child { border: none; }
+  .tips li::before {
+    content: '💡';
+    position: absolute;
+    left: 0; top: 12px;
+    font-size: 20px;
+  }
+
+  /* ───────── Footer / marker hint ───────── */
+  footer {
+    text-align: center;
+    padding: 16px 30px 20px;
+    border-top: 1px solid var(--border-dim);
+    background: rgba(0,0,0,0.25);
+  }
+  footer .hint {
+    color: var(--text-soft);
+    font-size: 16px;
+    font-style: italic;
+    letter-spacing: 0.5px;
+  }
+  footer .hint b {
+    color: var(--text-head);
+    font-style: normal;
+    background: rgba(248,216,112,0.12);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 0 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- ─── Header ─────────────────────────────────────────── -->
+  <header>
+    <h1>⭐ &nbsp; HOW TO PLAY &nbsp; ⭐</h1>
+    <div class="subtitle">Old Mick Against the Mob — 1932 Great Emu War</div>
+  </header>
+
+  <!-- ─── Page nav ───────────────────────────────────────── -->
+  <nav class="page-nav">
+    <button id="prev" title="Previous page">‹</button>
+    <div class="dots">
+      <div class="dot active" data-page="1"></div>
+      <div class="dot" data-page="2"></div>
+      <div class="dot" data-page="3"></div>
+      <div class="dot" data-page="4"></div>
+    </div>
+    <button id="next" title="Next page">›</button>
+  </nav>
+
+  <!-- ─── Pages ──────────────────────────────────────────── -->
+  <div class="pages">
+
+    <!-- Page 1 — Goal -->
+    <section class="page active" data-page="1">
+      <h2>🎯 &nbsp; Your Mission</h2>
+      <p>You are <b>Old Mick</b>, an Australian farmer defending your homestead against a mob of rampaging emus.</p>
+      <p>Win the war by either of the following:</p>
+      <div class="win-list">
+        <div class="win-item">
+          <span class="icon">💥</span>
+          <span><b>Destroy the enemy HQ</b> — hidden inside one of their target cells. Instant win.</span>
+        </div>
+        <div class="win-item">
+          <span class="icon">🔥</span>
+          <span><b>Raze 30 enemy target cells</b> via attrition.</span>
+        </div>
+      </div>
+      <p style="margin-top:14px; color:var(--text-muted); font-size:13.5px;">
+        Each side has <b style="color:var(--text-soft)">20 attackable target cells</b> (highlighted orange / green).
+        Cells outside these zones are safe — rays pass straight through them.
+      </p>
+    </section>
+
+    <!-- Page 2 — Turn flow -->
+    <section class="page" data-page="2">
+      <h2>🔄 &nbsp; How a Turn Works</h2>
+      <ol class="steps">
+        <li>
+          <b>Place your markers</b> in your territory.
+          <span class="sub">2× ATK (point in firing direction, 8 compass dirs) &nbsp;·&nbsp; 1× DEF (creates a 3×3 protected zone, cells inside need 2 hits)</span>
+        </li>
+        <li>
+          <b>Flip the TURN marker</b> to your opponent's side.
+          <span class="sub">This signals "I'm done — resolve my turn."</span>
+        </li>
+        <li>
+          <b>Watch the resolution.</b>
+          <span class="sub">Your two attacks fire automatically. Damage and destruction are shown on screen.</span>
+        </li>
+        <li>
+          <b>Opponent does the same.</b>
+          <span class="sub">Repeat until someone wins.</span>
+        </li>
+      </ol>
+    </section>
+
+    <!-- Page 3 — Symbols -->
+    <section class="page" data-page="3">
+      <h2>🎨 &nbsp; What You See on the Board</h2>
+      <div class="legend">
+        <div class="item"><div class="swatch sw-orange"></div><span><b>Dark orange</b> — your target cells</span></div>
+        <div class="item"><div class="swatch sw-green"></div><span><b>Dark green</b> — enemy target cells</span></div>
+        <div class="item"><div class="swatch sw-pale-y"></div><span><b>Pale yellow</b> — your safe zone</span></div>
+        <div class="item"><div class="swatch sw-pale-g"></div><span><b>Pale green</b> — enemy safe zone</span></div>
+        <div class="item"><div class="swatch sw-hard">🪵</div><span><b>HARD</b> terrain (blocks rays)</span></div>
+        <div class="item"><div class="swatch sw-soft"></div><span><b>SOFT</b> terrain (2 hits to clear)</span></div>
+        <div class="item"><div class="swatch sw-dmg">⚒</div><span><b>Damaged</b> cell (still alive)</span></div>
+        <div class="item"><div class="swatch sw-dead">✕</div><span><b>Destroyed</b> (scorched earth)</span></div>
+        <div class="item" style="grid-column: 1 / -1;"><div class="swatch sw-hq">★</div><span><b>HQ revealed</b> — you've found them!</span></div>
+      </div>
+    </section>
+
+    <!-- Page 4 — Strategy -->
+    <section class="page" data-page="4">
+      <h2>💡 &nbsp; Strategy Tips</h2>
+      <ul class="tips">
+        <li><b>Place DEF wisely</b> — cells in its 3×3 zone need 2 hits to destroy. Cover where you suspect the enemy will aim.</li>
+        <li><b>Don't react to attacks near your HQ</b> — your opponent can read your face. Stay calm.</li>
+        <li><b>Track the enemy's ATK direction</b> — their pointing tells you which of your cells they think are valuable.</li>
+        <li><b>The last unscarred cell on the enemy side</b> is probably their HQ. Save your firepower for the kill shot.</li>
+        <li><b>Tier up</b> when you can — Tier 2 enlarges your DEF zone to 5×5.</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <!-- ─── Footer / marker hint ───────────────────────────── -->
+  <footer>
+    <div class="hint">
+      Place the <b>?</b> marker on the board to summon this guide  ·
+      <b>↻</b> rotate to flip pages  ·  lift to close
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  const pages = document.querySelectorAll('.page');
+  const dots  = document.querySelectorAll('.dot');
+  const prev  = document.getElementById('prev');
+  const next  = document.getElementById('next');
+  let cur = 1;
+
+  function show(p) {
+    cur = Math.min(Math.max(p, 1), pages.length);
+    pages.forEach(s => s.classList.toggle('active', +s.dataset.page === cur));
+    dots .forEach(d => d.classList.toggle('active', +d.dataset.page === cur));
+    prev.disabled = cur === 1;
+    next.disabled = cur === pages.length;
+  }
+  prev.addEventListener('click', () => show(cur - 1));
+  next.addEventListener('click', () => show(cur + 1));
+  dots.forEach(d => d.addEventListener('click', () => show(+d.dataset.page)));
+
+  // Keyboard arrows for quick preview
+  window.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft')  show(cur - 1);
+    if (e.key === 'ArrowRight') show(cur + 1);
+    if (['1','2','3','4'].includes(e.key)) show(+e.key);
+  });
+
+  show(1);
+</script>
+
+</body>
+</html>

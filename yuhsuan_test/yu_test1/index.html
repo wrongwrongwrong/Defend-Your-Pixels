@@ -280,6 +280,7 @@ class GameScene extends Phaser.Scene {
     this._buildPanel();
     this._buildLabels();
     this._buildLockButton();
+    // this._buildTutorial();    // disabled — moved to standalone tutorial.html for redesign
     this._connectWS();
 
     // Refresh UI at 20 fps
@@ -506,6 +507,146 @@ class GameScene extends Phaser.Scene {
     SFX.lock();
   }
 
+  // ── Tutorial overlay (summoned by Help marker, ID 17) ──────────
+  _buildTutorial() {
+    // Constrained to the right info panel — never covers the board
+    const px = PANEL_X;
+    const pw = PW;
+    const ph = H - 16;
+    const py = 8;
+
+    this.tutContainer = this.add.container(0, 0).setDepth(50).setAlpha(0);
+
+    // Backdrop with double border (book-like)
+    const bg = this.add.graphics();
+    bg.fillStyle(0x14100a, 0.97);
+    bg.fillRoundedRect(px, py, pw, ph, 12);
+    bg.lineStyle(2, 0xc8a050, 0.95);
+    bg.strokeRoundedRect(px, py, pw, ph, 12);
+    bg.lineStyle(1, 0x6a4a20, 0.7);
+    bg.strokeRoundedRect(px + 4, py + 4, pw - 8, ph - 8, 8);
+    this.tutContainer.add(bg);
+
+    // Header
+    const header = this.add.text(px + pw / 2, py + 12,
+      '📖  HOW TO PLAY', {
+        fontSize: '13px', fontFamily: 'Georgia', color: '#f8d870',
+        fontStyle: 'bold', stroke: '#3a2010', strokeThickness: 2,
+      }).setOrigin(0.5, 0);
+    this.tutContainer.add(header);
+
+    // Page indicator (filled in by _updateTutorial)
+    this.tutPageDot = this.add.text(px + pw / 2, py + 32,
+      '○ ○ ○ ○', {
+        fontSize: '11px', fontFamily: 'Georgia', color: '#c8a050',
+      }).setOrigin(0.5, 0);
+    this.tutContainer.add(this.tutPageDot);
+
+    // Instruction footer (two-line so it fits a narrow panel)
+    const footer = this.add.text(px + pw / 2, py + ph - 30,
+      '↻  rotate marker = flip pages\nlift marker = close',
+      {
+        fontSize: '9px', fontFamily: 'Georgia', color: '#88704a',
+        fontStyle: 'italic', align: 'center',
+      }).setOrigin(0.5, 0);
+    this.tutContainer.add(footer);
+
+    // Pages — each is a Text block, only one visible at a time
+    const bodyX = px + 10;
+    const bodyY = py + 52;
+    const bodyW = pw - 20;
+    const bodyStyle = {
+      fontSize: '10px', fontFamily: 'Georgia', color: '#ead8b0',
+      wordWrap: { width: bodyW }, lineSpacing: 3,
+    };
+
+    const PAGES = [
+      // Page 1 — Goal
+      `🎯  YOUR MISSION
+
+You are Old Mick defending your homestead against the emu mob.
+
+WIN BY EITHER:
+ 💥  Destroying the enemy HQ — hidden inside one of their target cells.
+ 🔥  Razing 30 enemy target cells (attrition).
+
+Each side has 20 attackable target cells (orange / green). Other cells are SAFE — rays pass straight through them.`,
+
+      // Page 2 — Turn flow
+      `🔄  HOW A TURN WORKS
+
+1.  Place YOUR markers in your territory:
+     • 2× ATK — rotate to point in firing direction (8 compass dirs)
+     • 1× DEF — creates a 3×3 protected zone (cells in zone need 2 hits)
+
+2.  Flip the TURN marker to your opponent's side.
+
+3.  The screen automatically resolves your two attacks — watch which cells get hit.
+
+4.  Opponent does the same on their turn.`,
+
+      // Page 3 — Symbols
+      `🎨  WHAT YOU SEE
+
+🟧  Dark orange  =  YOUR target cells (enemy can hit)
+🟩  Dark green   =  ENEMY target cells (you can hit)
+⬜  Pale         =  Safe zone (rays pass through)
+
+🪵  Wooden post  =  HARD terrain (permanently blocks rays)
+🌾  Yellow dashed = SOFT terrain (destroyed after 2 hits)
+
+🩹  Cracked cell =  Damaged but alive
+⚫✕  Black cell  =  Scorched earth (destroyed)
+✨  Gold ring    =  HQ revealed!`,
+
+      // Page 4 — Tips
+      `💡  STRATEGY
+
+• Place DEF near where you suspect the HQ — cells in the 3×3 zone need 2 hits to destroy.
+
+• HQ is randomly placed in one of your 20 target cells. Don't reveal which one by reacting!
+
+• Track your opponent's ATK markers between turns — their direction tells you where they think YOUR weak spots are.
+
+• If only a few target cells remain unscarred on the enemy side... the HQ is probably one of them.`,
+    ];
+
+    this.tutPages = PAGES.map(text => {
+      const t = this.add.text(bodyX, bodyY, text, bodyStyle).setVisible(false);
+      this.tutContainer.add(t);
+      return t;
+    });
+
+    this._tutCurrentPage = null;
+    this._tutVisible = false;
+  }
+
+  /** Called from _applyState whenever help state arrives. */
+  _updateTutorial(help) {
+    if (!this.tutContainer) return;
+    const active = !!(help && help.active);
+    const page   = (help && help.page) ? Math.min(Math.max(help.page, 1), 4) : 1;
+
+    // Show / hide with fade
+    if (active !== this._tutVisible) {
+      this._tutVisible = active;
+      this.tweens.add({
+        targets: this.tutContainer,
+        alpha: active ? 1 : 0,
+        duration: 250, ease: 'Sine.easeInOut',
+      });
+    }
+
+    // Switch page
+    if (active && page !== this._tutCurrentPage) {
+      this._tutCurrentPage = page;
+      this.tutPages.forEach((t, i) => t.setVisible(i === page - 1));
+      // Update page dots: ● for current, ○ otherwise
+      const dots = [1, 2, 3, 4].map(p => p === page ? '●' : '○').join(' ');
+      this.tutPageDot.setText(dots);
+    }
+  }
+
   // ── Token labels (repositioned each frame) ──────────────────────
   _buildLabels() {
     const style = { fontSize: '10px', fontFamily: 'monospace', color: '#ffffff',
@@ -641,8 +782,11 @@ class GameScene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════════
   _applyState() {
     if (!gameState) return;
-    const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
+    const { phase, turn, corners_found, p1, p2, terrain, map_seed, game, help } = gameState;
     const G = game || {};
+
+    // Tutorial overlay disabled in main view — see standalone tutorial.html.
+    // this._updateTutorial(help);
 
     // Redraw board when a new random map arrives (target cells shift).
     if (terrain && map_seed !== this._drawnSeed) {

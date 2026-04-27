@@ -24,8 +24,16 @@ CACHE_TTL_SEC = 1.0
 
 CORNER_IDS     = {0: "TL", 1: "TR", 2: "BL", 3: "BR"}
 TURN_MARKER_ID = 13
+HELP_MARKER_ID = 17   # tutorial summon marker — present = show, rotate = page flip
 P1_TOKENS      = {10: "atk_a", 11: "atk_b", 12: "def"}
 P2_TOKENS      = {14: "atk_a", 15: "atk_b", 16: "def"}
+
+
+def help_page_from_angle(angle: float | None) -> int | None:
+    """0–90 → 1, 90–180 → 2, 180–270 → 3, 270–360 → 4. None if no help marker."""
+    if angle is None:
+        return None
+    return int((angle % 360) // 90) + 1
 
 COMPASS_8 = [
     (  0, "E"),  ( 45, "SE"), ( 90, "S"),  (135, "SW"),
@@ -89,16 +97,16 @@ def to_grid_cell(H, point):
 # ─── Frame detection ──────────────────────────────────────────────────────────
 
 def detect_frame(frame, detector, aruco_dict, params, api_mode):
-    """Returns (corner_centers, p1_raw, p2_raw, turn_angle)."""
+    """Returns (corner_centers, p1_raw, p2_raw, turn_angle, help_angle)."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     if api_mode == "modern":
         corners, ids, _ = detector.detectMarkers(gray)
     else:
         corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=params)
 
-    cc, p1, p2, turn_angle = {}, {}, {}, None
+    cc, p1, p2, turn_angle, help_angle = {}, {}, {}, None, None
     if ids is None:
-        return cc, p1, p2, turn_angle
+        return cc, p1, p2, turn_angle, help_angle
 
     for i, mid in enumerate(ids.flatten()):
         mid = int(mid)
@@ -115,8 +123,10 @@ def detect_frame(frame, detector, aruco_dict, params, api_mode):
                                   "direction": snap_direction_8(angle)}
         elif mid == TURN_MARKER_ID:
             turn_angle = angle
+        elif mid == HELP_MARKER_ID:
+            help_angle = angle
 
-    return cc, p1, p2, turn_angle
+    return cc, p1, p2, turn_angle, help_angle
 
 
 # ─── Token cache (survives brief marker loss) ─────────────────────────────────

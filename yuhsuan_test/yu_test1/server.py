@@ -115,7 +115,7 @@ async def camera_loop():
             print("[ERROR] Failed to read frame — check camera.")
             break
 
-        cc, p1_live, p2_live, turn_angle = tracker.detect_frame(
+        cc, p1_live, p2_live, turn_angle, help_angle = tracker.detect_frame(
             frame, detector, aruco_dict, params, api_mode
         )
         H = tracker.compute_homography(cc)
@@ -123,6 +123,7 @@ async def camera_loop():
         p1 = token_cache.resolve_side("p1", p1_live, H)
         p2 = token_cache.resolve_side("p2", p2_live, H)
         turn = tracker.turn_from_angle(turn_angle)
+        help_page = tracker.help_page_from_angle(help_angle)
 
         # Turn transition → resolve attacks (authoritative game logic)
         events = session.model.on_turn_change(turn, p1, p2) if turn else []
@@ -138,6 +139,9 @@ async def camera_loop():
             "map_seed":      session.seed,
             "game":          session.model.snapshot(),
             "events":        events,
+            "help":          {"active": help_page is not None,
+                              "page":   help_page,
+                              "angle":  round(help_angle, 1) if help_angle is not None else None},
         }
         await broadcast(state)
 
