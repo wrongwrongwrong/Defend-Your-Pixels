@@ -64,7 +64,7 @@ def _extract_command(message: str) -> ActionPayload | None:
     if payload_type == "action":
         action = payload.get("data")
         return action if isinstance(action, dict) else None
-    if payload_type in {"new_map", "tier", "tutorial"}:
+    if payload_type in {"new_map", "tier"}:
         return payload if isinstance(payload, dict) else None
     return None
 
