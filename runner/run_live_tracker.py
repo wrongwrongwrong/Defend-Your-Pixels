@@ -47,6 +47,23 @@ COMPASS_8 = [
     (315, "NE"),
 ]
 
+def _tutorial_terrain() -> dict:
+    # No terrain; resources are all non-fence cells in each side triangle.
+    p1_resources = [{"col": c, "row": r} for r in range(12) for c in range(12) if c + r < 11]
+    mirror = lambda cell: {"col": 11 - cell["col"], "row": 11 - cell["row"]}
+    p2_resources = [mirror(cell) for cell in p1_resources]
+    return {
+        "p1_hard": [],
+        "p1_soft": [],
+        "p2_hard": [],
+        "p2_soft": [],
+        "p1_resources": p1_resources,
+        "p2_resources": p2_resources,
+        "p1_targets": p1_resources,
+        "p2_targets": p2_resources,
+        "seed": 0,
+    }
+
 
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
     return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_marker"))
@@ -149,22 +166,40 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
 class Session:
     def __init__(self):
         self.setup = SetupState()
+        self.tutorial_enabled = False
+        self._tutorial_hq_p1 = (0, 0)
+        self._tutorial_hq_p2 = (11, 11)
         self.reset(board_scan_ready=False)
 
     def reset(self, *, board_scan_ready: bool) -> None:
-        self.seed = int(time.time() * 1000) % (2**31)
-        self.terrain = terrain_gen.generate(seed=self.seed)
+        if self.tutorial_enabled:
+            # Deterministic tutorial map: no terrain, full-resource triangles.
+            self.seed = 0
+            self.terrain = _tutorial_terrain()
+        else:
+            self.seed = int(time.time() * 1000) % (2**31)
+            self.terrain = terrain_gen.generate(seed=self.seed)
         self.accepted_p1 = new_side_state()
         self.accepted_p2 = new_side_state()
         self.turn: int | None = None
         self.model: game_model.GameModel | None = None
         self.setup.reset(board_scan_ready=board_scan_ready)
+        if self.tutorial_enabled and board_scan_ready:
+            self._force_tutorial_game_start()
         print(f"[MAP] New game (seed={self.seed})")
 
     def apply_command(self, command: dict, *, board_scan_ready: bool) -> list[dict]:
         errors: list[dict] = []
         command_type = command.get("type")
         action_name = command.get("action")
+
+        if command_type == "tutorial":
+            enabled = bool(command.get("enabled", True))
+            self.tutorial_enabled = enabled
+            # Reset into tutorial/non-tutorial mode immediately so the UI updates.
+            self.model = None
+            self.reset(board_scan_ready=board_scan_ready)
+            return errors
 
         if command_type == "new_map":
             self.reset(board_scan_ready=board_scan_ready)
@@ -174,8 +209,12 @@ class Session:
             if self.model is None:
                 return errors
             try:
-                player = int(command.get("player"))
-                delta = int(command.get("delta"))
+                player_raw = command.get("player")
+                delta_raw = command.get("delta")
+                if not isinstance(player_raw, (int, float)) or not isinstance(delta_raw, (int, float)):
+                    return errors
+                player = int(player_raw)
+                delta = int(delta_raw)
             except (TypeError, ValueError):
                 return errors
 
@@ -219,6 +258,8 @@ class Session:
 
     def sync_scan_state(self, board_scan_ready: bool) -> None:
         self.setup.set_board_scan_ready(board_scan_ready)
+        if self.tutorial_enabled and board_scan_ready:
+            self._force_tutorial_game_start()
 
     def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None) -> list[dict]:
         self.turn = turn
@@ -242,7 +283,7 @@ class Session:
         return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
 
     def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
-        return {
+        payload = {
             "phase": self.setup.phase,
             "corners_found": corners_found,
             "turn": self.turn,
@@ -256,9 +297,19 @@ class Session:
             "setup": self.setup.public_payload(),
             "errors": dedupe_errors(errors),
         }
+        if self.tutorial_enabled:
+            payload["tutorial"] = {
+                "enabled": True,
+                "hq_p1": list(self._tutorial_hq_p1),
+                "hq_p2": list(self._tutorial_hq_p2),
+            }
+        return payload
 
     def _ensure_model_started(self) -> None:
         if self.model is not None:
+            return
+        if self.tutorial_enabled:
+            self._force_tutorial_game_start()
             return
         hidden_hq_positions = self.setup.hidden_hq_positions()
         if hidden_hq_positions is None:
@@ -268,6 +319,20 @@ class Session:
         if self.turn in (1, 2):
             self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
+
+    def _force_tutorial_game_start(self) -> None:
+        # Skip the HQ setup flow entirely; tutorial HQs are fixed and public to the tutorial UI.
+        self.setup.phase = PHASE_GAME
+        self.setup.first_player_side = "old_mick"
+        self.setup.active_setup_side = None
+        self.setup.hq_candidates = {"p1": self._tutorial_hq_p1, "p2": self._tutorial_hq_p2}
+        self.setup.hq_confirmed = {"p1": True, "p2": True}
+        self.setup.status_code = "tutorial_mode"
+        self.setup.status_message = "Tutorial mode: HQs are fixed. Follow the tutorial prompts."
+        self.model = game_model.new_game(self.terrain, seed=self.seed, hq_p1=self._tutorial_hq_p1, hq_p2=self._tutorial_hq_p2)
+        if self.turn in (1, 2):
+            self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+        print("[MAP] Tutorial mode active. Fixed HQs loaded.")
 
 
 async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_FPS):
@@ -332,7 +397,8 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
 
             if not HEADLESS:
                 annotated = annotate_tracker_preview(frame.copy(), snapshot_for_ui)
-                cv2.imshow("Old Mick MVP - Camera View  [Q to quit]", annotated)
+                # pyright's cv2 stubs are stricter than runtime; annotated is a numpy image.
+                cv2.imshow("Old Mick MVP - Camera View  [Q to quit]", annotated)  # type: ignore[arg-type]
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), ord("Q"), 27):
                     print("[Camera] Quit signal received.")
@@ -358,7 +424,9 @@ async def async_main():
     print()
     print("  Token markers:")
     for marker in TOKEN_MARKERS:
-        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
+        # `marker.player` may be optional in typings; runtime always provides 1/2 here.
+        player_num = int(marker.player) if marker.player is not None else 0
+        print(f"    ID {marker.id}=P{player_num} {marker.label}")
     print()
     print(f"  Turn marker:\n    ID {TURN_MARKER_ID}=TURN")
     print()
