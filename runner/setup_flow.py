@@ -167,6 +167,8 @@ def is_valid_hq_position(side: str, position: dict | None, terrain: dict | None 
         return False
     if not (0 <= col <= 11 and 0 <= row <= 11):
         return False
+    if (col, row) in {(0, 0), (0, 1), (1, 0), (11, 11), (11, 10), (10, 11)}:
+        return False
     if side_of_cell(col, row) != side:
         return False
     return (col, row) not in _terrain_occupied_cells(terrain)
