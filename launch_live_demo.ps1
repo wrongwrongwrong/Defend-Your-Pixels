@@ -5,13 +5,34 @@ $uiPath = Join-Path $repoRoot "yu_test1\index.html"
 
 function Get-PythonCandidatePaths {
     $paths = New-Object System.Collections.Generic.List[string]
+    $seen = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
 
-    if ($env:VIRTUAL_ENV) {
-        $paths.Add((Join-Path $env:VIRTUAL_ENV "Scripts\python.exe"))
+    function Add-CandidatePath {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            return
+        }
+
+        if ($seen.Add($Path)) {
+            $paths.Add($Path)
+        }
     }
 
-    $paths.Add((Join-Path $repoRoot ".venv\Scripts\python.exe"))
-    $paths.Add((Join-Path $repoRoot "dyp\Scripts\python.exe"))
+    $candidateRoots = @($repoRoot)
+    $parentRoot = Split-Path -Parent $repoRoot
+    if (-not [string]::IsNullOrWhiteSpace($parentRoot) -and $parentRoot -ne $repoRoot) {
+        $candidateRoots += $parentRoot
+    }
+
+    if ($env:VIRTUAL_ENV) {
+        Add-CandidatePath (Join-Path $env:VIRTUAL_ENV "Scripts\python.exe")
+    }
+
+    foreach ($root in $candidateRoots) {
+        Add-CandidatePath (Join-Path $root ".venv\Scripts\python.exe")
+        Add-CandidatePath (Join-Path $root "dyp\Scripts\python.exe")
+    }
 
     return $paths
 }

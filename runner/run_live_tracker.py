@@ -17,7 +17,7 @@ from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, dr
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
-from python_tracker.tracked_markers import TOKEN_MARKERS, TURN_MARKER_ID
+from python_tracker.tracked_markers import TOKEN_MARKERS, TURN_MARKERS
 from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, make_error, new_side_state, sanitize_token_states
 from yu_test1 import game_model, terrain_gen
 
@@ -27,12 +27,16 @@ SEND_FPS = 10
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 
 ROLE_BY_MARKER_ID = {
-    10: ("p1", "atk_a"),
-    11: ("p1", "atk_b"),
-    12: ("p1", "def"),
-    14: ("p2", "atk_a"),
-    15: ("p2", "atk_b"),
-    16: ("p2", "def"),
+    11: ("p1", "atk_a"),
+    12: ("p1", "atk_b"),
+    13: ("p1", "def"),
+    15: ("p2", "atk_a"),
+    16: ("p2", "atk_b"),
+    17: ("p2", "def"),
+}
+TURN_BY_MARKER_ID = {
+    10: 1,
+    14: 2,
 }
 
 COMPASS_8 = [
@@ -48,40 +52,36 @@ COMPASS_8 = [
 
 
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
-    return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_marker"))
+    return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers"))
+
+
+def _merge_marker_collection(cached_markers: list[dict], current_markers: list[dict]) -> list[dict]:
+    merged_markers: dict[int, dict] = {
+        int(marker["id"]): {**marker, "stale": True}
+        for marker in cached_markers
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int)
+    }
+    for marker in current_markers:
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int):
+            merged_markers[int(marker["id"])] = {**marker, "stale": False}
+    return list(merged_markers.values())
 
 
 def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict) -> dict:
     if cached_snapshot is None:
         merged_snapshot = dict(current_snapshot)
         merged_snapshot["markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("markers", [])]
-        turn_marker = current_snapshot.get("turn_marker")
-        if isinstance(turn_marker, dict):
-            merged_snapshot["turn_marker"] = {**turn_marker, "stale": False}
+        merged_snapshot["turn_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("turn_markers", [])]
         return merged_snapshot
 
-    merged_markers: dict[int, dict] = {
-        int(marker["id"]): {**marker, "stale": True}
-        for marker in cached_snapshot.get("markers", [])
-        if isinstance(marker, dict) and isinstance(marker.get("id"), int)
-    }
-    for marker in current_snapshot.get("markers", []):
-        if isinstance(marker, dict) and isinstance(marker.get("id"), int):
-            merged_markers[int(marker["id"])] = {**marker, "stale": False}
-
-    current_turn_marker = current_snapshot.get("turn_marker")
-    cached_turn_marker = cached_snapshot.get("turn_marker")
-    turn_marker = None
-    if isinstance(current_turn_marker, dict):
-        turn_marker = {**current_turn_marker, "stale": False}
-    elif isinstance(cached_turn_marker, dict):
-        turn_marker = {**cached_turn_marker, "stale": True}
+    merged_markers = _merge_marker_collection(cached_snapshot.get("markers", []), current_snapshot.get("markers", []))
+    merged_turn_markers = _merge_marker_collection(cached_snapshot.get("turn_markers", []), current_snapshot.get("turn_markers", []))
 
     return {
         **cached_snapshot,
         **current_snapshot,
-        "markers": list(merged_markers.values()),
-        "turn_marker": turn_marker,
+        "markers": merged_markers,
+        "turn_markers": merged_turn_markers,
         "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
         "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
         "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
@@ -99,20 +99,40 @@ def _snap_direction_8(angle: float | None) -> str | None:
     return min(COMPASS_8, key=lambda item: _angular_distance(angle, item[0]))[1]
 
 
-def _turn_from_rotation(angle: float | None) -> int | None:
-    if angle is None:
-        return None
-    if _angular_distance(angle, 0.0) <= 60.0:
-        return 1
-    if _angular_distance(angle, 180.0) <= 60.0:
-        return 2
-    return None
-
-
 def _grid_index(value: float | int | None) -> int | None:
     if not isinstance(value, (int, float)):
         return None
     return max(0, min(11, int(round(float(value)))))
+
+
+def _turn_from_markers(snapshot: dict) -> int | None:
+    turn_markers = [
+        marker
+        for marker in snapshot.get("turn_markers", [])
+        if isinstance(marker, dict) and marker.get("id") in TURN_BY_MARKER_ID
+    ]
+    active_turn_markers = [marker for marker in turn_markers if not marker.get("stale", False)]
+
+    if len(active_turn_markers) == 1:
+        return TURN_BY_MARKER_ID[int(active_turn_markers[0]["id"])]
+    if len(turn_markers) == 1:
+        return TURN_BY_MARKER_ID[int(turn_markers[0]["id"])]
+    return None
+
+
+def _turn_angle(snapshot: dict) -> float | None:
+    turn_markers = [
+        marker
+        for marker in snapshot.get("turn_markers", [])
+        if isinstance(marker, dict) and isinstance(marker.get("rotation"), (int, float))
+    ]
+    active_turn_markers = [marker for marker in turn_markers if not marker.get("stale", False)]
+
+    if len(active_turn_markers) == 1:
+        return round(float(active_turn_markers[0]["rotation"]), 1)
+    if len(turn_markers) == 1:
+        return round(float(turn_markers[0]["rotation"]), 1)
+    return None
 
 
 def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
@@ -139,10 +159,7 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
             "stale": bool(marker.get("stale", False)),
         }
 
-    turn_marker = snapshot.get("turn_marker") if isinstance(snapshot.get("turn_marker"), dict) else None
-    turn_rotation = turn_marker.get("rotation") if turn_marker else None
-    turn = _turn_from_rotation(float(turn_rotation)) if isinstance(turn_rotation, (int, float)) else None
-    return p1, p2, turn
+    return p1, p2, _turn_from_markers(snapshot)
 
 
 class Session:
@@ -157,6 +174,7 @@ class Session:
         self.accepted_p2 = new_side_state()
         self.turn: int | None = None
         self.model: game_model.GameModel | None = None
+        self.pending_events: list[dict] = []
         self.setup.reset(board_scan_ready=board_scan_ready)
         print(f"[MAP] New game (seed={self.seed})")
 
@@ -179,9 +197,9 @@ class Session:
                 return errors
 
             if player == 1:
-                self.model.tier_p1 = max(1, min(4, self.model.tier_p1 + delta))
+                self.model.tier_p1 = max(0, min(4, self.model.tier_p1 + delta))
             elif player == 2:
-                self.model.tier_p2 = max(1, min(4, self.model.tier_p2 + delta))
+                self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
             return errors
 
         if action_name == "choose_side":
@@ -194,7 +212,7 @@ class Session:
             side = command.get("side")
             position = command.get("position") if isinstance(command.get("position"), dict) else None
             if side in PLAYERS:
-                error = self.setup.set_hq_candidate(side, position)
+                error = self.setup.set_hq_candidate(side, position, self.terrain)
                 if error is not None:
                     errors.append(error)
             return errors
@@ -212,6 +230,21 @@ class Session:
         if action_name in {"reset_setup", "cancel_hq"}:
             self.model = None
             self.setup.reset_hq_setup()
+            return errors
+
+        if action_name == "trigger_nuke":
+            if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
+                return errors
+            side = command.get("side")
+            position = command.get("position") if isinstance(command.get("position"), dict) else None
+            active_side = "p1" if self.turn == 1 else "p2"
+            if side != active_side or not isinstance(position, dict):
+                return errors
+            col = position.get("x")
+            row = position.get("y")
+            if not isinstance(col, int) or not isinstance(row, int):
+                return errors
+            self.pending_events.extend(self.model.trigger_nuke(active_side, (col, row)))
             return errors
 
         return errors
@@ -236,9 +269,11 @@ class Session:
         return errors
 
     def game_events(self) -> list[dict]:
+        events = self.pending_events
+        self.pending_events = []
         if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
-            return []
-        return self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+            return events
+        return events + self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
 
     def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
         return {
@@ -307,7 +342,7 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
 
             snapshot_for_ui = last_visible_snapshot or effective_snapshot
             board_scan_ready = bool(snapshot_for_ui.get("calibration_ready"))
-            turn_angle = snapshot_for_ui.get("turn_marker", {}).get("rotation") if isinstance(snapshot_for_ui.get("turn_marker"), dict) else None
+            turn_angle = _turn_angle(snapshot_for_ui)
 
             session.sync_scan_state(board_scan_ready)
             raw_p1, raw_p2, turn = _build_token_state(snapshot_for_ui)
@@ -359,7 +394,11 @@ async def async_main():
     for marker in TOKEN_MARKERS:
         print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
-    print(f"  Turn marker:\n    ID {TURN_MARKER_ID}=TURN")
+    print("  Turn markers:")
+    for marker in TURN_MARKERS:
+        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
+    print()
+    print("  HQ placement remains browser-driven for now.")
     print()
     print("[Server] Open yu_test1/index.html in your browser\n")
 

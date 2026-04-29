@@ -13,7 +13,7 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -e .
 ```
 
-### Recommended: start frontend + live tracker together
+### Launch live demo (Windows)
 
 From the repo root:
 
@@ -26,6 +26,10 @@ powershell -ExecutionPolicy Bypass -File .\launch_live_demo.ps1
 This starts:
 - the Python live tracker
 - `yu_test1/index.html` in your default browser
+
+### Launch live demo (macOS)
+
+Recommended on macOS: use `launch_live_demo.command` (one-time: `chmod +x launch_live_demo.command`), then double-click it in Finder.
 
 ### Windows demo launcher
 

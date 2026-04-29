@@ -40,8 +40,8 @@ const H       = BY + ROWS * CELL + 28;   // total canvas height
 const C = {
   farmer_cell : 0xe8c890,   // pale wheat (safe / non-target, washed out)
   emu_cell    : 0xb8d090,   // pale sage (safe / non-target, washed out)
-  p1_target   : 0xc84818,   // vivid dark orange — attackable P1 cells
-  p2_target   : 0x0f4a10,   // deep forest green — attackable P2 cells
+  p1_target   : 0xc84818,   // vivid dark orange — P1 resource cells
+  p2_target   : 0x0f4a10,   // deep forest green — P2 resource cells
   fence_cell  : 0xe8d068,   // golden fence line
   board_bg    : 0x2a1e0e,   // dark earth background
   panel_bg    : 0x1e1408,   // panel background
@@ -107,6 +107,14 @@ let gameState  = null;
 let prevState  = null;
 let wsInstance = null;
 
+const IS_TUTORIAL = new URLSearchParams(window.location.search).get('tutorial') === '1';
+
+const TUTORIAL_TARGETS = {
+  // Fixed tutorial tiles (col,row). We’ll highlight these and wait for live tracker state.
+  p1AtkStart: { col: 3, row: 3 },  // D4
+  p1DefSpot:  { col: 1, row: 1 },  // B2
+};
+
 const PHASE_LABEL = {
   scan: 'Board Scan',
   side_selection: 'Choose First HQ Side',
@@ -156,6 +164,10 @@ const WARNING_SHOW_MS = 1800;
 const WARNING_REPEAT_GAP_MS = 900;
 const WARNING_RECENT_MS = 3600;
 
+function isIgnoredErrorCode(code) {
+  return code === 'token_detection_failed' || code === 'inactive_side_token_changed';
+}
+
 function phaseLabel(phase) {
   return PHASE_LABEL[phase] || 'Setup';
 }
@@ -191,7 +203,7 @@ function dedupeErrorsByCode(errors) {
   const seen = new Set();
   for (const error of Array.isArray(errors) ? errors : []) {
     const code = error?.code;
-    if (!code || seen.has(code)) continue;
+    if (!code || isIgnoredErrorCode(code) || seen.has(code)) continue;
     seen.add(code);
     deduped.push(error);
   }
@@ -311,21 +323,25 @@ function isP2(col, row) { return col + row > 11; }
  * Trace a ray from (startCol, startRow) in direction dir.
  * Returns array of { col, row, type } where type is:
  *   'path'    — free cell
- *   'hit'     — first enemy token cell
+ *   'hit'     — first undestroyed enemy cell
  *   'soft'    — first soft-terrain cell (absorbed, stops ray)
  *   'blocked' — hard terrain (stops ray, shows X)
  */
-function computeRay(startCol, startRow, dir, hardMap, softMap, enemyMap) {
+function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, destroyedMap, resourceMap) {
   if (!dir || !DIR_VEC[dir]) return [];
   const [dc, dr] = DIR_VEC[dir];
   const cells = [];
   let c = startCol + dc, r = startRow + dr;
+  const isEnemyCell = attackerSide === 'p1' ? isP2 : isP1;
 
   while (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
     const k = `${c},${r}`;
     if (hardMap[k])  { cells.push({ col: c, row: r, type: 'blocked' }); break; }
     if (softMap[k])  { cells.push({ col: c, row: r, type: 'soft'    }); break; }
-    if (enemyMap[k]) { cells.push({ col: c, row: r, type: 'hit'     }); break; }
+    if (isEnemyCell(c, r) && resourceMap[k] && !destroyedMap[k]) {
+      cells.push({ col: c, row: r, type: 'hit' });
+      break;
+    }
     cells.push({ col: c, row: r, type: 'path' });
     c += dc; r += dr;
   }
@@ -346,6 +362,14 @@ function defZoneCells(col, row, tier) {
 
 /** Convert number colour to CSS hex string */
 function hex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
+function buildResourceMaps(terrain) {
+  const p1 = {};
+  const p2 = {};
+  for (const resource of (terrain?.p1_resources || [])) p1[`${resource.col},${resource.row}`] = resource;
+  for (const resource of (terrain?.p2_resources || [])) p2[`${resource.col},${resource.row}`] = resource;
+  return { p1, p2 };
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  DETECT STATE CHANGES → trigger sounds
@@ -400,6 +424,7 @@ class GameScene extends Phaser.Scene {
     this._buildLabels();
     this._buildLockButton();
     this._connectWS();
+    if (IS_TUTORIAL) this._initConnectedTutorial();
 
     // Refresh UI at 20 fps
     this.time.addEvent({ delay: 50, callback: this._applyState, callbackScope: this, loop: true });
@@ -411,6 +436,192 @@ class GameScene extends Phaser.Scene {
       targets: this.lockBtnGfx, alpha: { from: 1, to: 0.55 },
       yoyo: true, repeat: -1, duration: 800, ease: 'Sine.easeInOut'
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  CONNECTED TUTORIAL (live WS + tracker-gated steps)
+  // ═══════════════════════════════════════════════════════════════
+  _initConnectedTutorial() {
+    // Lightweight instruction HUD (no modal popups).
+    this._tut = {
+      step: 0,
+      lastTurn: null,
+      highlightCell: null,      // {col,row}
+      highlightZone: null,      // array of {col,row}
+      expectedHitCell: null,    // {col,row}
+      completed: false,
+    };
+
+    this.tutorialTxt = this.add.text(PANEL_X + 8, 520, '', {
+      fontSize: '12px',
+      fontFamily: 'Georgia',
+      color: '#ffe070',
+      lineSpacing: 6,
+      wordWrap: { width: PW - 16 },
+    }).setDepth(5);
+
+    this.tutorialHintTxt = this.add.text(PANEL_X + 8, 690, '', {
+      fontSize: '11px',
+      fontFamily: 'Georgia',
+      color: '#f0c080',
+      lineSpacing: 5,
+      wordWrap: { width: PW - 16 },
+    }).setDepth(5);
+  }
+
+  _tutorialTick() {
+    if (!this._tut || this._tut.completed) return;
+    if (!gameState) return;
+
+    const phase = gameState.phase;
+    const turn = gameState.turn;
+    const p1 = gameState.p1 || {};
+    const p2 = gameState.p2 || {};
+    const G = gameState.game || {};
+    const events = Array.isArray(gameState.events) ? gameState.events : [];
+
+    // Track turn changes for step gating.
+    if (this._tut.lastTurn == null && turn != null) this._tut.lastTurn = turn;
+    const turnChanged = (turn != null && this._tut.lastTurn != null && turn !== this._tut.lastTurn);
+    if (turnChanged) this._tut.lastTurn = turn;
+
+    const atCell = (tok, col, row) => tok?.col === col && tok?.row === row;
+    const isVisible = (tok) => tok?.col != null && tok?.row != null && !tok?.stale;
+
+    // Helpers: pulsing highlight drawing.
+    const setCellHighlight = (col, row) => {
+      this._tut.highlightZone = null;
+      this._tut.highlightCell = (col == null ? null : { col, row });
+    };
+    const setZoneHighlight = (cells) => {
+      this._tut.highlightCell = null;
+      this._tut.highlightZone = cells || null;
+    };
+
+    // Tutorial requires the runtime to be in battle phase.
+    if (phase != null && phase !== 'game') {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Tutorial (connected)\n\nWaiting for battle phase…');
+      this.tutorialHintTxt?.setText('Finish board scan + HQ setup first.\nThen reopen Tutorial.html.');
+      return;
+    }
+
+    // STEP 0: Place P1 ATK A at D4.
+    if (this._tut.step === 0) {
+      const t = TUTORIAL_TARGETS.p1AtkStart;
+      setCellHighlight(t.col, t.row);
+      this.tutorialTxt?.setText('Step 1/7 — Place ATK\n\nMove P1 ATK A onto D4.');
+      this.tutorialHintTxt?.setText('Watch the pulsing tile.\nWhen the marker is detected in D4, we continue.');
+      if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row)) this._tut.step = 1;
+      return;
+    }
+
+    // STEP 1: Aim P1 ATK A to the right (E).
+    if (this._tut.step === 1) {
+      const t = TUTORIAL_TARGETS.p1AtkStart;
+      setCellHighlight(t.col, t.row);
+      this.tutorialTxt?.setText('Step 2/7 — Aim\n\nRotate P1 ATK A to point → (E).');
+      this.tutorialHintTxt?.setText('Keep it on D4.\nThe on-screen arrow should show →.');
+      if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row) && p1.atk_a.direction === 'E') {
+        this._tut.step = 2;
+      }
+      return;
+    }
+
+    // STEP 2: End P1 turn (physical confirm marker triggers turn change).
+    if (this._tut.step === 2) {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Step 3/7 — End turn\n\nEnd P1 turn using the physical confirm marker.');
+      this.tutorialHintTxt?.setText('When the backend detects the confirm marker hold,\nturn will switch to The Mob.');
+      if (turnChanged && turn === 2) this._tut.step = 3;
+      return;
+    }
+
+    // STEP 3: Quickly end P2 turn so we can place defender as P1.
+    if (this._tut.step === 3) {
+      setCellHighlight(null, null);
+      this.tutorialTxt?.setText('Step 4/7 — Skip enemy turn\n\nEnd P2 turn (use P2 confirm marker) to return to P1.');
+      this.tutorialHintTxt?.setText('We want P1 active so defender placement is accepted.');
+      if (turnChanged && turn === 1) this._tut.step = 4;
+      return;
+    }
+
+    // STEP 4: Place P1 defender at B2 and highlight its zone.
+    if (this._tut.step === 4) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      setCellHighlight(d.col, d.row);
+      this.tutorialTxt?.setText('Step 5/7 — Defend\n\nMove P1 DEF to B2.');
+      this.tutorialHintTxt?.setText('After it lands, we will highlight the protected zone.');
+      if (isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
+        const tier = (G.tier_p1 ?? 0);
+        setZoneHighlight(defZoneCells(d.col, d.row, tier));
+        this._tut.step = 5;
+      }
+      return;
+    }
+
+    // STEP 5: End P1 turn so the enemy can attack into the protected zone.
+    if (this._tut.step === 5) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      const tier = (G.tier_p1 ?? 0);
+      setZoneHighlight(defZoneCells(d.col, d.row, tier));
+      this.tutorialTxt?.setText('Step 6/7 — Set up the demo\n\nEnd P1 turn. Then, as P2, aim an ATK ray into the highlighted zone.');
+      this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nThen end P2 turn to resolve the attack.');
+      if (turnChanged && turn === 2) this._tut.step = 6;
+      return;
+    }
+
+    // STEP 6: Wait for a P2-resolved hit that only DAMAGES (not destroys) a protected cell.
+    if (this._tut.step === 6) {
+      const d = TUTORIAL_TARGETS.p1DefSpot;
+      const tier = (G.tier_p1 ?? 0);
+      const zone = defZoneCells(d.col, d.row, tier);
+      setZoneHighlight(zone);
+
+      this.tutorialTxt?.setText('Step 7/7 — Defense negates the first hit\n\nAs P2: aim an ATK into the highlighted zone.\nThen end P2 turn.');
+      this.tutorialHintTxt?.setText('We will complete this step when the backend reports\n`cell_damaged` on a protected tile (first hit absorbed).');
+
+      // Detect “protected first hit”: cell_damaged where cell is inside the DEF zone.
+      const zoneKey = new Set(zone.map(({ col, row }) => `${col},${row}`));
+      const gotDamagedProtected = events.some((ev) => {
+        if (ev?.type !== 'cell_damaged') return false;
+        const cell = ev.cell;
+        const c = Array.isArray(cell) ? cell[0] : cell?.col;
+        const r = Array.isArray(cell) ? cell[1] : cell?.row;
+        return zoneKey.has(`${c},${r}`);
+      });
+
+      if (gotDamagedProtected) {
+        this._tut.completed = true;
+        this._tut.highlightCell = null;
+        this._tut.highlightZone = null;
+        this.tutorialTxt?.setText('Tutorial complete!\n\nYou saw defender protection absorb the first hit.');
+        this.tutorialHintTxt?.setText('Now try the same shot again:\nit should destroy the tile on the second hit.');
+      }
+      return;
+    }
+  }
+
+  _tutorialDrawHighlights() {
+    if (!this._tut) return;
+    const pulse = 0.55 + 0.35 * Math.sin(this.time.now / 180);
+
+    if (this._tut.highlightCell) {
+      const { col, row } = this._tut.highlightCell;
+      const x = BX + col * CELL, y = BY + row * CELL;
+      const pad = 2;
+      this.dynGfx.lineStyle(4, 0xffe070, pulse);
+      this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+    }
+
+    if (Array.isArray(this._tut.highlightZone)) {
+      this.dynGfx.lineStyle(2.5, 0xffe070, 0.22 + 0.25 * pulse);
+      for (const cell of this._tut.highlightZone) {
+        const x = BX + cell.col * CELL, y = BY + cell.row * CELL;
+        const pad = 3;
+        this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+      }
+    }
   }
 
   // ── Board labels (A–L / 1–12), drawn once in create() ──────────
@@ -427,15 +638,18 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── Static board (re-callable when terrain/targets change) ────
+  // ── Static board (re-callable when terrain/resources change) ────
   _drawStaticBoard(terrain) {
     const g = this.boardGfx;
     g.clear();
+    if (this._boardBadges) {
+      this._boardBadges.forEach((badge) => badge.destroy());
+      this._boardBadges = [];
+    }
 
-    // Build target lookup sets (empty when terrain not yet received)
-    const targetKey = (c, r) => `${c},${r}`;
-    const p1Targets = new Set((terrain?.p1_targets ?? []).map(t => targetKey(t.col, t.row)));
-    const p2Targets = new Set((terrain?.p2_targets ?? []).map(t => targetKey(t.col, t.row)));
+    // Build resource lookup sets (empty when terrain not yet received)
+    const resourceKey = (c, r) => `${c},${r}`;
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
 
     // ── Soft vignette behind whole board ──────────────────────────
     g.fillStyle(0x0c0804, 1);
@@ -448,13 +662,14 @@ class GameScene extends Phaser.Scene {
         const w = CELL - 1, h = CELL - 1;
         const onFence  = (c + r === 11);
         const p1side   = isP1(c, r);
-        const key      = targetKey(c, r);
-        const isTarget = p1side ? p1Targets.has(key) : p2Targets.has(key);
+        const key = resourceKey(c, r);
+        const resource = p1side ? p1ResourceMap[key] : p2ResourceMap[key];
+        const isResource = !!resource;
 
-        // Base fill: targets get vivid colour; everything else muted
+        // Base fill: resource cells get vivid colour; everything else muted
         let baseFill;
         if (onFence)       baseFill = C.fence_cell;
-        else if (isTarget) baseFill = p1side ? C.p1_target : C.p2_target;
+        else if (isResource) baseFill = p1side ? C.p1_target : C.p2_target;
         else               baseFill = p1side ? C.farmer_cell : C.emu_cell;
 
         g.fillStyle(baseFill, 1);
@@ -466,13 +681,25 @@ class GameScene extends Phaser.Scene {
         g.fillStyle(0x000000, 0.10);
         g.fillRect(x + 2, y + h - 4, w - 3, 3);
 
-        // Border — thicker on targets so they pop
-        if (isTarget) {
+        // Border — thicker on resource cells so they pop
+        if (isResource) {
           g.lineStyle(1.5, 0x000000, 0.35);
         } else {
           g.lineStyle(1, 0x000000, 0.12);
         }
         g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
+
+        if (resource?.visible && resource?.value === 5) {
+          g.lineStyle(3, 0xffe070, 0.95);
+          g.strokeRoundedRect(x + 3, y + 3, w - 5, h - 5, 6);
+          g.fillStyle(0x120904, 0.55);
+          g.fillRoundedRect(x + 14, y + 12, 22, 16, 5);
+          const badge = this.add.text(x + 25, y + 20, '5', {
+            fontSize: '12px', fontFamily: 'Georgia', color: '#ffe070', fontStyle: 'bold'
+          }).setOrigin(0.5, 0.5).setDepth(1);
+          if (!this._boardBadges) this._boardBadges = [];
+          this._boardBadges.push(badge);
+        }
       }
     }
 
@@ -580,13 +807,13 @@ class GameScene extends Phaser.Scene {
 
     // Dynamic texts (updated each frame)
     this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
-    this.scoreText  = T(8, H - 174, 'P1 razed: 0/30  P2 razed: 0/30', '#ffb060', '10px');
+    this.scoreText  = T(8, H - 174, 'Paddock score: 0/40  Feeding ground score: 0/40', '#ffb060', '10px');
     this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
     this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
 
     // Tier display
-    this.p1TierTxt = T(8,  244, 'P1 Tier: 1', '#f0c060');
-    this.p2TierTxt = T(8,  258, 'P2 Tier: 1', '#90e050');
+    this.p1TierTxt = T(8,  244, 'P1 Tier: 0', '#f0c060');
+    this.p2TierTxt = T(8,  258, 'P2 Tier: 0', '#90e050');
 
     // Tier +/− buttons  (manual override for demo)
     const mkBtn = (label, x, y, cb, col) => {
@@ -602,8 +829,8 @@ class GameScene extends Phaser.Scene {
 
     // Tier state is now authoritative on the server — local cache only used
     // for rendering the DEF zone radius until the first state arrives.
-    this._p1Tier = 1;
-    this._p2Tier = 1;
+    this._p1Tier = 0;
+    this._p2Tier = 0;
     mkBtn('[P1 +Tier]', 8,  272, () => this._changeTier(1,  1), '#f0c060');
     mkBtn('[P1 −Tier]', 90, 272, () => this._changeTier(1, -1), '#c8a040');
     mkBtn('[P2 +Tier]', 8,  288, () => this._changeTier(2,  1), '#90e050');
@@ -669,6 +896,12 @@ class GameScene extends Phaser.Scene {
       this.setupSelection.pendingBySide = { p1: null, p2: null };
       this._sendAction({ action: 'reset_setup' });
     });
+    this.nukeBtn = mkActionBtn('Arm Nuke', 8, 568, 194, '#5a1f12', '#ffd070', () => {
+      const activeSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+      if (!activeSide) return;
+      this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
+    });
+    this._nukeArmingSide = null;
   }
 
   _buildSetupUi() {
@@ -956,6 +1189,7 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
@@ -965,6 +1199,7 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: true, enabled: true });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
@@ -987,24 +1222,50 @@ class GameScene extends Phaser.Scene {
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
       this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
-    this.setupControlTxt.setText('Setup complete. Browser controls are hidden during battle.').setColor('#8fb890');
+    const activeTurnSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+    const activeTier = activeTurnSide === 'p1' ? (gameState?.game?.tier_p1 ?? 0) : activeTurnSide === 'p2' ? (gameState?.game?.tier_p2 ?? 0) : 0;
+    const nukeUsed = activeTurnSide === 'p1' ? !!gameState?.game?.nuke_used_p1 : activeTurnSide === 'p2' ? !!gameState?.game?.nuke_used_p2 : true;
+    const isArming = !!activeTurnSide && this._nukeArmingSide === activeTurnSide;
+    const canArmNuke = !!activeTurnSide && activeTier >= 4 && !nukeUsed;
+    this.setupControlTxt
+      .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : 'Setup complete. Browser controls are hidden during battle.')
+      .setColor(isArming ? '#ffd878' : '#8fb890');
     this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+    this._setActionButtonState(this.nukeBtn, {
+      visible: !!activeTurnSide,
+      enabled: canArmNuke || isArming,
+      label: isArming ? 'Cancel Nuke' : (nukeUsed ? 'Nuke Spent' : 'Arm Nuke'),
+    });
   }
 
   _handleBoardPointerDown(pointer) {
-    if (!gameState || gameState.phase !== 'hq_placement') return;
-    const activeSide = gameState.setup?.active_setup_side;
-    if (!activeSide) return;
-
     const col = Math.floor((pointer.x - BX) / CELL);
     const row = Math.floor((pointer.y - BY) / CELL);
     if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+    if (gameState?.phase === 'game' && this._nukeArmingSide) {
+      const enemySide = this._nukeArmingSide === 'p1' ? 'p2' : 'p1';
+      if (sideOwnsCell(enemySide, col, row)) {
+        this._sendAction({
+          action: 'trigger_nuke',
+          side: this._nukeArmingSide,
+          position: { x: col, y: row },
+        });
+      }
+      this._nukeArmingSide = null;
+      return;
+    }
+
+    if (!gameState || gameState.phase !== 'hq_placement') return;
+    const activeSide = gameState.setup?.active_setup_side;
+    if (!activeSide) return;
 
     this._sendAction({
       action: 'set_hq_candidate',
@@ -1190,28 +1451,34 @@ class GameScene extends Phaser.Scene {
 
     this._syncSetupSelection(phase, setup);
 
-    // Redraw board when a new random map arrives (target cells shift).
+    // Redraw board when a new random map arrives (resource cells shift).
     if (terrain && map_seed !== this._drawnSeed) {
       this._drawStaticBoard(terrain);
       this._drawnSeed = map_seed;
     }
 
     // Sync tiers from server (authoritative)
+    const tierThresholds = Array.isArray(G.tier_thresholds) ? G.tier_thresholds : [6, 14, 22, 32];
+    const nextThreshold = (tier) => tier >= 4 ? null : tierThresholds[tier] ?? null;
     if (G.tier_p1 != null) {
       this._p1Tier = G.tier_p1;
-      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : ''}`);
+      const nextP1 = nextThreshold(G.tier_p1);
+      const p1Progress = G.progress_p1 ?? 0;
+      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : nextP1 != null ? ` (${p1Progress}/${nextP1})` : ''}`);
     }
     if (G.tier_p2 != null) {
       this._p2Tier = G.tier_p2;
-      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : ''}`);
+      const nextP2 = nextThreshold(G.tier_p2);
+      const p2Progress = G.progress_p2 ?? 0;
+      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : nextP2 != null ? ` (${p2Progress}/${nextP2})` : ''}`);
     }
 
     // ── Turn / corner / score texts ──────────────────────────────
-    const thr = G.attrition_threshold ?? 30;
-    const s1 = G.score_p2_destroyed ?? 0;  // cells P1 razed (in P2 territory)
-    const s2 = G.score_p1_destroyed ?? 0;  // cells P2 razed (in P1 territory)
+    const thr = G.attrition_threshold ?? 40;
+    const s1 = G.score_p2_attrition ?? 0;  // P1 paddock score earned by The Mob
+    const s2 = G.score_p1_attrition ?? 0;  // P2 feeding-ground score earned by Old Mick
     if (inBattle) {
-      this.scoreText?.setText(`P1 razed: ${s1}/${thr}   P2 razed: ${s2}/${thr}`).setColor('#ffb060');
+      this.scoreText?.setText(`Paddock score: ${s1}/${thr}   Feeding ground score: ${s2}/${thr}`).setColor('#ffb060');
     } else {
       this.scoreText?.setText('Setup: backend-guided hidden HQ flow').setColor('#d8c890');
     }
@@ -1223,18 +1490,20 @@ class GameScene extends Phaser.Scene {
         else if (ev.type === 'cell_damaged') SFX.fire();
         else if (ev.type === 'hq_destroyed') SFX.nuke();
         else if (ev.type === 'soft_destroyed') SFX.block();
+        else if (ev.type === 'nuke_triggered') SFX.nuke();
       }
     }
 
-    // Win banner
-    this._updateWinBanner(G);
+    // Win banner (hide during tutorial)
+    if (!IS_TUTORIAL) this._updateWinBanner(G);
+    else if (this._winBanner) { this._winBanner.setVisible(false); this._winSub?.setVisible(false); }
 
     if (!inBattle) {
       this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
     } else if (turn === 1) {
-      this.turnText.setText('Turn: 🌾 Old Mick').setColor('#f8d060');
+      this.turnText.setText(`Turn: 🌾 Old Mick  |  Tier ${G.tier_p1 ?? 0}`).setColor('#f8d060');
     } else if (turn === 2) {
-      this.turnText.setText('Turn: 🐦 The Mob').setColor('#90ee40');
+      this.turnText.setText(`Turn: 🐦 The Mob  |  Tier ${G.tier_p2 ?? 0}`).setColor('#90ee40');
     } else {
       this.turnText.setText('Turn: — waiting —').setColor('#807060');
     }
@@ -1244,28 +1513,32 @@ class GameScene extends Phaser.Scene {
 
     // ── Build terrain lookup maps ─────────────────────────────────
     const hardMap = {}, softMap = {};
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
+    const softGoneKeys = new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`));
     if (terrain) {
       [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
         if (t.col != null) hardMap[`${t.col},${t.row}`] = t;
       });
       [...(terrain.p1_soft || []), ...(terrain.p2_soft || [])].forEach(t => {
-        if (t.col != null) softMap[`${t.col},${t.row}`] = t;
+        if (t.col != null && !softGoneKeys.has(`${t.col},${t.row}`)) {
+          softMap[`${t.col},${t.row}`] = t;
+        }
       });
     }
 
-    // ── Enemy token cell maps (ray targets) ───────────────────────
-    const p1Map = {}, p2Map = {};
-    if (p1) Object.values(p1).forEach(tok => { if (tok.col != null) p1Map[`${tok.col},${tok.row}`] = true; });
-    if (p2) Object.values(p2).forEach(tok => { if (tok.col != null) p2Map[`${tok.col},${tok.row}`] = true; });
+    const destroyedMap = {};
+    (G.destroyed || []).forEach(([c, r]) => {
+      destroyedMap[`${c},${r}`] = true;
+    });
 
     // ── Clear dynamic layer ───────────────────────────────────────
     this.dynGfx.clear();
 
     // ── 0. Scorched earth + damaged cells + revealed HQ ───────────
-    this._drawDamageLayer(G);
+    this._drawDamageLayer(G, terrain);
 
     // ── 1. Terrain (skip destroyed soft pieces) ───────────────────
-    this._drawTerrain(terrain, new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`)));
+    this._drawTerrain(terrain, softGoneKeys);
 
     // ── 2. Defense zones ───────────────────────────────────────────
     if (inBattle && p1?.def?.col != null)
@@ -1277,11 +1550,11 @@ class GameScene extends Phaser.Scene {
     if (inBattle) {
       ['atk_a', 'atk_b'].forEach(role => {
         if (p1?.[role]?.col != null && p1[role].direction) {
-          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, p2Map);
+          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, 'p1', destroyedMap, p2ResourceMap);
           this._drawRay(p1[role].col, p1[role].row, ray);
         }
         if (p2?.[role]?.col != null && p2[role].direction) {
-          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, p1Map);
+          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, 'p2', destroyedMap, p1ResourceMap);
           this._drawRay(p2[role].col, p2[role].row, ray);
         }
       });
@@ -1328,6 +1601,8 @@ class GameScene extends Phaser.Scene {
 
     if (inBattle) {
       this._hideSetupUi();
+      const activeSide = turn === 1 ? 'p1' : turn === 2 ? 'p2' : null;
+      if (this._nukeArmingSide && activeSide !== this._nukeArmingSide) this._nukeArmingSide = null;
     } else {
       this._drawPlacementGuide(phase, setup);
       this._drawPendingHqCandidate(phase, setup);
@@ -1337,6 +1612,11 @@ class GameScene extends Phaser.Scene {
     this._updateSetupControls(phase, setup);
 
     this._updateWarningUi(gameState.errors || []);
+
+    if (IS_TUTORIAL) {
+      this._tutorialTick();
+      this._tutorialDrawHighlights();
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1397,14 +1677,16 @@ class GameScene extends Phaser.Scene {
   }
 
   /** Cracked / damaged cell look (took damage but not destroyed yet) */
-  _drawDamageLayer(G) {
+  _drawDamageLayer(G, terrain) {
     const g = this.dynGfx;
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
     // Damaged (partial HP) — single crack overlay
     const dmg = G.damage || {};
     for (const key in dmg) {
       const [c, r] = key.split(',').map(Number);
       if ((G.destroyed || []).some(d => d[0] === c && d[1] === r)) continue;   // skip fully destroyed
       const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+      const resource = p1ResourceMap[key] || p2ResourceMap[key];
       // Dark smoky overlay
       g.fillStyle(0x000000, 0.28);
       g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
@@ -1412,6 +1694,20 @@ class GameScene extends Phaser.Scene {
       g.lineStyle(1.5, 0x201008, 0.8);
       g.lineBetween(x + 6, y + 10, x + CELL - 12, y + CELL - 8);
       g.lineBetween(x + CELL - 14, y + 12, x + CELL - 6, y + CELL - 14);
+
+      if (resource?.visible && resource?.value === 5) {
+        const maxHp = resource.max_hp ?? 3;
+        const hits = dmg[key] ?? 0;
+        const remain = Math.max(0, maxHp - hits);
+        for (let i = 0; i < maxHp; i++) {
+          const cx = x + 14 + i * 12;
+          const cy = y + CELL - 12;
+          g.fillStyle(i < remain ? 0xffe070 : 0x4a3010, 0.95);
+          g.fillCircle(cx, cy, 4);
+          g.lineStyle(1, 0x120904, 0.8);
+          g.strokeCircle(cx, cy, 4);
+        }
+      }
     }
 
     // Scorched earth (destroyed)

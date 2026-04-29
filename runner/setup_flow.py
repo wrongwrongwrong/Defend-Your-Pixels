@@ -145,7 +145,20 @@ def _has_missing_token_data(side_state: dict) -> bool:
     return False
 
 
-def is_valid_hq_position(side: str, position: dict | None) -> bool:
+def _terrain_occupied_cells(terrain: dict | None) -> set[tuple[int, int]]:
+    occupied: set[tuple[int, int]] = set()
+    if not isinstance(terrain, dict):
+        return occupied
+    for group in ("p1_hard", "p1_soft", "p2_hard", "p2_soft"):
+        for tile in terrain.get(group, []):
+            col = tile.get("col")
+            row = tile.get("row")
+            if isinstance(col, int) and isinstance(row, int):
+                occupied.add((col, row))
+    return occupied
+
+
+def is_valid_hq_position(side: str, position: dict | None, terrain: dict | None = None) -> bool:
     if side not in PLAYERS or not isinstance(position, dict):
         return False
     col = position.get("x")
@@ -154,7 +167,11 @@ def is_valid_hq_position(side: str, position: dict | None) -> bool:
         return False
     if not (0 <= col <= 11 and 0 <= row <= 11):
         return False
-    return side_of_cell(col, row) == side
+    if (col, row) in {(0, 0), (0, 1), (1, 0), (11, 11), (11, 10), (10, 11)}:
+        return False
+    if side_of_cell(col, row) != side:
+        return False
+    return (col, row) not in _terrain_occupied_cells(terrain)
 
 
 def validate_side_tokens(side: str, side_state: dict) -> list[dict]:
@@ -212,9 +229,6 @@ def sanitize_token_states(
             candidate[side] = clone_side_state(accepted[side])
             errors.extend(side_errors)
 
-    if require_full_detection and (_has_missing_token_data(candidate["p1"]) or _has_missing_token_data(candidate["p2"])):
-        errors.append(make_error("token_detection_failed"))
-
     return candidate["p1"], candidate["p2"], dedupe_errors(errors)
 
 
@@ -269,13 +283,13 @@ class SetupState:
         self._set_waiting_for_hq_status()
         return True
 
-    def set_hq_candidate(self, side: str, position: dict | None) -> dict | None:
+    def set_hq_candidate(self, side: str, position: dict | None, terrain: dict | None = None) -> dict | None:
         if self.phase != PHASE_HQ_PLACEMENT:
             return None
         if side != self.active_setup_side:
             self._set_waiting_for_hq_status()
             return None
-        if not is_valid_hq_position(side, position):
+        if not is_valid_hq_position(side, position, terrain):
             self.status_code = "waiting_for_hq_candidate"
             self.status_message = ERROR_MESSAGES["hq_wrong_side"]
             return make_error("hq_wrong_side")
