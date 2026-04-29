@@ -450,6 +450,7 @@ class GameScene extends Phaser.Scene {
       highlightZone: null,      // array of {col,row}
       expectedHitCell: null,    // {col,row}
       completed: false,
+      introActive: true,        // show intro modal before enabling steps
     };
 
     this.tutorialTxt = this.add.text(PANEL_X + 8, 520, '', {
@@ -467,10 +468,97 @@ class GameScene extends Phaser.Scene {
       lineSpacing: 5,
       wordWrap: { width: PW - 16 },
     }).setDepth(5);
+
+    // Intro modal (trimmed style) shown on tutorial start.
+    // Any key dismisses it, then we enable the connected tutorial step gating.
+    this._showTutorialIntroPopup();
+  }
+
+  _showTutorialIntroPopup() {
+    // Recreate safely (in case _initConnectedTutorial is called twice).
+    if (this._tutPopup) this._dismissTutorialIntroPopup();
+
+    const modalW = Math.min(560, W * 0.92);
+    const modalH = 230;
+    const padX = 20;
+    const padY = 18;
+
+    const centerX = W / 2;
+    const centerY = H / 2 - 10;
+
+    const modalX = centerX - modalW / 2;
+    const modalY = centerY - modalH / 2;
+
+    // Semi-transparent overlay.
+    const gfx = this.add.graphics().setDepth(60);
+    gfx.fillStyle(0x000000, 0.35);
+    gfx.fillRect(0, 0, W, H);
+
+    // Modal panel.
+    gfx.fillStyle(0x2a2010, 1);
+    gfx.lineStyle(2, 0x6a4a20, 1);
+    gfx.fillRoundedRect(modalX, modalY, modalW, modalH, 14);
+    gfx.strokeRoundedRect(modalX, modalY, modalW, modalH, 14);
+
+    const textStyle = {
+      fontSize: '15px',
+      fontFamily: 'Georgia',
+      color: '#f2d8a0',
+      lineSpacing: 6,
+    };
+
+    const p1 = "In 1932, a misterious Hive Mind from outer space landed in the outback. It brainwashed the flocks of emus in the wilderness, mutated them and want to blaze the land fenced by the Farmers.";
+    const p2 = "Farmers, hiding their families in a digout, needs to find the Hive Mind, destroy it before it is too late.";
+
+    const wrapW = modalW - padX * 2;
+    const t1 = this.add.text(modalX + padX, modalY + padY, p1, {
+      ...textStyle,
+      wordWrap: { width: wrapW },
+    }).setDepth(61);
+
+    // Position second paragraph after first paragraph height.
+    const t2Y = modalY + padY + (t1.height || 100) + 10;
+    const t2 = this.add.text(modalX + padX, t2Y, p2, {
+      ...textStyle,
+      wordWrap: { width: wrapW },
+    }).setDepth(61);
+
+    const hint = this.add.text(centerX, modalY + modalH + 22, 'press any key to continue', {
+      fontSize: '13px',
+      fontFamily: 'Georgia',
+      color: '#9a7a58',
+    }).setOrigin(0.5, 0).setDepth(61);
+
+    this._tutPopup = { gfx, t1, t2, hint };
+
+    window.addEventListener(
+      'keydown',
+      () => {
+        this._dismissTutorialIntroPopup();
+      },
+      { once: true }
+    );
+  }
+
+  _dismissTutorialIntroPopup() {
+    if (!this._tutPopup) return;
+    const { gfx, t1, t2, hint } = this._tutPopup;
+    gfx?.destroy?.();
+    t1?.destroy?.();
+    t2?.destroy?.();
+    hint?.destroy?.();
+    this._tutPopup = null;
+
+    if (this._tut) this._tut.introActive = false;
+
+    // Clear any stale tutorial text so step 0 appears cleanly on next tick.
+    this.tutorialTxt?.setText('');
+    this.tutorialHintTxt?.setText('');
   }
 
   _tutorialTick() {
     if (!this._tut || this._tut.completed) return;
+    if (this._tut.introActive) return;
     if (!gameState) return;
 
     const phase = gameState.phase;
@@ -639,7 +727,7 @@ class GameScene extends Phaser.Scene {
   }
 
   // ── Static board (re-callable when terrain/resources change) ────
-  _drawStaticBoard(terrain) {
+  _drawStaticBoard(terrain, illuminatedSide = null) {
     const g = this.boardGfx;
     g.clear();
     if (this._boardBadges) {
@@ -650,6 +738,7 @@ class GameScene extends Phaser.Scene {
     // Build resource lookup sets (empty when terrain not yet received)
     const resourceKey = (c, r) => `${c},${r}`;
     const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
+    const illuminate = illuminatedSide; // 'p1' | 'p2' | null
 
     // ── Soft vignette behind whole board ──────────────────────────
     g.fillStyle(0x0c0804, 1);
@@ -662,17 +751,37 @@ class GameScene extends Phaser.Scene {
         const w = CELL - 1, h = CELL - 1;
         const onFence  = (c + r === 11);
         const p1side   = isP1(c, r);
+        const ownerSide = p1side ? 'p1' : 'p2';
         const key = resourceKey(c, r);
         const resource = p1side ? p1ResourceMap[key] : p2ResourceMap[key];
         const isResource = !!resource;
 
-        // Base fill: resource cells get vivid colour; everything else muted
-        let baseFill;
-        if (onFence)       baseFill = C.fence_cell;
-        else if (isResource) baseFill = p1side ? C.p1_target : C.p2_target;
-        else               baseFill = p1side ? C.farmer_cell : C.emu_cell;
+        // Base fill: only illuminated-side resources stand out.
+        let baseFill = C.board_bg;
+        let fillAlpha = 1;
+        let strongBorder = false;
 
-        g.fillStyle(baseFill, 1);
+        if (onFence) {
+          baseFill = C.fence_cell;
+          fillAlpha = 1;
+        } else if (isResource) {
+          const isIlluminatedResource = !illuminate || ownerSide === illuminate;
+          if (isIlluminatedResource) {
+            baseFill = ownerSide === 'p1' ? C.p1_target : C.p2_target;
+            fillAlpha = 1;
+            strongBorder = true;
+          } else {
+            // Unlit opponent resources are deliberately washed out.
+            baseFill = ownerSide === 'p1' ? C.farmer_cell : C.emu_cell;
+            fillAlpha = 0.30;
+          }
+        } else {
+          // Non-resource tiles are neutral so only resources stand out.
+          baseFill = C.board_bg;
+          fillAlpha = 1;
+        }
+
+        g.fillStyle(baseFill, fillAlpha);
         g.fillRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
 
         // Soft highlight / shadow for depth
@@ -681,15 +790,16 @@ class GameScene extends Phaser.Scene {
         g.fillStyle(0x000000, 0.10);
         g.fillRect(x + 2, y + h - 4, w - 3, 3);
 
-        // Border — thicker on resource cells so they pop
-        if (isResource) {
+        // Border — thicker on illuminated resources so they pop
+        if (strongBorder) {
           g.lineStyle(1.5, 0x000000, 0.35);
         } else {
           g.lineStyle(1, 0x000000, 0.12);
         }
         g.strokeRoundedRect(x + 1, y + 1, w - 1, h - 1, 4);
 
-        if (resource?.visible && resource?.value === 5) {
+        const isIlluminatedResource = !illuminate || ownerSide === illuminate;
+        if (resource?.visible && resource?.value === 5 && isIlluminatedResource) {
           g.lineStyle(3, 0xffe070, 0.95);
           g.strokeRoundedRect(x + 3, y + 3, w - 5, h - 5, 6);
           g.fillStyle(0x120904, 0.55);
@@ -882,12 +992,8 @@ class GameScene extends Phaser.Scene {
       return btn;
     };
 
-    this.chooseOldMickBtn = mkActionBtn('Old Mick First', 8, 472, 92, '#5c3414', '#ffd878', () => {
-      this._sendAction({ action: 'choose_side', first_player_side: 'old_mick' });
-    });
-    this.chooseMobBtn = mkActionBtn('Mob First', 112, 472, 90, '#294016', '#b8ff78', () => {
-      this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
-    });
+    // Side-selection is now defaulted to Mob first, so the player no longer chooses
+    // "Old Mick First" vs "Mob First" via UI buttons.
     this.confirmHqBtn = mkActionBtn('Confirm HQ', 8, 504, 194, '#6a3812', '#ffe0a0', () => {
       const activeSide = gameState?.setup?.active_setup_side;
       if (activeSide) this._sendAction({ action: 'confirm_hq', side: activeSide });
@@ -1184,9 +1290,8 @@ class GameScene extends Phaser.Scene {
     this.setupCandidateTxt.setVisible(false);
 
     if (phase === 'scan') {
+      this._chooseSideSent = false;
       this.setupControlTxt.setText('Waiting for a valid board scan before browser setup controls can be used.').setColor('#9e8868');
-      this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
@@ -1194,9 +1299,17 @@ class GameScene extends Phaser.Scene {
     }
 
     if (phase === 'side_selection') {
-      this.setupControlTxt.setText('Choose which side places a hidden HQ first.').setColor('#d8c890');
-      this._setActionButtonState(this.chooseOldMickBtn, { visible: true, enabled: true });
-      this._setActionButtonState(this.chooseMobBtn, { visible: true, enabled: true });
+      this._chooseSideSent = this._chooseSideSent || false;
+      this.setupControlTxt.setText('The Mob places the hidden HQ first (default).').setColor('#b8ff78');
+
+      // In tutorial mode, wait until the intro popup is dismissed.
+      const deferForTutorialIntro = !!(this._tut && this._tut.introActive);
+
+      if (!this._chooseSideSent && !deferForTutorialIntro) {
+        this._chooseSideSent = true;
+        this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
+      }
+
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
@@ -1218,8 +1331,7 @@ class GameScene extends Phaser.Scene {
               : 'Selected cell: --'
         )
         .setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
-      this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
+      this._chooseSideSent = true;
       this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
       this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
       this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
@@ -1234,8 +1346,6 @@ class GameScene extends Phaser.Scene {
     this.setupControlTxt
       .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : 'Setup complete. Browser controls are hidden during battle.')
       .setColor(isArming ? '#ffd878' : '#8fb890');
-    this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
-    this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.nukeBtn, {
@@ -1451,10 +1561,25 @@ class GameScene extends Phaser.Scene {
 
     this._syncSetupSelection(phase, setup);
 
+    // Only illuminate resources for one side at a time.
+    let illuminatedSide = null;
+    if (phase === 'game') {
+      if (turn === 1) illuminatedSide = 'p1';
+      else if (turn === 2) illuminatedSide = 'p2';
+    } else {
+      illuminatedSide = setup.active_setup_side || null;
+      if (!illuminatedSide && setup.side_selection_complete) {
+        // setup.first_player_side is "old_mick" | "mob"
+        illuminatedSide = setup.first_player_side === 'mob' ? 'p2' : 'p1';
+      }
+      if (!illuminatedSide) illuminatedSide = 'p2'; // default: Mob-first lighting
+    }
+
     // Redraw board when a new random map arrives (resource cells shift).
-    if (terrain && map_seed !== this._drawnSeed) {
-      this._drawStaticBoard(terrain);
+    if (terrain && (map_seed !== this._drawnSeed || illuminatedSide !== this._drawnIlluminatedSide)) {
+      this._drawStaticBoard(terrain, illuminatedSide);
       this._drawnSeed = map_seed;
+      this._drawnIlluminatedSide = illuminatedSide;
     }
 
     // Sync tiers from server (authoritative)
@@ -1996,30 +2121,12 @@ class GameScene extends Phaser.Scene {
                  '🐦 THE MOB TERRITORY', '#b8ff60'),
         fence:mk(BX + CELL * 6,    BY + CELL * 6,
                  '🚫 FENCE LINE — NO HQ', '#ff9090'),
-        banner: this.add.text(BX + COLS * CELL / 2, BY + ROWS * CELL / 2,
-                 'HQ SETUP PLACEHOLDER', {
-                    fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'bold',
-                    color: '#fff8d0', backgroundColor: 'rgba(40,22,10,0.85)',
-                    padding: { x: 14, y: 8 },
-                   stroke: '#6a4020', strokeThickness: 3,
-                 }).setDepth(9).setOrigin(0.5, 0.5),
       };
 
-      // Banner gentle breathing
-      this.tweens.add({
-        targets: this._zoneLabels.banner,
-        scale: { from: 1, to: 1.04 },
-        yoyo: true, repeat: -1, duration: 700, ease: 'Sine.easeInOut',
-      });
+      // Intentionally no HQ setup banner: it can block the view of the
+      // side territory during hq_placement.
     }
 
-    this._zoneLabels.banner.setText(
-      isScan
-        ? 'SCAN THE BOARD TO START HQ SETUP'
-        : isHqPlacement
-          ? `${sideLabel(activeSide)} IS CHOOSING A HIDDEN HQ`
-          : 'CHOOSE WHICH SIDE PLACES AN HQ FIRST'
-    );
     this._zoneLabels.p1.setText(
       isHqPlacement && activeSide === 'p1'
         ? '🌾 OLD MICK TERRITORY — ACTIVE HQ SIDE'
@@ -2030,7 +2137,6 @@ class GameScene extends Phaser.Scene {
         ? '🐦 THE MOB TERRITORY — ACTIVE HQ SIDE'
         : '🐦 THE MOB TERRITORY'
     );
-    this._zoneLabels.banner.setVisible(true);
     this._zoneLabels.p1.setVisible(!isScan);
     this._zoneLabels.p2.setVisible(!isScan);
     this._zoneLabels.fence.setVisible(!isScan);

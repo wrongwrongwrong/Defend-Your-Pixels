@@ -1,15 +1,14 @@
 # Old Mick Against the Mob MVP Rules
 
-This file defines the minimum playable ruleset for the first `Old Mick Against the Mob`
-prototype. It is intentionally narrower than the full GDD. The goal is to lock the
-core loop before expanding into upgrades, hidden information, and Phaser-specific UI.
+This file defines the minimum playable ruleset for the `Old Mick Against the Mob` prototype.
+It is intentionally narrower than the full GDD: the goal is to lock the fast core loop on a
+shared AR board before adding upgrades, more hidden-information, or extra attack types.
 
 ## MVP scope
 
 - 2-player turn-based board game.
 - Farmers versus Emus.
 - No hidden HQ yet.
-- No economy system yet.
 - No upgrade system yet.
 - No map art or 2D/3D presentation decisions in this file.
 
@@ -37,8 +36,8 @@ Theme mapping:
 - Emu DEF = `Cassowary`
 - Emu HQ = `Nest`
 
-The model may continue using existing internal names at first, but gameplay behavior
-must follow the rules below.
+Backend mapping note: internal names may differ, but gameplay behaviour must follow the
+rules in this document.
 
 Current backend mapping layer:
 
@@ -80,14 +79,7 @@ Instead, the MVP attack flow is:
 
 Allowed attack directions:
 
-- up
-- down
-- left
-- right
-- up-left
-- up-right
-- down-left
-- down-right
+- `E`, `SE`, `S`, `SW`, `W`, `NW`, `N`, `NE`
 
 Valid targets for this MVP:
 
