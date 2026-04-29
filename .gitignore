@@ -21,3 +21,7 @@ node_modules/
 
 # Generated markers (可選：如果不想上傳印好的圖片就取消註解)
 # markers/
+
+
+#photoshop
+*.psd
