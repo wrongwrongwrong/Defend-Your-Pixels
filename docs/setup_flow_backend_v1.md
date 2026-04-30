@@ -1,30 +1,62 @@
-# Setup Flow Backend v1
+# Setup Flow Backend v2
 
-This document defines the backend-first pre-game setup flow for the live Old Mick runtime.
+This document defines the marker-driven pre-game HQ setup flow for the live Old Mick runtime.
 
 ## Phases
 
-The runtime now moves through four explicit backend phases:
+The live runtime now primarily moves through three backend phases:
 
 1. `scan`
-2. `side_selection`
-3. `hq_placement`
-4. `game`
+2. `hq_placement`
+3. `game`
 
 The backend remains authoritative for phase transitions.
+
+`side_selection` still exists in code as a fallback/debug path, but it is no longer the primary live HQ flow.
 
 ## Phase transitions
 
 1. Stay in `scan` until the camera is available and the board marker scan is usable.
-2. Move to `side_selection` once the board scan is ready.
-3. Move to `hq_placement` once `choose_side` is stored.
-4. Move to `game` only after both HQ locations are confirmed.
+2. Move to `hq_placement` once the board scan is ready.
+3. During `hq_placement`, the first stable visible turn marker decides which side hides an HQ first.
+4. While one side is active, that side's HQ marker drives the live HQ candidate cell.
+5. When the turn marker changes to the other side, the previous side's valid HQ candidate locks automatically.
+6. Move to `game` only after both HQ locations are locked.
 
-## Setup actions
+## Marker roles used by HQ setup
+
+- Board corners:
+  - `0` top-left
+  - `1` top-right
+  - `2` bottom-left
+  - `3` bottom-right
+- HQ setup markers:
+  - `10` = `P1 TURN`
+  - `11` = `P1 HQ`
+  - `20` = `P2 TURN`
+  - `21` = `P2 HQ`
+
+The live runtime uses a short stability window before accepting turn-marker side changes or HQ candidate cells.
+
+## Primary live setup flow
+
+1. Wait for a valid 4-corner scan.
+2. Show HQ setup instructions.
+3. Place exactly one turn marker on the board.
+4. That turn marker decides which side is actively hiding an HQ.
+5. The active side places its HQ marker on a valid cell in its own territory.
+6. The frontend shows the live HQ marker cell, but confirmed HQ coordinates remain hidden.
+7. Handing the turn marker to the other side automatically locks the previous side's HQ if the candidate was valid.
+8. Repeat for the second side.
+9. Enter `game` after both HQs are locked.
+
+## Fallback / debug setup actions
+
+The following browser/backend actions still exist as fallback or debug paths. They are no longer the primary live HQ workflow.
 
 ### `choose_side`
 
-Choose which faction places its HQ first.
+Fallback-only way to choose which faction places its HQ first.
 
 ```json
 {
@@ -35,7 +67,7 @@ Choose which faction places its HQ first.
 
 ### `set_hq_candidate`
 
-Submit a candidate HQ cell for the currently active setup side.
+Fallback-only way to submit a candidate HQ cell for the currently active setup side.
 
 ```json
 {
@@ -47,7 +79,7 @@ Submit a candidate HQ cell for the currently active setup side.
 
 ### `confirm_hq`
 
-Confirm the currently stored HQ candidate for that side.
+Fallback-only way to lock the currently stored HQ candidate for that side.
 
 ```json
 {
@@ -73,6 +105,8 @@ The backend stores the true HQ coordinates internally.
 The live payload must not expose confirmed HQ coordinates during normal play.
 HQ positions are only revealed when destroyed through the existing `hq_revealed` output.
 
+Even though the live frontend can see the active HQ marker position during setup, the backend still hides the actual locked HQ coordinates from the public payload after setup completes.
+
 ## Setup payload
 
 The runtime payload includes safe setup metadata only:
@@ -80,6 +114,10 @@ The runtime payload includes safe setup metadata only:
 ```json
 {
   "phase": "hq_placement",
+  "hq_markers": {
+    "p1": { "col": 3, "row": 4, "stale": false },
+    "p2": { "col": null, "row": null, "stale": true }
+  },
   "setup": {
     "board_scan_ready": true,
     "side_selection_complete": true,
@@ -98,11 +136,11 @@ The runtime payload includes safe setup metadata only:
 
 ## Frontend placeholder rendering
 
-`yu_test1/index.html` now renders a visual-only setup placeholder whenever `phase` is not `game`.
+`yu_test1/index.html` now renders a marker-guided setup placeholder whenever `phase` is not `game`.
 
 - `scan`: shows a setup status card and scan-waiting messaging
-- `side_selection`: shows the setup card plus a board overlay for both territories and the fence line
-- `hq_placement`: shows the setup card plus highlighted valid HQ territory, active setup side emphasis, and fence invalidation
+- `side_selection`: fallback/debug state only
+- `hq_placement`: shows the setup card plus highlighted valid HQ territory, active setup side emphasis, reserved-corner rejection, blocked-cell rejection, and fence invalidation
 
 The frontend currently consumes only safe setup metadata:
 
@@ -117,14 +155,14 @@ The frontend currently consumes only safe setup metadata:
 
 The placeholder does not expose confirmed HQ coordinates. It explicitly treats confirmed HQs as hidden until they are later revealed through gameplay.
 
-The live browser frontend now also drives the setup flow:
+The live browser frontend now primarily reflects marker-driven setup state:
 
-- during `side_selection`, panel controls send `choose_side`
-- during `hq_placement`, clicking a board cell sends `set_hq_candidate` for the active setup side
-- during `hq_placement`, a confirm button sends `confirm_hq`
-- during `hq_placement`, a restart button sends `reset_setup`
+- during `hq_placement`, the active side's HQ marker controls the live candidate cell
+- changing the turn marker to the other side locks the previous side automatically
+- a restart button still sends `reset_setup`
+- the old click/confirm controls are no longer the primary live path
 
-The browser may show a transient local candidate preview ring for the active side before confirmation. This preview is frontend-only and is cleared once the HQ is confirmed or setup resets.
+The browser shows a live HQ marker preview ring for the active side. Confirmed HQs still become hidden immediately after they lock.
 
 The live frontend also surfaces `errors[]` as a temporary warning layover:
 
@@ -140,10 +178,23 @@ The live frontend also surfaces `errors[]` as a temporary warning layover:
 - `c + r > 11` => `p2`
 - `c + r == 11` => fence
 - HQ must be on its own side and not on the fence.
+- HQ must not overlap blocked terrain (`p1_hard`, `p1_soft`, `p2_hard`, `p2_soft`).
+- Reserved corner cells are invalid HQ cells:
+  - `p1`: `A1`, `A2`, `B1`
+  - `p2`: `L12`, `L11`, `K12`
 - Old Mick tokens must stay on the Old Mick side and cannot be placed on the fence.
 - Mob tokens must stay on the Mob side and cannot be placed on the fence.
 - Old Mick attack directions: `E`, `SE`, `S`, `SW`
 - Mob attack directions: `W`, `NW`, `N`, `NE`
+
+## Turn-marker HQ locking
+
+During `hq_placement`:
+
+- if both turn markers are visible at once, setup must not advance
+- if no valid HQ marker is present for the active side, changing turn marker must not lock anything
+- if a valid HQ candidate exists for the active side, handing the turn marker to the other side locks it automatically
+- once both HQs are locked, the runtime enters `game`
 
 ## Active-turn token protection
 

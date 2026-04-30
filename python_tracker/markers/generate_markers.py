@@ -9,14 +9,16 @@ Output:
     corner_1_TR.png   ← tape to top-right corner
     corner_2_BL.png   ← tape to bottom-left corner
     corner_3_BR.png   ← tape to bottom-right corner
-    token_10_P1_Infantry.png
-    token_11_P1_Tank.png
-    token_12_P1_Bomber.png
-    token_13_P1_DEF.png
-    token_14_P2_Infantry.png
-    token_15_P2_Tank.png
-    token_16_P2_Bomber.png
-    token_17_P2_DEF.png
+    marker_10_P1_TURN.png
+    marker_11_P1_HQ.png
+    marker_12_P1_ATK_A.png
+    marker_13_P1_ATK_B.png
+    marker_14_P1_DEF.png
+    marker_20_P2_TURN.png
+    marker_21_P2_HQ.png
+    marker_22_P2_ATK_A.png
+    marker_23_P2_ATK_B.png
+    marker_24_P2_DEF.png
 
 Run:
     python python_tracker/markers/generate_markers.py
@@ -40,16 +42,18 @@ MARKERS = {
     1:  "corner_1_TR",
     2:  "corner_2_BL",
     3:  "corner_3_BR",
-    # Player 1 tokens
-    10: "token_10_P1_Infantry",
-    11: "token_11_P1_Tank",
-    12: "token_12_P1_Bomber",
-    13: "token_13_P1_DEF",
-    # Player 2 tokens
-    14: "token_14_P2_Infantry",
-    15: "token_15_P2_Tank",
-    16: "token_16_P2_Bomber",
-    17: "token_17_P2_DEF",
+    # Player 1 markers
+    10: "marker_10_P1_TURN",
+    11: "marker_11_P1_HQ",
+    12: "marker_12_P1_ATK_A",
+    13: "marker_13_P1_ATK_B",
+    14: "marker_14_P1_DEF",
+    # Player 2 markers
+    20: "marker_20_P2_TURN",
+    21: "marker_21_P2_HQ",
+    22: "marker_22_P2_ATK_A",
+    23: "marker_23_P2_ATK_B",
+    24: "marker_24_P2_DEF",
 }
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
