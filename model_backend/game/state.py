@@ -2,9 +2,7 @@ from __future__ import annotations
 
 """Authoritative game state and rules implementation.
 
-`GameState` is the rules engine used by:
-- prototypes (pygame runner)
-- the live tracker runtime (via the bridge layer)
+`GameState` is the rules engine used by the live tracker runtime (via the bridge layer).
 
 This module intentionally contains the validation and state transitions that define
 "what is legal" in the game. Adapters/transports should not replicate these rules;
@@ -13,6 +11,7 @@ they should call into `GameState` methods and surface `last_action` to the UI.
 
 from dataclasses import dataclass
 from random import Random
+import os
 import time
 from typing import Dict, Optional
 
@@ -41,6 +40,8 @@ class GameState:
 
     PIXELS_PER_PLAYER_DEFAULT = 35
     MOVE_COUNTDOWN_SECONDS = 10.0
+    # Testing toggle: allow placing units without pathfinding constraints.
+    FREE_MOVE = os.environ.get("DYP_FREE_MOVE", "").strip().lower() in ("1", "true", "yes", "on")
 
     def __init__(self, seed: int = 1, board_width: int = 12, board_height: int = 12):
         self.rng = Random(seed)
@@ -58,7 +59,7 @@ class GameState:
             PlayerId.P2: PlayerState(PlayerId.P2, ether=0, income_per_turn=0),
         }
 
-        # Filled by level loader (or demos); pygame prototype uses ASCII maps.
+        # Filled by level loaders or demo setups.
         self.towers: Dict[PlayerId, CommandTower] = {}
 
         self.units: Dict[str, Unit] = {}
@@ -137,7 +138,9 @@ class GameState:
             if u.owner == self.active_player:
                 u.new_turn()
         self._sync_defender_protection()
-        self.last_action = f"Player {int(self.active_player)} turn started"
+        base = f"Player {int(self.active_player)} turn started"
+        auto = self._auto_attack_at_turn_start()
+        self.last_action = f"{base} | {auto}" if auto else base
 
     def end_turn(self) -> None:
         if self.game_over:
@@ -292,7 +295,8 @@ class GameState:
         Includes the unit's current position with cost 0.
         """
         u = self.units[unit_id]
-        if u.owner != self.active_player or not u.can_act() or u.ap <= 0 or u.move_points <= 0:
+        # Movement is governed by move_points and legality; AP is reserved for attacks/acts.
+        if u.owner != self.active_player or not u.can_act() or u.move_points <= 0:
             return {u.pos: 0.0}
 
         start = u.pos
@@ -334,7 +338,8 @@ class GameState:
         u = self._require_active_unit(unit_id, action_name="move that unit")
         if u is None:
             return False
-        if u.ap <= 0 or u.move_points <= 0:
+        # Movement consumes move_points; AP is reserved for attacks/acts.
+        if u.move_points <= 0:
             self.last_action = f"{unit_id} cannot move any farther this turn"
             return False
         if dest == u.pos:
@@ -342,21 +347,138 @@ class GameState:
         if not self.board.in_bounds(dest) or self.is_blocked(dest) or self.unit_at(dest) is not None:
             self.last_action = f"{unit_id} could not move to ({dest.x}, {dest.y})"
             return False
-
-        costs = self.reachable_positions(unit_id)
-        cost = costs.get(dest)
-        if cost is None or cost > u.move_points:
-            self.last_action = f"{unit_id} does not have a legal path to ({dest.x}, {dest.y})"
-            return False
+        if self.FREE_MOVE:
+            cost = 1.0
+        else:
+            costs = self.reachable_positions(unit_id)
+            cost = costs.get(dest)
+            if cost is None or cost > u.move_points:
+                self.last_action = f"{unit_id} does not have a legal path to ({dest.x}, {dest.y})"
+                return False
 
         u.move_points -= cost
         u.pos = dest
         if self.board.get(dest).terrain == TerrainType.HIGHWAY:
             u.on_highway = True
         self._sync_defender_protection()
-        self.last_action = f"{unit_id} moved to ({dest.x}, {dest.y})"
+        moved_text = f"{unit_id} moved to ({dest.x}, {dest.y})"
+        auto_text = self._auto_attack_if_adjacent(u, prefix="auto-attack")
+        self.last_action = f"{moved_text} | {auto_text}" if auto_text else moved_text
         self.start_move_countdown(unit_id)
+        self.end_game()
         return True
+
+    def _adjacent_positions_4(self, p: Pos) -> list[Pos]:
+        # Deterministic neighbor order for predictable auto-attack resolution.
+        return [
+            p + Direction.UP.delta(),
+            p + Direction.RIGHT.delta(),
+            p + Direction.DOWN.delta(),
+            p + Direction.LEFT.delta(),
+        ]
+
+    def _auto_attack_at_turn_start(self) -> str | None:
+        """
+        At the start of the active player's turn, any adjacent enemy target may be
+        auto-attacked once per attacker (consumes AP).
+        """
+        if self.game_over:
+            return None
+
+        events: list[str] = []
+        # Deterministic ordering for tests and debugging.
+        for u in sorted(self.units.values(), key=lambda x: x.id):
+            if u.owner != self.active_player:
+                continue
+            if not isinstance(u, Attacker):
+                continue
+            text = self._auto_attack_if_adjacent(u, prefix="auto-attack")
+            if text:
+                events.append(text)
+                self.end_game()
+                if self.game_over:
+                    break
+
+        if not events:
+            return None
+        if len(events) == 1:
+            return events[0]
+        return f"{len(events)} auto-attacks: " + "; ".join(events)
+
+    def _auto_attack_if_adjacent(self, unit: Unit, *, prefix: str) -> str | None:
+        """
+        If `unit` is an attacker adjacent (Manhattan distance 1) to an enemy target,
+        automatically perform a single attack.
+
+        Priority: enemy HQ > enemy resource tile > enemy unit.
+        """
+        if self.game_over:
+            return None
+        if not isinstance(unit, Attacker):
+            return None
+        if unit.ap <= 0:
+            return None
+        # Keep parity with the current directional-attack constraint.
+        if unit.on_highway:
+            return None
+
+        adjacent = [p for p in self._adjacent_positions_4(unit.pos) if self.board.in_bounds(p)]
+
+        hq: CommandTower | None = None
+        px: Pixel | None = None
+        enemy_unit: Unit | None = None
+
+        for p in adjacent:
+            tower = self.tower_at(p)
+            if tower is not None and tower.owner != unit.owner:
+                hq = tower
+                break
+
+        if hq is None:
+            for p in adjacent:
+                pixel = self.pixel_at(p)
+                if pixel is not None and pixel.owner != unit.owner:
+                    px = pixel
+                    break
+
+        if hq is None and px is None:
+            for p in adjacent:
+                other = self.unit_at(p)
+                if other is not None and other.owner != unit.owner:
+                    enemy_unit = other
+                    break
+
+        target: Pixel | CommandTower | Unit | None = hq or px or enemy_unit
+        if target is None:
+            return None
+
+        action_text = None
+        if isinstance(target, Pixel):
+            if target.protection_layers > 0:
+                target.protection_layers = 0
+                action_text = (
+                    f"{unit.id} {prefix} stripped protection from enemy {target.theme_name} "
+                    f"at ({target.pos.x}, {target.pos.y})"
+                )
+            else:
+                del self.pixels[target.id]
+                action_text = (
+                    f"{unit.id} {prefix} destroyed enemy {target.theme_name} "
+                    f"at ({target.pos.x}, {target.pos.y})"
+                )
+        elif isinstance(target, CommandTower):
+            target.hp = max(0, target.hp - 2)
+            action_text = f"{unit.id} {prefix} hit enemy {target.theme_name} ({target.hp}/{target.max_hp})"
+        else:
+            target.hp = max(0, target.hp - 2)
+            if target.hp <= 0:
+                del self.units[target.id]
+                action_text = f"{unit.id} {prefix} destroyed enemy unit {target.id}"
+            else:
+                action_text = f"{unit.id} {prefix} hit enemy unit {target.id} ({target.hp}/{target.max_hp})"
+
+        unit.ap -= 1
+        return action_text
 
     def trace_attack_line(
         self, unit_id: str, direction: AttackDirection

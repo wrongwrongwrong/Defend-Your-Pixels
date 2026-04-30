@@ -15,6 +15,41 @@ This flow should answer five core questions:
 - how the player understands the DEF zone
 - how the player sees turn state and win state
 
+## Pre-game setup flow
+
+Before gameplay begins, the live runtime now requires:
+
+1. board scan readiness
+2. sequential HQ placement with confirmation
+3. transition to `game`
+
+Required setup sequence:
+
+1. The runtime stays in `scan` until the board markers are readable.
+2. `ID10` or `ID20` decides whether Old Mick or The Mob places an HQ first.
+3. The active setup side places its own HQ marker on its own territory.
+4. The active setup side scans `ID4` to confirm that HQ.
+5. Setup control moves to the other side.
+6. After both HQs are confirmed, gameplay starts.
+
+Confirmed hidden-information rule:
+
+- HQ locations are chosen during setup.
+- HQ coordinates remain hidden during normal play.
+- HQ coordinates are only exposed later through `hq_revealed` when destroyed.
+
+Current live frontend behavior:
+
+- `yu_test1/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
+- the placeholder shows backend setup status and safe HQ progress only
+- the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
+- during `hq_placement`, the active side is chosen by `ID10` / `ID20`
+- during `hq_placement`, `ID11` / `ID21` drive the live HQ candidate cell for the active side
+- during `hq_placement`, the board may show a transient highlight ring for the active HQ marker cell without showing exact coordinates in the side panel
+- during `hq_placement`, scanning `ID4` confirms the currently active HQ candidate
+- restart setup still exists as a browser-side fallback control
+- recoverable backend/tracker validation issues are surfaced through a temporary warning layover and a recent-warning line in the side panel
+
 ## Core interaction model
 
 The MVP uses a two-mode interaction model:
@@ -49,7 +84,7 @@ Backend responsibility:
 2. Player selects that token.
 3. UI confirms which token is selected.
 
-### Current React validation behavior
+### Current frontend behavior
 
 - Player clicks a token on the board.
 - UI stores `selectedTokenId`.
@@ -61,11 +96,6 @@ Backend responsibility:
 Example:
 
 - `Selected Riflemen u0 at (4, 11)`
-
-### Current pygame prototype behavior
-
-- `Q / E` cycles active-player units.
-- The currently selected unit is the one used for move or attack actions.
 
 ### Validation goal
 
@@ -80,7 +110,7 @@ Players should never need to guess which token is currently selected.
 3. Player indicates one of 8 directions.
 4. Frontend converts that interaction into `attack_in_direction`.
 
-### Current React validation behavior
+### Current frontend behavior
 
 - Player switches to `Act mode`.
 - Player clicks a board cell.
@@ -101,14 +131,6 @@ Current accepted directions:
 - `down_left`
 - `down_right`
 
-### Current pygame prototype behavior
-
-- Player switches to attack mode with `1`.
-- Player chooses direction with:
-  - `W A S D` for orthogonal directions
-  - `Q E Z C` for diagonal directions
-- `Enter` confirms the attack.
-
 ### Validation goal
 
 The player should understand that they are choosing a direction, not choosing an arbitrary target tile.
@@ -123,7 +145,7 @@ The frontend should make it clear that:
 - only the first valid enemy target is hit
 - hard terrain may block the attack before a target is reached
 
-### Current React validation behavior
+### Current frontend behavior
 
 - The frontend currently communicates this through:
   - mode labels
@@ -134,15 +156,9 @@ The frontend should make it clear that:
   - invalid click -> `Act mode only accepts straight or diagonal lines from the selected token.`
   - valid click -> `Attack queued: Riflemen -> up right`
 
-### Current pygame prototype behavior
-
-- Attack mode highlights reachable line cells for the selected direction family.
-- Preview follows the chosen direction.
-- HUD explains that attack uses directional line attack.
-
 ### MVP limitation
 
-Current React validation layer does not yet render a dedicated attack-line overlay.
+Current frontend UI does not yet render a dedicated attack-line overlay.
 
 This is acceptable for the current validation pass, but should be improved in later frontend work.
 
@@ -160,18 +176,13 @@ The frontend should communicate that:
 - each defender protects a `3x3` area
 - protected resource tiles require one extra hit
 
-### Current React validation behavior
+### Current frontend behavior
 
 - Defender meaning is currently explained via:
   - HUD labels
   - validation summary
   - footer / role text
-- The React validation layer does **not** yet draw a dedicated DEF-zone overlay.
-
-### Current pygame prototype behavior
-
-- Debug HUD states that defenders provide passive `3x3` protection.
-- Protected resource tiles are drawn brighter.
+- The frontend does **not** yet draw a dedicated DEF-zone overlay.
 
 ### MVP limitation
 
@@ -182,7 +193,6 @@ For now, the prototype validates understanding through:
 - rules text
 - HUD wording
 - backend result text
-- brighter protected resource tiles in pygame
 
 ### Validation goal
 
@@ -194,32 +204,46 @@ Players should understand that defenders are not healers or direct attack units 
 
 The frontend should always show:
 
-- current turn number
-- active player
+- whether battle is waiting for `ID10` / `ID20` or currently positioning one side
+- which side is currently active when positioning is open
 - latest backend status
-- whether move countdown is active
 - when the game is over
 - who won
 
-### Current React validation behavior
+### Current frontend behavior
 
-React currently shows:
+The browser frontend currently shows:
 
 - `Turn`
-- `Active`
-- `Status` from `last_action`
-- move countdown box
+- battle-side status text derived from the live runtime
 - game-over overlay
-
-### Current pygame prototype behavior
-
-- HUD shows turn number and active player
-- HUD shows current status text
-- HUD shows game-over state and winner
 
 ### Validation goal
 
 Players should never be confused about whose turn it is or why the match ended.
+
+## Turn integrity
+
+During gameplay, accidental movement of the inactive side's physical markers does not change authoritative state.
+
+- only the active side's tokens may move or rotate
+- if no side is active yet, both sides remain frozen until `ID10` or `ID20` is scanned
+- inactive-side token changes are ignored by the backend
+- the runtime reports `inactive_side_token_changed` as a recoverable validation status
+- the frontend shows this as a warning layover so players understand that the movement was ignored rather than applied
+- `hq_setup_complete` is surfaced as a success-style alert so setup completion reads as progression rather than failure
+
+## Current battle flow
+
+During gameplay, the live marker flow is:
+
+1. Scan `ID10` or `ID20` to begin that side's positioning turn.
+2. Move only that side's tokens.
+3. Rotate ATK markers to choose attack directions.
+4. Scan `ID4` to submit and resolve that side's attacks immediately.
+5. The runtime then waits for the opposing side's `ID10` or `ID20` before any further token movement is accepted.
+
+If one of the active side's tokens is missing at submit time, the runtime still accepts `ID4`; unseen tokens simply do not move or attack for that turn.
 
 ## Current validation checklist
 
@@ -236,17 +260,16 @@ The interaction flow is good enough for MVP testing if players can do the follow
 
 The following are still known gaps, not blockers:
 
-- React does not yet draw a dedicated attack-line overlay
-- React does not yet draw a dedicated defender-zone overlay
+- the frontend does not yet draw a dedicated attack-line overlay
+- the frontend does not yet draw a dedicated defender-zone overlay
 - resource tiles are not yet surfaced as first-class frontend objects
-- hidden information flow is not yet designed
+- HQ setup still depends on backend validation; browser-side previews are temporary and non-authoritative
 
 These should be treated as later refinements, not blockers for MVP validation.
 
 ## Related docs
 
 - `docs/old_mick_mvp_rules.md`
-- `docs/frontend_backend_contract_v1.md`
 - `docs/authoritative_actions_v1.md`
-- `docs/old_mick_core_test_cases.md`
-- `docs/phaser_handoff_v1.md`
+- `docs/board_state_v1.md`
+- `docs/setup_flow_backend_v1.md`
