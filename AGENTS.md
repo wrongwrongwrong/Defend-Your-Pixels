@@ -38,7 +38,7 @@ Windows notes:
 
 ## Architecture notes
 
-- `main.cpp` at root is a preserved C++ reference — do not use as runtime entry.
+- `archive/docs/Reference/main.cpp` is a preserved C++ reference — do not use it as a runtime entry.
 - `game-logic/` is legacy; use `model_backend/` for game rules.
 - `archive/` and `dyp/` are not primary runtime paths.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
@@ -73,5 +73,4 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 - `CONTRIBUTING.md` — naming conventions, file responsibility, PR checklist
 - `docs/board_state_v1.md` — authoritative state contract (snake_case payload)
 - `docs/authoritative_actions_v1.md` — action types and their Python-side behavior
-- `MIGRATION_PLAN.md` — planned refactor toward `apps/` / `packages/` structure
 - `README_PROJECT_MAP.md` — high-level data flow and folder purposes

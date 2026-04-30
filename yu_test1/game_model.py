@@ -2,8 +2,8 @@
 Authoritative game state for Old Mick Against the Mob.
 
 Tracks per-cell damage, hidden HQs, scored resource destruction, tier levels, and
-win conditions. Turn-resolution is triggered externally — the server calls
-`on_turn_change(new_turn)` whenever the physical turn marker flips.
+win conditions. Shot resolution is triggered externally when the live runtime
+submits one side's turn.
 """
 
 import random
@@ -321,6 +321,16 @@ class GameModel:
             return []
 
         attacker = "p1" if self.last_turn == 1 else "p2"
+        events = self.resolve_side_attack(attacker, tokens_p1, tokens_p2)
+
+        self.last_turn = new_turn
+        return events
+
+    def resolve_side_attack(self, attacker: str, tokens_p1, tokens_p2):
+        """Resolve one submitted side's attacks without relying on turn flips."""
+        if attacker not in {"p1", "p2"} or self.winner:
+            return []
+
         attacker_toks = tokens_p1 if attacker == "p1" else tokens_p2
         defender_toks = tokens_p2 if attacker == "p1" else tokens_p1
         def_pos = (
@@ -343,7 +353,6 @@ class GameModel:
                 print(f"    → {event['type']} {event.get('cell', '')}")
             events += shot_events
 
-        self.last_turn = new_turn
         return events
 
     def snapshot(self):

@@ -44,8 +44,8 @@ Purpose: connect tracker + runtime model + frontend.
 
 Includes:
 - WebSocket transport
-- Message schemas/contracts
-- Legacy adapters from the older bridge path
+- Inbound browser action handling
+- Runtime broadcast helpers
 
 Use this when you need to change real-time communication or message formats.
 
@@ -96,4 +96,3 @@ These are not primary runtime entrypoints for the current architecture.
 - **Tracker frame**: latest camera-derived board/token info.
 - **Board state**: serialized game state sent to frontend.
 - **Bridge**: transport and synchronization layer between modules.
-

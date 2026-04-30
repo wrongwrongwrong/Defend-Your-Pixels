@@ -17,22 +17,31 @@ from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, dr
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
-from python_tracker.tracked_markers import TOKEN_MARKERS, TURN_MARKER_ID
-from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, make_error, new_side_state, sanitize_token_states
+from python_tracker.tracked_markers import CONFIRM_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
+from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states
 from yu_test1 import game_model, terrain_gen
 
 
 CAMERA_ID = 1
 SEND_FPS = 10
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
+SETUP_MARKER_STABLE_SECONDS = 0.35
 
 ROLE_BY_MARKER_ID = {
-    10: ("p1", "atk_a"),
-    11: ("p1", "atk_b"),
-    12: ("p1", "def"),
-    14: ("p2", "atk_a"),
-    15: ("p2", "atk_b"),
-    16: ("p2", "def"),
+    12: ("p1", "atk_a"),
+    13: ("p1", "atk_b"),
+    14: ("p1", "def"),
+    22: ("p2", "atk_a"),
+    23: ("p2", "atk_b"),
+    24: ("p2", "def"),
+}
+TURN_BY_MARKER_ID = {
+    10: 1,
+    20: 2,
+}
+HQ_BY_MARKER_ID = {
+    11: "p1",
+    21: "p2",
 }
 
 COMPASS_8 = [
@@ -47,41 +56,51 @@ COMPASS_8 = [
 ]
 
 
+def _opponent_side(side: str | None) -> str | None:
+    if side == "p1":
+        return "p2"
+    if side == "p2":
+        return "p1"
+    return None
+
+
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
-    return bool(snapshot.get("markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_marker"))
+    return bool(snapshot.get("markers")) or bool(snapshot.get("hq_markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers")) or bool(snapshot.get("confirm_markers"))
+
+
+def _merge_marker_collection(cached_markers: list[dict], current_markers: list[dict]) -> list[dict]:
+    merged_markers: dict[int, dict] = {
+        int(marker["id"]): {**marker, "stale": True}
+        for marker in cached_markers
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int)
+    }
+    for marker in current_markers:
+        if isinstance(marker, dict) and isinstance(marker.get("id"), int):
+            merged_markers[int(marker["id"])] = {**marker, "stale": False}
+    return list(merged_markers.values())
 
 
 def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict) -> dict:
     if cached_snapshot is None:
         merged_snapshot = dict(current_snapshot)
         merged_snapshot["markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("markers", [])]
-        turn_marker = current_snapshot.get("turn_marker")
-        if isinstance(turn_marker, dict):
-            merged_snapshot["turn_marker"] = {**turn_marker, "stale": False}
+        merged_snapshot["hq_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("hq_markers", [])]
+        merged_snapshot["turn_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("turn_markers", [])]
+        merged_snapshot["confirm_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("confirm_markers", [])]
         return merged_snapshot
 
-    merged_markers: dict[int, dict] = {
-        int(marker["id"]): {**marker, "stale": True}
-        for marker in cached_snapshot.get("markers", [])
-        if isinstance(marker, dict) and isinstance(marker.get("id"), int)
-    }
-    for marker in current_snapshot.get("markers", []):
-        if isinstance(marker, dict) and isinstance(marker.get("id"), int):
-            merged_markers[int(marker["id"])] = {**marker, "stale": False}
-
-    current_turn_marker = current_snapshot.get("turn_marker")
-    cached_turn_marker = cached_snapshot.get("turn_marker")
-    turn_marker = None
-    if isinstance(current_turn_marker, dict):
-        turn_marker = {**current_turn_marker, "stale": False}
-    elif isinstance(cached_turn_marker, dict):
-        turn_marker = {**cached_turn_marker, "stale": True}
+    merged_markers = _merge_marker_collection(cached_snapshot.get("markers", []), current_snapshot.get("markers", []))
+    merged_hq_markers = _merge_marker_collection(cached_snapshot.get("hq_markers", []), current_snapshot.get("hq_markers", []))
+    merged_turn_markers = _merge_marker_collection(cached_snapshot.get("turn_markers", []), current_snapshot.get("turn_markers", []))
+    merged_confirm_markers = _merge_marker_collection(cached_snapshot.get("confirm_markers", []), current_snapshot.get("confirm_markers", []))
 
     return {
         **cached_snapshot,
         **current_snapshot,
-        "markers": list(merged_markers.values()),
-        "turn_marker": turn_marker,
+        "markers": merged_markers,
+        "hq_markers": merged_hq_markers,
+        "turn_markers": merged_turn_markers,
+        "confirm_markers": merged_confirm_markers,
         "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
         "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
         "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
@@ -99,25 +118,59 @@ def _snap_direction_8(angle: float | None) -> str | None:
     return min(COMPASS_8, key=lambda item: _angular_distance(angle, item[0]))[1]
 
 
-def _turn_from_rotation(angle: float | None) -> int | None:
-    if angle is None:
-        return None
-    if _angular_distance(angle, 0.0) <= 60.0:
-        return 1
-    if _angular_distance(angle, 180.0) <= 60.0:
-        return 2
-    return None
-
-
 def _grid_index(value: float | int | None) -> int | None:
     if not isinstance(value, (int, float)):
         return None
     return max(0, min(11, int(round(float(value)))))
 
 
-def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
+def _new_hq_marker_state(*, stale: bool = True) -> dict:
+    return {
+        "p1": {"col": None, "row": None, "stale": stale},
+        "p2": {"col": None, "row": None, "stale": stale},
+    }
+
+
+def _confirm_marker_present(snapshot: dict) -> bool:
+    confirm_markers = [
+        marker
+        for marker in snapshot.get("confirm_markers", [])
+        if isinstance(marker, dict) and int(marker.get("id", -1)) == 4 and not marker.get("stale", False)
+    ]
+    return bool(confirm_markers)
+
+
+def _turn_from_markers(snapshot: dict) -> int | None:
+    turn_markers = [
+        marker
+        for marker in snapshot.get("turn_markers", [])
+        if isinstance(marker, dict) and marker.get("id") in TURN_BY_MARKER_ID and not marker.get("stale", False)
+    ]
+
+    if len(turn_markers) == 1:
+        return TURN_BY_MARKER_ID[int(turn_markers[0]["id"])]
+    return None
+
+
+def _turn_angle(snapshot: dict) -> float | None:
+    turn_markers = [
+        marker
+        for marker in snapshot.get("turn_markers", [])
+        if isinstance(marker, dict) and isinstance(marker.get("rotation"), (int, float))
+    ]
+    active_turn_markers = [marker for marker in turn_markers if not marker.get("stale", False)]
+
+    if len(active_turn_markers) == 1:
+        return round(float(active_turn_markers[0]["rotation"]), 1)
+    if len(turn_markers) == 1:
+        return round(float(turn_markers[0]["rotation"]), 1)
+    return None
+
+
+def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bool]:
     p1 = new_side_state()
     p2 = new_side_state()
+    hq_markers = _new_hq_marker_state()
 
     for marker in snapshot.get("markers", []):
         role = ROLE_BY_MARKER_ID.get(marker.get("id"))
@@ -139,10 +192,19 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None]:
             "stale": bool(marker.get("stale", False)),
         }
 
-    turn_marker = snapshot.get("turn_marker") if isinstance(snapshot.get("turn_marker"), dict) else None
-    turn_rotation = turn_marker.get("rotation") if turn_marker else None
-    turn = _turn_from_rotation(float(turn_rotation)) if isinstance(turn_rotation, (int, float)) else None
-    return p1, p2, turn
+    for marker in snapshot.get("hq_markers", []):
+        side = HQ_BY_MARKER_ID.get(marker.get("id"))
+        if side is None:
+            continue
+
+        position = marker.get("position") if isinstance(marker.get("position"), dict) else None
+        hq_markers[side] = {
+            "col": _grid_index(position.get("x")) if position else None,
+            "row": _grid_index(position.get("y")) if position else None,
+            "stale": bool(marker.get("stale", False)),
+        }
+
+    return p1, p2, _turn_from_markers(snapshot), hq_markers, _confirm_marker_present(snapshot)
 
 
 class Session:
@@ -155,11 +217,72 @@ class Session:
         self.terrain = terrain_gen.generate(seed=self.seed)
         self.accepted_p1 = new_side_state()
         self.accepted_p2 = new_side_state()
+        self.hq_markers = _new_hq_marker_state()
         self.turn: int | None = None
         self.model: game_model.GameModel | None = None
         self.pending_events: list[dict] = []
+        self._reset_setup_tracking()
+        self._reset_battle_tracking()
         self.setup.reset(board_scan_ready=board_scan_ready)
         print(f"[MAP] New game (seed={self.seed})")
+
+    def _reset_setup_tracking(self) -> None:
+        self._observed_setup_turn_side: str | None = None
+        self._observed_setup_turn_since = 0.0
+        self._stable_setup_turn_side: str | None = None
+        self._observed_hq_cells = {side: None for side in PLAYERS}
+        self._observed_hq_cell_since = {side: 0.0 for side in PLAYERS}
+        self._stable_hq_cells = {side: None for side in PLAYERS}
+        self._observed_confirm_present = False
+        self._observed_confirm_since = 0.0
+        self._stable_confirm_present = False
+        self._confirm_consumed = False
+
+    def _reset_battle_tracking(self) -> None:
+        self.battle_active_side: str | None = None
+        self.battle_waiting_for_side: str | None = None
+
+    def _battle_payload(self) -> dict:
+        if self.setup.phase != PHASE_GAME:
+            return {
+                "active_side": None,
+                "waiting_for_side": None,
+                "status_code": "inactive",
+                "status_message": "Battle flow inactive until HQ setup completes.",
+            }
+
+        if self.battle_active_side in PLAYERS:
+            marker_id = 10 if self.battle_active_side == "p1" else 20
+            confirm_id = 4
+            return {
+                "active_side": self.battle_active_side,
+                "waiting_for_side": None,
+                "status_code": "positioning",
+                "status_message": f"{self.battle_active_side.upper()} positioning active. Arrange that side's tokens, then scan ID{confirm_id} to attack.",
+                "turn_marker_id": marker_id,
+                "confirm_marker_id": confirm_id,
+            }
+
+        waiting_side = self.battle_waiting_for_side
+        if waiting_side in PLAYERS:
+            marker_id = 10 if waiting_side == "p1" else 20
+            side_name = "Old Mick" if waiting_side == "p1" else "The Mob"
+            return {
+                "active_side": None,
+                "waiting_for_side": waiting_side,
+                "status_code": "waiting_for_turn_marker",
+                "status_message": f"Waiting for {side_name}. Scan ID{marker_id} to begin that side's turn.",
+                "turn_marker_id": marker_id,
+                "confirm_marker_id": 4,
+            }
+
+        return {
+            "active_side": None,
+            "waiting_for_side": None,
+            "status_code": "waiting_for_first_turn_marker",
+            "status_message": "Scan ID10 or ID20 to begin the first battle turn.",
+            "confirm_marker_id": 4,
+        }
 
     def apply_command(self, command: dict, *, board_scan_ready: bool) -> list[dict]:
         errors: list[dict] = []
@@ -212,15 +335,17 @@ class Session:
 
         if action_name in {"reset_setup", "cancel_hq"}:
             self.model = None
+            self._reset_setup_tracking()
+            self._reset_battle_tracking()
             self.setup.reset_hq_setup()
             return errors
 
         if action_name == "trigger_nuke":
-            if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
+            if self.setup.phase != PHASE_GAME or self.model is None or self.battle_active_side not in PLAYERS:
                 return errors
             side = command.get("side")
             position = command.get("position") if isinstance(command.get("position"), dict) else None
-            active_side = "p1" if self.turn == 1 else "p2"
+            active_side = self.battle_active_side
             if side != active_side or not isinstance(position, dict):
                 return errors
             col = position.get("x")
@@ -233,13 +358,20 @@ class Session:
         return errors
 
     def sync_scan_state(self, board_scan_ready: bool) -> None:
+        if not board_scan_ready and self.setup.phase != PHASE_GAME:
+            self._reset_setup_tracking()
         self.setup.set_board_scan_ready(board_scan_ready)
 
-    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None) -> list[dict]:
-        self.turn = turn
+    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool) -> list[dict]:
+        self.hq_markers = hq_markers
         active_side = None
-        if self.setup.phase == PHASE_GAME and turn in (1, 2):
-            active_side = "p1" if turn == 1 else "p2"
+        if self.setup.phase == PHASE_GAME:
+            self._update_marker_driven_battle_flow(turn, confirm_present)
+            active_side = self.battle_active_side
+
+        if self.setup.phase == PHASE_GAME and active_side not in PLAYERS:
+            raw_p1 = self.accepted_p1
+            raw_p2 = self.accepted_p2
 
         self.accepted_p1, self.accepted_p2, errors = sanitize_token_states(
             raw_p1,
@@ -249,14 +381,15 @@ class Session:
             active_side=active_side,
             require_full_detection=self.setup.phase in {PHASE_HQ_PLACEMENT, PHASE_GAME},
         )
+        if self.setup.phase == PHASE_HQ_PLACEMENT:
+            self._update_marker_driven_hq_setup(turn, hq_markers, confirm_present)
+        self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
         return errors
 
     def game_events(self) -> list[dict]:
         events = self.pending_events
         self.pending_events = []
-        if self.setup.phase != PHASE_GAME or self.model is None or self.turn not in (1, 2):
-            return events
-        return events + self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+        return events
 
     def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
         return {
@@ -266,13 +399,128 @@ class Session:
             "turn_angle": turn_angle,
             "p1": self.accepted_p1,
             "p2": self.accepted_p2,
+            "hq_markers": self.hq_markers,
             "terrain": self.terrain,
             "map_seed": self.seed,
             "game": self.model.snapshot() if self.model is not None else {},
             "events": events,
             "setup": self.setup.public_payload(),
+            "battle": self._battle_payload(),
             "errors": dedupe_errors(errors),
         }
+
+    def _stable_turn_side(self, turn: int | None) -> str | None:
+        side = "p1" if turn == 1 else "p2" if turn == 2 else None
+        if side is None:
+            self._observed_setup_turn_side = None
+            self._observed_setup_turn_since = 0.0
+            self._stable_setup_turn_side = None
+            return None
+
+        now = time.monotonic()
+        if side != self._observed_setup_turn_side:
+            self._observed_setup_turn_side = side
+            self._observed_setup_turn_since = now
+            return self._stable_setup_turn_side
+
+        if now - self._observed_setup_turn_since >= SETUP_MARKER_STABLE_SECONDS:
+            self._stable_setup_turn_side = side
+        return self._stable_setup_turn_side
+
+    def _stable_hq_cell(self, side: str, marker_state: dict) -> tuple[int, int] | None:
+        col = marker_state.get("col")
+        row = marker_state.get("row")
+        cell = None
+        if not marker_state.get("stale") and isinstance(col, int) and isinstance(row, int):
+            cell = (col, row)
+
+        now = time.monotonic()
+        if cell != self._observed_hq_cells[side]:
+            self._observed_hq_cells[side] = cell
+            self._observed_hq_cell_since[side] = now
+            return self._stable_hq_cells[side]
+
+        if cell is not None and now - self._observed_hq_cell_since[side] >= SETUP_MARKER_STABLE_SECONDS:
+            self._stable_hq_cells[side] = cell
+        return self._stable_hq_cells[side]
+
+    def _stable_confirm_marker_present(self, confirm_present: bool) -> bool:
+        now = time.monotonic()
+        if confirm_present != self._observed_confirm_present:
+            self._observed_confirm_present = confirm_present
+            self._observed_confirm_since = now
+            if not confirm_present:
+                self._stable_confirm_present = False
+                self._confirm_consumed = False
+            return self._stable_confirm_present
+
+        if confirm_present and now - self._observed_confirm_since >= SETUP_MARKER_STABLE_SECONDS:
+            self._stable_confirm_present = True
+        return self._stable_confirm_present
+
+    def _update_marker_driven_hq_setup(self, turn: int | None, hq_markers: dict, confirm_present: bool) -> None:
+        stable_turn_side = self._stable_turn_side(turn)
+        stable_confirm_present = self._stable_confirm_marker_present(confirm_present)
+
+        if stable_turn_side in PLAYERS and self.setup.active_setup_side is None:
+            self.setup.activate_hq_setup_side(stable_turn_side)
+
+        active_side = self.setup.active_setup_side
+        stable_hq_cells = {side: None for side in PLAYERS}
+        for side in PLAYERS:
+            if side != active_side or stable_turn_side != active_side:
+                self._observed_hq_cells[side] = None
+                self._observed_hq_cell_since[side] = 0.0
+                self._stable_hq_cells[side] = None
+                continue
+            stable_hq_cells[side] = self._stable_hq_cell(side, hq_markers.get(side) or {})
+
+        if active_side not in PLAYERS or self.setup.hq_confirmed.get(active_side):
+            return
+
+        stable_cell = stable_hq_cells.get(active_side)
+        if stable_cell is not None:
+            position = {"x": stable_cell[0], "y": stable_cell[1]}
+            if is_valid_hq_position(active_side, position, self.terrain):
+                if self.setup.hq_candidates.get(active_side) != stable_cell:
+                    self.setup.set_hq_candidate(active_side, position, self.terrain)
+            else:
+                self.setup.clear_hq_candidate(active_side)
+                self.setup.set_hq_candidate(active_side, position, self.terrain)
+
+        if not stable_confirm_present or self._confirm_consumed:
+            return
+        if self.setup.hq_candidates.get(active_side) is None:
+            return
+
+        game_ready, _ = self.setup.lock_hq(active_side)
+        self._confirm_consumed = True
+        if game_ready:
+            self._ensure_model_started()
+            return
+
+    def _update_marker_driven_battle_flow(self, turn: int | None, confirm_present: bool) -> None:
+        stable_turn_side = self._stable_turn_side(turn)
+        stable_confirm_present = self._stable_confirm_marker_present(confirm_present)
+
+        if self.battle_active_side not in PLAYERS:
+            if stable_turn_side not in PLAYERS:
+                return
+            if self.battle_waiting_for_side in PLAYERS and stable_turn_side != self.battle_waiting_for_side:
+                return
+            self.battle_active_side = stable_turn_side
+            return
+
+        if not stable_confirm_present or self._confirm_consumed:
+            return
+        if self.model is None:
+            return
+
+        attacker = self.battle_active_side
+        self.pending_events.extend(self.model.resolve_side_attack(attacker, self.accepted_p1, self.accepted_p2))
+        self.battle_waiting_for_side = _opponent_side(attacker)
+        self.battle_active_side = None
+        self._confirm_consumed = True
 
     def _ensure_model_started(self) -> None:
         if self.model is not None:
@@ -282,8 +530,7 @@ class Session:
             return
         hq_p1, hq_p2 = hidden_hq_positions
         self.model = game_model.new_game(self.terrain, seed=self.seed, hq_p1=hq_p1, hq_p2=hq_p2)
-        if self.turn in (1, 2):
-            self.model.on_turn_change(self.turn, self.accepted_p1, self.accepted_p2)
+        self._reset_battle_tracking()
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
 
 
@@ -325,15 +572,15 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
 
             snapshot_for_ui = last_visible_snapshot or effective_snapshot
             board_scan_ready = bool(snapshot_for_ui.get("calibration_ready"))
-            turn_angle = snapshot_for_ui.get("turn_marker", {}).get("rotation") if isinstance(snapshot_for_ui.get("turn_marker"), dict) else None
+            turn_angle = _turn_angle(snapshot_for_ui)
 
             session.sync_scan_state(board_scan_ready)
-            raw_p1, raw_p2, turn = _build_token_state(snapshot_for_ui)
+            raw_p1, raw_p2, turn, hq_markers, confirm_present = _build_token_state(snapshot_for_ui)
 
             frame_errors: list[dict] = []
             if not board_scan_ready and session.setup.phase != PHASE_GAME:
                 frame_errors.append(make_error("marker_map_scan_failed"))
-            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn))
+            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present))
 
             for command in await drain_actions():
                 frame_errors.extend(session.apply_command(command, board_scan_ready=board_scan_ready))
@@ -377,7 +624,19 @@ async def async_main():
     for marker in TOKEN_MARKERS:
         print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
-    print(f"  Turn marker:\n    ID {TURN_MARKER_ID}=TURN")
+    print("  HQ markers:")
+    for marker in HQ_MARKERS:
+        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
+    print()
+    print("  Confirm markers:")
+    for marker in CONFIRM_MARKERS:
+        print(f"    ID {marker.id}={marker.label}")
+    print()
+    print("  Turn markers:")
+    for marker in TURN_MARKERS:
+        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
+    print()
+    print("  Hidden HQ setup is marker-driven once board scan is ready.")
     print()
     print("[Server] Open yu_test1/index.html in your browser\n")
 

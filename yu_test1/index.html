@@ -198,6 +198,35 @@ function sideOwnsCell(side, col, row) {
   return false;
 }
 
+const RESERVED_HQ_CELLS = {
+  p1: new Set(['0,0', '0,1', '1,0']),
+  p2: new Set(['11,11', '11,10', '10,11']),
+};
+
+function terrainOccupiesCell(terrain, col, row) {
+  for (const group of ['p1_hard', 'p1_soft', 'p2_hard', 'p2_soft']) {
+    for (const tile of (terrain?.[group] || [])) {
+      if (tile?.col === col && tile?.row === row) return true;
+    }
+  }
+  return false;
+}
+
+function isValidHqPlacementCell(side, col, row, terrain) {
+  if (side !== 'p1' && side !== 'p2') return false;
+  if (!Number.isInteger(col) || !Number.isInteger(row)) return false;
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
+  if (!sideOwnsCell(side, col, row)) return false;
+  if (RESERVED_HQ_CELLS[side]?.has(`${col},${row}`)) return false;
+  return !terrainOccupiesCell(terrain, col, row);
+}
+
+function activeHqMarkerState(state) {
+  const activeSide = state?.setup?.active_setup_side;
+  if (!activeSide) return null;
+  return state?.hq_markers?.[activeSide] || null;
+}
+
 function dedupeErrorsByCode(errors) {
   const deduped = [];
   const seen = new Set();
@@ -474,16 +503,11 @@ class GameScene extends Phaser.Scene {
     if (!gameState) return;
 
     const phase = gameState.phase;
-    const turn = gameState.turn;
+    const battle = gameState.battle || {};
     const p1 = gameState.p1 || {};
     const p2 = gameState.p2 || {};
     const G = gameState.game || {};
     const events = Array.isArray(gameState.events) ? gameState.events : [];
-
-    // Track turn changes for step gating.
-    if (this._tut.lastTurn == null && turn != null) this._tut.lastTurn = turn;
-    const turnChanged = (turn != null && this._tut.lastTurn != null && turn !== this._tut.lastTurn);
-    if (turnChanged) this._tut.lastTurn = turn;
 
     const atCell = (tok, col, row) => tok?.col === col && tok?.row === row;
     const isVisible = (tok) => tok?.col != null && tok?.row != null && !tok?.stale;
@@ -506,13 +530,13 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // STEP 0: Place P1 ATK A at D4.
+    // STEP 0: Begin P1 turn, then place P1 ATK A at D4.
     if (this._tut.step === 0) {
       const t = TUTORIAL_TARGETS.p1AtkStart;
       setCellHighlight(t.col, t.row);
-      this.tutorialTxt?.setText('Step 1/7 — Place ATK\n\nMove P1 ATK A onto D4.');
-      this.tutorialHintTxt?.setText('Watch the pulsing tile.\nWhen the marker is detected in D4, we continue.');
-      if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row)) this._tut.step = 1;
+      this.tutorialTxt?.setText('Step 1/7 — Start P1 and place ATK\n\nScan ID10, then move P1 ATK A onto D4.');
+      this.tutorialHintTxt?.setText('P1 must be the active battle side first.\nWhen P1 ATK A reaches D4, we continue.');
+      if (battle.active_side === 'p1' && isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row)) this._tut.step = 1;
       return;
     }
 
@@ -528,31 +552,31 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // STEP 2: End P1 turn (physical confirm marker triggers turn change).
+    // STEP 2: Submit P1 with the shared confirm marker.
     if (this._tut.step === 2) {
       setCellHighlight(null, null);
-      this.tutorialTxt?.setText('Step 3/7 — End turn\n\nEnd P1 turn using the physical confirm marker.');
-      this.tutorialHintTxt?.setText('When the backend detects the confirm marker hold,\nturn will switch to The Mob.');
-      if (turnChanged && turn === 2) this._tut.step = 3;
+      this.tutorialTxt?.setText('Step 3/7 — Confirm P1 attack\n\nScan ID4 to resolve P1\'s attack.');
+      this.tutorialHintTxt?.setText('After the attack resolves, the game waits for ID20 to begin The Mob\'s turn.');
+      if (battle.waiting_for_side === 'p2') this._tut.step = 3;
       return;
     }
 
-    // STEP 3: Quickly end P2 turn so we can place defender as P1.
+    // STEP 3: Start and submit P2 so we can return control to P1.
     if (this._tut.step === 3) {
       setCellHighlight(null, null);
-      this.tutorialTxt?.setText('Step 4/7 — Skip enemy turn\n\nEnd P2 turn (use P2 confirm marker) to return to P1.');
-      this.tutorialHintTxt?.setText('We want P1 active so defender placement is accepted.');
-      if (turnChanged && turn === 1) this._tut.step = 4;
+      this.tutorialTxt?.setText('Step 4/7 — Skip enemy turn\n\nScan ID20, then scan ID4 to submit P2 and return control to P1.');
+      this.tutorialHintTxt?.setText('We want the backend waiting for ID10 again so P1 defender placement is accepted.');
+      if (battle.waiting_for_side === 'p1') this._tut.step = 4;
       return;
     }
 
-    // STEP 4: Place P1 defender at B2 and highlight its zone.
+    // STEP 4: Begin P1 turn, place the defender at B2, and highlight its zone.
     if (this._tut.step === 4) {
       const d = TUTORIAL_TARGETS.p1DefSpot;
       setCellHighlight(d.col, d.row);
-      this.tutorialTxt?.setText('Step 5/7 — Defend\n\nMove P1 DEF to B2.');
+      this.tutorialTxt?.setText('Step 5/7 — Start P1 and place DEF\n\nScan ID10, then move P1 DEF to B2.');
       this.tutorialHintTxt?.setText('After it lands, we will highlight the protected zone.');
-      if (isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
+      if (battle.active_side === 'p1' && isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
         const tier = (G.tier_p1 ?? 0);
         setZoneHighlight(defZoneCells(d.col, d.row, tier));
         this._tut.step = 5;
@@ -560,14 +584,14 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // STEP 5: End P1 turn so the enemy can attack into the protected zone.
+    // STEP 5: Submit P1, then begin P2 so the enemy can attack into the protected zone.
     if (this._tut.step === 5) {
       const d = TUTORIAL_TARGETS.p1DefSpot;
       const tier = (G.tier_p1 ?? 0);
       setZoneHighlight(defZoneCells(d.col, d.row, tier));
-      this.tutorialTxt?.setText('Step 6/7 — Set up the demo\n\nEnd P1 turn. Then, as P2, aim an ATK ray into the highlighted zone.');
-      this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nThen end P2 turn to resolve the attack.');
-      if (turnChanged && turn === 2) this._tut.step = 6;
+      this.tutorialTxt?.setText('Step 6/7 — Hand control to P2\n\nScan ID4 to submit P1. Then scan ID20 so P2 can aim into the highlighted zone.');
+      this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nAfter aiming, you will scan ID4 to resolve the attack.');
+      if (battle.active_side === 'p2') this._tut.step = 6;
       return;
     }
 
@@ -578,7 +602,7 @@ class GameScene extends Phaser.Scene {
       const zone = defZoneCells(d.col, d.row, tier);
       setZoneHighlight(zone);
 
-      this.tutorialTxt?.setText('Step 7/7 — Defense negates the first hit\n\nAs P2: aim an ATK into the highlighted zone.\nThen end P2 turn.');
+      this.tutorialTxt?.setText('Step 7/7 — Defense negates the first hit\n\nAs P2: aim an ATK into the highlighted zone.\nThen scan ID4 to resolve the attack.');
       this.tutorialHintTxt?.setText('We will complete this step when the backend reports\n`cell_damaged` on a protected tile (first hit absorbed).');
 
       // Detect “protected first hit”: cell_damaged where cell is inside the DEF zone.
@@ -897,7 +921,7 @@ class GameScene extends Phaser.Scene {
       this._sendAction({ action: 'reset_setup' });
     });
     this.nukeBtn = mkActionBtn('Arm Nuke', 8, 568, 194, '#5a1f12', '#ffd070', () => {
-      const activeSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+      const activeSide = gameState?.battle?.active_side || null;
       if (!activeSide) return;
       this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
     });
@@ -972,7 +996,7 @@ class GameScene extends Phaser.Scene {
     this.setupCardGfx.strokeRoundedRect(BX + 18, BY + 16, COLS * CELL - 36, 194, 12);
     this.setupCardGfx.setVisible(true);
 
-    this.setupTitleTxt.setText(`HQ Setup Placeholder  |  ${phaseLabel(phase)}`).setVisible(true);
+    this.setupTitleTxt.setText(`Hidden HQ Setup  |  ${phaseLabel(phase)}`).setVisible(true);
     this.setupStatusTxt.setText(statusMessage).setVisible(true);
     this.setupScanTxt
       .setText(`Board scan: ${setupFlag(!!setup.board_scan_ready, 'ready', 'waiting')}`)
@@ -994,6 +1018,11 @@ class GameScene extends Phaser.Scene {
       .setText(`The Mob HQ:  ${p2Hq}`)
       .setColor(setup.hq?.p2?.confirmed ? '#8cf0a0' : '#d8ef9a')
       .setVisible(true);
+    this.setupHintTxt.setText(
+      phase === 'hq_placement'
+        ? 'Only the active side should look at the screen. Scan ID4 to confirm, then the HQ stays hidden until destroyed.'
+        : 'Confirmed HQ cells stay hidden until an HQ is destroyed.'
+    );
     this.setupHintTxt.setVisible(true);
   }
 
@@ -1178,13 +1207,13 @@ class GameScene extends Phaser.Scene {
   _updateSetupControls(phase, setup = {}) {
     const activeSide = setup.active_setup_side;
     const hasActiveCandidate = activeSide && !!setup.hq?.[activeSide]?.has_candidate;
-    const localCandidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
+    const battle = gameState?.battle || {};
 
     this.setupControlTxt.setVisible(true);
     this.setupCandidateTxt.setVisible(false);
 
     if (phase === 'scan') {
-      this.setupControlTxt.setText('Waiting for a valid board scan before browser setup controls can be used.').setColor('#9e8868');
+      this.setupControlTxt.setText('Waiting for a valid board scan before hidden HQ setup can start.').setColor('#9e8868');
       this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
@@ -1194,45 +1223,59 @@ class GameScene extends Phaser.Scene {
     }
 
     if (phase === 'side_selection') {
-      this.setupControlTxt.setText('Choose which side places a hidden HQ first.').setColor('#d8c890');
-      this._setActionButtonState(this.chooseOldMickBtn, { visible: true, enabled: true });
-      this._setActionButtonState(this.chooseMobBtn, { visible: true, enabled: true });
+      this.setupControlTxt.setText('Show ID10 or ID20 to choose who hides an HQ first.').setColor('#d8c890');
+      this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
       this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
     if (phase === 'hq_placement') {
       const activeLabel = sideLabel(activeSide);
+      const activeMarker = activeHqMarkerState(gameState);
+      const markerVisible = activeMarker && activeMarker.col != null && activeMarker.row != null && !activeMarker.stale;
+      const markerValid = markerVisible && isValidHqPlacementCell(activeSide, activeMarker.col, activeMarker.row, gameState?.terrain);
       this.setupControlTxt
-        .setText(`${activeLabel}: click a board cell in your territory, then confirm the hidden HQ.`)
-        .setColor(activeSide === 'p2' ? '#b8ff78' : '#ffd878');
+        .setText(
+          activeSide
+            ? `${activeLabel}: keep this side's turn marker visible, place that side's HQ marker on a valid hidden HQ cell, then scan ID4 to confirm.`
+            : 'Show exactly one turn marker to choose who hides an HQ first. The other player should look away.'
+        )
+        .setColor(activeSide === 'p2' ? '#b8ff78' : activeSide === 'p1' ? '#ffd878' : '#d8c890');
       this.setupCandidateTxt
         .setVisible(true)
         .setText(
-          localCandidate
-            ? `Selected cell: ${cellLabel(localCandidate.col, localCandidate.row)} (local preview)`
-            : hasActiveCandidate
-              ? 'Candidate saved on backend. Confirm when ready.'
-              : 'Selected cell: --'
+          !activeSide
+            ? 'Turn marker: waiting for first active side'
+            : markerVisible
+              ? `HQ marker detected (${markerValid ? 'valid' : 'invalid'})`
+              : hasActiveCandidate
+                ? 'Last valid HQ marker saved. Scan ID4 to lock it and hide it.'
+                : 'HQ marker: --'
         )
-        .setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
+        .setColor(
+          !activeSide ? '#a89878'
+            : markerVisible ? (markerValid ? '#f0d8a0' : '#ffb0a0')
+            : hasActiveCandidate ? '#f0d8a0' : '#a89878'
+        );
       this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
+      this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
       this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
       this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
       return;
     }
 
-    const activeTurnSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+    const activeTurnSide = battle.active_side || null;
     const activeTier = activeTurnSide === 'p1' ? (gameState?.game?.tier_p1 ?? 0) : activeTurnSide === 'p2' ? (gameState?.game?.tier_p2 ?? 0) : 0;
     const nukeUsed = activeTurnSide === 'p1' ? !!gameState?.game?.nuke_used_p1 : activeTurnSide === 'p2' ? !!gameState?.game?.nuke_used_p2 : true;
     const isArming = !!activeTurnSide && this._nukeArmingSide === activeTurnSide;
     const canArmNuke = !!activeTurnSide && activeTier >= 4 && !nukeUsed;
+    const battleMessage = battle.status_message || 'Setup complete. Scan ID10 or ID20 to begin a battle turn.';
     this.setupControlTxt
-      .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : 'Setup complete. Browser controls are hidden during battle.')
+      .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : battleMessage)
       .setColor(isArming ? '#ffd878' : '#8fb890');
     this._setActionButtonState(this.chooseOldMickBtn, { visible: false, enabled: false });
     this._setActionButtonState(this.chooseMobBtn, { visible: false, enabled: false });
@@ -1264,31 +1307,20 @@ class GameScene extends Phaser.Scene {
     }
 
     if (!gameState || gameState.phase !== 'hq_placement') return;
-    const activeSide = gameState.setup?.active_setup_side;
-    if (!activeSide) return;
-
-    this._sendAction({
-      action: 'set_hq_candidate',
-      side: activeSide,
-      position: { x: col, y: row },
-    });
-
-    if (sideOwnsCell(activeSide, col, row)) {
-      this.setupSelection.pendingBySide[activeSide] = { col, row };
-    }
   }
 
   _drawPendingHqCandidate(phase, setup = {}) {
     if (phase !== 'hq_placement') return;
     const activeSide = setup.active_setup_side;
-    const candidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
-    if (!candidate) return;
+    const marker = activeHqMarkerState(gameState);
+    if (!activeSide || !marker || marker.col == null || marker.row == null || marker.stale) return;
 
-    const { col, row } = candidate;
+    const { col, row } = marker;
+    const isValid = isValidHqPlacementCell(activeSide, col, row, gameState?.terrain);
     const g = this.dynGfx;
     const x = BX + col * CELL + 2;
     const y = BY + row * CELL + 2;
-    const ring = activeSide === 'p2' ? 0xb8ff60 : 0xffdc70;
+    const ring = isValid ? (activeSide === 'p2' ? 0xb8ff60 : 0xffdc70) : 0xff7070;
     const cx = x + (CELL - 4) / 2;
     const cy = y + (CELL - 4) / 2;
     const pulse = 0.55 + 0.20 * Math.sin(this.time.now / 170);
@@ -1297,7 +1329,7 @@ class GameScene extends Phaser.Scene {
     g.fillRoundedRect(x, y, CELL - 4, CELL - 4, 5);
     g.lineStyle(3, ring, pulse);
     g.strokeRoundedRect(x, y, CELL - 4, CELL - 4, 5);
-    g.lineStyle(1.5, 0xffffff, 0.82);
+    g.lineStyle(1.5, isValid ? 0xffffff : 0xffd0d0, 0.82);
     g.strokeCircle(cx, cy, CELL * 0.18);
   }
 
@@ -1446,6 +1478,7 @@ class GameScene extends Phaser.Scene {
     if (!gameState) return;
     const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
     const setup = gameState.setup || {};
+    const battle = gameState.battle || {};
     const G = game || {};
     const inBattle = (phase === 'game' || phase == null);
 
@@ -1500,12 +1533,16 @@ class GameScene extends Phaser.Scene {
 
     if (!inBattle) {
       this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
-    } else if (turn === 1) {
-      this.turnText.setText(`Turn: 🌾 Old Mick  |  Tier ${G.tier_p1 ?? 0}`).setColor('#f8d060');
-    } else if (turn === 2) {
-      this.turnText.setText(`Turn: 🐦 The Mob  |  Tier ${G.tier_p2 ?? 0}`).setColor('#90ee40');
+    } else if (battle.active_side === 'p1') {
+      this.turnText.setText(`Turn: 🌾 Old Mick positioning  |  Tier ${G.tier_p1 ?? 0}  |  Scan ID4 to attack`).setColor('#f8d060');
+    } else if (battle.active_side === 'p2') {
+      this.turnText.setText(`Turn: 🐦 The Mob positioning  |  Tier ${G.tier_p2 ?? 0}  |  Scan ID4 to attack`).setColor('#90ee40');
+    } else if (battle.waiting_for_side === 'p1') {
+      this.turnText.setText('Turn: waiting for 🌾 Old Mick  |  Scan ID10').setColor('#d8b060');
+    } else if (battle.waiting_for_side === 'p2') {
+      this.turnText.setText('Turn: waiting for 🐦 The Mob  |  Scan ID20').setColor('#9bd860');
     } else {
-      this.turnText.setText('Turn: — waiting —').setColor('#807060');
+      this.turnText.setText('Turn: — waiting for first side —').setColor('#807060');
     }
 
     this.cornerText.setText(`Corners: ${corners_found || 0}/4`)
@@ -1601,7 +1638,7 @@ class GameScene extends Phaser.Scene {
 
     if (inBattle) {
       this._hideSetupUi();
-      const activeSide = turn === 1 ? 'p1' : turn === 2 ? 'p2' : null;
+      const activeSide = battle.active_side || null;
       if (this._nukeArmingSide && activeSide !== this._nukeArmingSide) this._nukeArmingSide = null;
     } else {
       this._drawPlacementGuide(phase, setup);
@@ -1940,7 +1977,7 @@ class GameScene extends Phaser.Scene {
     if (!isScan) {
       // ── P1 valid zone (below diagonal) — yellow glow + tiny ✓ ────
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-        if (c + r < 11) {
+        if (isValidHqPlacementCell('p1', c, r, gameState?.terrain)) {
           const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
           const p1Alpha = activeSide === 'p2' ? pulseA * 0.45 : pulseA;
           g.fillStyle(C.p1_border, p1Alpha);
@@ -1954,7 +1991,7 @@ class GameScene extends Phaser.Scene {
 
       // ── P2 valid zone (above diagonal) — green glow + tiny ✓ ─────
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-        if (c + r > 11) {
+        if (isValidHqPlacementCell('p2', c, r, gameState?.terrain)) {
           const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
           const p2Alpha = activeSide === 'p1' ? pulseB * 0.45 : pulseB;
           g.fillStyle(C.p2_border, p2Alpha);
@@ -2017,8 +2054,8 @@ class GameScene extends Phaser.Scene {
       isScan
         ? 'SCAN THE BOARD TO START HQ SETUP'
         : isHqPlacement
-          ? `${sideLabel(activeSide)} IS CHOOSING A HIDDEN HQ`
-          : 'CHOOSE WHICH SIDE PLACES AN HQ FIRST'
+          ? (activeSide ? `${sideLabel(activeSide)} IS CHOOSING A HIDDEN HQ` : 'PLACE ONE TURN MARKER TO CHOOSE WHO HIDES AN HQ FIRST')
+          : 'HIDDEN HQ SETUP'
     );
     this._zoneLabels.p1.setText(
       isHqPlacement && activeSide === 'p1'

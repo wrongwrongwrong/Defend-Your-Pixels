@@ -94,7 +94,9 @@ Notes:
 
 ## Supported runner entrypoints
 
-The project currently keeps only two runner entrypoints:
+The primary runner entrypoints are:
 
 - `runner.run_live_tracker`: full runtime for camera -> tracker -> yu_test1 rules -> websocket -> `yu_test1/index.html`
 - `runner.run_old_mick_core_smoke`: fast rules-validation smoke test for the Old Mick MVP
+
+For a documented no-camera fallback, see `docs/manual_play.md` and `runner.run_manual_play`.
