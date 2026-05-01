@@ -1,4 +1,5 @@
 import { CANVAS_W, CANVAS_H, COLORS } from "../constants.js";
+import { playBgm, playSfx } from "../audio.js";
 
 const W = CANVAS_W, H = CANVAS_H;
 const CX = W / 2;
@@ -91,8 +92,17 @@ export class IntroScene extends Phaser.Scene {
     this.add.rectangle(CX, H / 2, W, H, 0x0a0804);
     this._drawAtmosphere();
 
-    this.input.on("pointerdown", () => this._advance());
-    this.input.keyboard.on("keydown", () => this._advance());
+    // First pointer/key kicks off BGM (browsers block autoplay before user input)
+    const startAudio = () => {
+      if (this._audioStarted) return;
+      this._audioStarted = true;
+      // Phaser's sound system can be locked until first gesture — unlock if so
+      if (this.sound.locked) this.sound.unlock();
+      playBgm(this, "bgm_outback");
+    };
+
+    this.input.on("pointerdown", () => { startAudio(); this._advance(); });
+    this.input.keyboard.on("keydown", () => { startAudio(); this._advance(); });
 
     // If server is mid-game already, skip the intro on first state arrival
     if (this.ws) {
@@ -212,6 +222,7 @@ export class IntroScene extends Phaser.Scene {
     }
     this._advancing = true;
     this._slideIndex++;
+    playSfx(this, "sfx_page");
     this._fadeOutSlide(() => {
       this._advancing = false;
       this._showSlide(this._slideIndex);
@@ -390,6 +401,8 @@ export class IntroScene extends Phaser.Scene {
   _chooseSide(side) {
     if (!this._inSelection) return;
     this._inSelection = false;
+
+    playSfx(this, "sfx_select");
 
     // The yu_test1 / FW2 backend doesn't currently consume choose_side, but
     // sending it here is harmless — and keeps compatibility with prototype3.

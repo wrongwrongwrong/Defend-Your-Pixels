@@ -1,4 +1,5 @@
 import { COLORS } from "../constants.js";
+import { preloadAll } from "../audio.js";
 
 /**
  * Boot scene — shown once on page load.
@@ -8,6 +9,11 @@ import { COLORS } from "../constants.js";
  */
 export class BootScene extends Phaser.Scene {
   constructor() { super("Boot"); }
+
+  preload() {
+    // Queue every audio file. Missing ones are logged and skipped.
+    preloadAll(this);
+  }
 
   create() {
     const { width, height } = this.scale;

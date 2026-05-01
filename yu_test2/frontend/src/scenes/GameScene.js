@@ -2,6 +2,7 @@ import {
   GRID_SIZE, CELL, BOARD_OFF_X, BOARD_OFF_Y,
   CANVAS_W, CANVAS_H, COLORS, DIR_VEC, ARROW_CHAR,
 } from "../constants.js";
+import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
 
 /**
  * GameScene — visual layer for live state.
@@ -48,6 +49,7 @@ export class GameScene extends Phaser.Scene {
     this._createTokenTextures();
     this._buildBoard();
     this._buildHUD();
+    this._buildMuteButton();
     this._buildTokenSprites();
     this._buildArrows();
     this._bindWS();
@@ -497,5 +499,66 @@ export class GameScene extends Phaser.Scene {
     if (!this.ws) return;
     this._stateHandler = (s) => { this.gameState = s; };
     this.ws.on("state", this._stateHandler);
+
+    // Map game events to SFX. The events array arrives inside each state
+    // payload, and the WSClient re-emits it as a synthetic 'events' event.
+    this._eventsHandler = (events) => {
+      for (const ev of events) {
+        switch (ev.type) {
+          case "cell_damaged":
+            // C — 2-HP cell (DEF zone) chip vs single-HP cell hit:
+            // the splash flag and required_hp tell us which.
+            if ((ev.required_hp ?? 1) >= 2) playSfx(this, "sfx_first_hit");
+            else                            playSfx(this, "sfx_p1_attack"); // generic attack
+            break;
+          case "cell_destroyed":   playSfx(this, "sfx_destroy");   break;  // C: final hit
+          case "soft_destroyed":
+          case "blocked_hard":     playSfx(this, "sfx_block");     break;
+          case "hq_destroyed":     playSfx(this, "sfx_explosion"); break;
+          case "nuke_triggered":   playSfx(this, "sfx_explosion"); break;
+          case "attrition_win":    playSfx(this, "sfx_victory");   break;
+        }
+      }
+    };
+    this.ws.on("events", this._eventsHandler);
+
+    // D — Tier up: detect change between successive states.
+    // E — Game end: detect winner field flipping from null → side.
+    this._prevTiers  = { p1: 0, p2: 0 };
+    this._prevWinner = null;
+    this._tierWinHandler = (s) => {
+      const G = s.game || {};
+      if ((G.tier_p1 ?? 0) > this._prevTiers.p1) playSfx(this, "sfx_tier_up");
+      if ((G.tier_p2 ?? 0) > this._prevTiers.p2) playSfx(this, "sfx_tier_up");
+      this._prevTiers.p1 = G.tier_p1 ?? 0;
+      this._prevTiers.p2 = G.tier_p2 ?? 0;
+
+      if (G.winner && !this._prevWinner) {
+        // Generic finish ping — the per-side victory/defeat sound is
+        // played by `attrition_win` / `hq_destroyed` events above already,
+        // but if we ever miss the event, this guarantees a sound on win.
+        playSfx(this, "sfx_victory");
+      }
+      this._prevWinner = G.winner ?? null;
+    };
+    this.ws.on("state", this._tierWinHandler);
+  }
+
+  // ─── Mute toggle button (top-right corner of canvas) ──────────────────
+
+  _buildMuteButton() {
+    const x = CANVAS_W - 24, y = 28;
+    const btn = this.add.text(x, y, "🔊", {
+      fontFamily: "monospace", fontSize: "18px",
+      color: "#fff0d0",
+    }).setOrigin(0.5).setDepth(50)
+      .setInteractive({ useHandCursor: true });
+
+    btn.on("pointerdown", () => {
+      const muted = toggleMute();
+      btn.setText(muted ? "🔇" : "🔊");
+      // Re-cue BGM if user un-muted after the IntroScene autostart slot
+      if (!muted) playBgm(this, "bgm_outback");
+    });
   }
 }

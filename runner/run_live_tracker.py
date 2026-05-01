@@ -22,7 +22,7 @@ from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupStat
 from yu_test1 import game_model, terrain_gen
 
 
-CAMERA_ID = 1
+CAMERA_ID = 0
 SEND_FPS = 10
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
