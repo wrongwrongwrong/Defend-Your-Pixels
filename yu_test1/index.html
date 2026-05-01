@@ -453,21 +453,7 @@ class GameScene extends Phaser.Scene {
       introActive: true,        // show intro modal before enabling steps
     };
 
-    this.tutorialTxt = this.add.text(PANEL_X + 8, 520, '', {
-      fontSize: '12px',
-      fontFamily: 'Georgia',
-      color: '#ffe070',
-      lineSpacing: 6,
-      wordWrap: { width: PW - 16 },
-    }).setDepth(5);
-
-    this.tutorialHintTxt = this.add.text(PANEL_X + 8, 690, '', {
-      fontSize: '11px',
-      fontFamily: 'Georgia',
-      color: '#f0c080',
-      lineSpacing: 5,
-      wordWrap: { width: PW - 16 },
-    }).setDepth(5);
+    // Tutorial text overlay removed (prevents overlap with other sidebar UI).
 
     // Intro modal (trimmed style) shown on tutorial start.
     // Any key dismisses it, then we enable the connected tutorial step gating.
@@ -550,10 +536,222 @@ class GameScene extends Phaser.Scene {
     this._tutPopup = null;
 
     if (this._tut) this._tut.introActive = false;
+  }
 
-    // Clear any stale tutorial text so step 0 appears cleanly on next tick.
-    this.tutorialTxt?.setText('');
-    this.tutorialHintTxt?.setText('');
+  _ensureSetupModal() {
+    if (this._setupModal) return;
+
+    const overlay = this.add.graphics().setDepth(54);
+    const gfx = this.add.graphics().setDepth(55);
+
+    const titleTxt = this.add.text(0, 0, '', {
+      fontSize: '18px',
+      fontFamily: 'Georgia',
+      color: '#ffe070',
+      fontStyle: 'bold',
+    }).setDepth(56);
+
+    const bodyTxt = this.add.text(0, 0, '', {
+      fontSize: '15px',
+      fontFamily: 'Georgia',
+      color: '#f2d8a0',
+      lineSpacing: 6,
+    }).setDepth(56);
+
+    const candidateTxt = this.add.text(0, 0, '', {
+      fontSize: '13px',
+      fontFamily: 'monospace',
+      color: '#d8c890',
+      lineSpacing: 5,
+    }).setDepth(56);
+
+    const instructionHintTxt = this.add.text(0, 0, '[ Click anywhere to continue ]', {
+      fontSize: '14px',
+      fontFamily: 'Georgia',
+      fontStyle: 'italic',
+      color: '#ffe070',
+    }).setDepth(56).setVisible(false);
+
+    const mkModalBtn = (label, bgColor, color, onClick) => {
+      const btn = this.add.text(0, 0, label, {
+        fontSize: '13px',
+        fontFamily: 'Georgia',
+        color,
+        backgroundColor: bgColor,
+        padding: { x: 10, y: 8 },
+        fontStyle: 'bold',
+      })
+        .setInteractive({ useHandCursor: true })
+        .setDepth(56)
+        .setOrigin(0.5, 0.5);
+
+      btn._baseColor = color;
+      btn._baseBgColor = bgColor;
+      btn._enabled = true;
+
+      btn.on('pointerdown', () => {
+        if (btn._enabled) onClick();
+      });
+      btn.on('pointerover', () => {
+        if (btn._enabled) btn.setColor('#fff8dc');
+      });
+      btn.on('pointerout', () => {
+        btn.setColor(btn._enabled ? btn._baseColor : '#8a7a68');
+      });
+
+      return btn;
+    };
+
+    const confirmBtn = mkModalBtn('Confirm HQ', '#6a3812', '#ffe0a0', () => {
+      const activeSide = gameState?.setup?.active_setup_side;
+      if (activeSide) this._sendAction({ action: 'confirm_hq', side: activeSide });
+    });
+
+    const cancelBtn = mkModalBtn('Cancel', '#402318', '#f0c8b0', () => {
+      const activeSide = gameState?.setup?.active_setup_side;
+      if (activeSide) {
+        this.setupSelection.pendingBySide[activeSide] = null;
+      }
+      this._hqCandidateCancelled = true;
+      this._setSetupModalVisible(false);
+    });
+
+    // Keep legacy references so existing `_setActionButtonState` calls still work,
+    // but the visible/interactive UI is the centered modal.
+    this.confirmHqBtn = confirmBtn;
+    this.cancelHqBtn = cancelBtn;
+
+    overlay.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, H), Phaser.Geom.Rectangle.Contains);
+    overlay.input.enabled = false;
+    overlay.on('pointerdown', (pointer) => {
+      if (!this._setupModal?.visible) return;
+      if (gameState?.phase !== 'hq_placement') return;
+      if (this._hqPlacementInstructionAck) return;
+      try {
+        pointer.event?.stopPropagation?.();
+      } catch (_) { /* ignore */ }
+      this._hqPlacementInstructionAck = true;
+      if (this._setupModal.overlay?.input) this._setupModal.overlay.input.enabled = false;
+      this._setSetupModalVisible(false);
+    });
+
+    this._setupModal = {
+      overlay,
+      gfx,
+      titleTxt,
+      bodyTxt,
+      candidateTxt,
+      instructionHintTxt,
+      confirmBtn,
+      cancelBtn,
+      visible: false,
+    };
+
+    this._layoutSetupModal();
+    this._setSetupModalVisible(false);
+  }
+
+  _setSetupModalVisible(visible) {
+    if (!this._setupModal) return;
+    this._setupModal.visible = visible;
+    const { overlay, gfx, titleTxt, bodyTxt, candidateTxt, instructionHintTxt, confirmBtn, cancelBtn } = this._setupModal;
+    overlay.setVisible(visible);
+    gfx.setVisible(visible);
+    titleTxt.setVisible(visible);
+    bodyTxt.setVisible(visible);
+    // candidate, instruction hint + HQ buttons: driven by `_updateSetupControls` while visible.
+    if (!visible) {
+      instructionHintTxt.setVisible(false);
+      candidateTxt.setVisible(false);
+      confirmBtn.setVisible(false);
+      cancelBtn.setVisible(false);
+      if (confirmBtn.input) confirmBtn.input.enabled = false;
+      if (cancelBtn.input) cancelBtn.input.enabled = false;
+      if (overlay.input) overlay.input.enabled = false;
+    }
+  }
+
+  _layoutSetupModal() {
+    if (!this._setupModal) return;
+
+    const modalW = Math.min(560, W * 0.92);
+    const padX = 20;
+    const padY = 18;
+    const centerX = W / 2;
+    const centerY = H / 2 - 10;
+
+    const { overlay, gfx, titleTxt, bodyTxt, candidateTxt, instructionHintTxt, confirmBtn, cancelBtn } = this._setupModal;
+    const wrapW = modalW - padX * 2;
+
+    titleTxt.setWordWrapWidth(wrapW, true);
+    bodyTxt.setWordWrapWidth(wrapW, true);
+    candidateTxt.setWordWrapWidth(wrapW, true);
+
+    const titleH = titleTxt.height || 24;
+    const bodyH = bodyTxt.height || 0;
+    const hintLineH = instructionHintTxt.visible ? (instructionHintTxt.height || 18) : 0;
+    const candH = candidateTxt.visible ? (candidateTxt.height || 0) : 0;
+    const gapTitleBody = 10;
+    const gapBodyHint = instructionHintTxt.visible ? 10 : 0;
+    const gapBodyCand = candidateTxt.visible ? 10 : 0;
+    const gapCandBtns = 16;
+    const showConfirm = !!confirmBtn.visible;
+    const showCancel = !!cancelBtn.visible;
+    const anyButtons = showConfirm || showCancel;
+    const btnH = anyButtons ? 40 : 0;
+    const gapAfterCand = anyButtons ? gapCandBtns : 0;
+    const modalH = padY + titleH + gapTitleBody + bodyH + gapBodyHint + hintLineH + gapBodyCand + candH + gapAfterCand + btnH + padY;
+
+    const modalX = centerX - modalW / 2;
+    const modalY = centerY - modalH / 2;
+
+    overlay.clear();
+    overlay.fillStyle(0x000000, 0.35);
+    overlay.fillRect(0, 0, W, H);
+
+    gfx.clear();
+    gfx.fillStyle(0x2a2010, 1);
+    gfx.lineStyle(2, 0x6a4a20, 1);
+    gfx.fillRoundedRect(modalX, modalY, modalW, modalH, 14);
+    gfx.strokeRoundedRect(modalX, modalY, modalW, modalH, 14);
+
+    titleTxt.setPosition(modalX + padX, modalY + padY);
+
+    let y = modalY + padY + titleH + gapTitleBody;
+    bodyTxt.setPosition(modalX + padX, y);
+    y += bodyH;
+    if (instructionHintTxt.visible) {
+      y += gapBodyHint;
+      instructionHintTxt.setPosition(modalX + padX, y);
+      y += hintLineH;
+    }
+    if (candidateTxt.visible) y += gapBodyCand;
+    if (candidateTxt.visible) {
+      candidateTxt.setPosition(modalX + padX, y);
+      y += candH;
+    }
+
+    if (anyButtons) {
+      const btnY = modalY + modalH - padY - btnH / 2;
+      const gap = 18;
+      if (showConfirm && showCancel) {
+        confirmBtn.setPosition(centerX - (194 / 2 + gap / 2), btnY);
+        cancelBtn.setPosition(centerX + (194 / 2 + gap / 2), btnY);
+      } else if (showConfirm) {
+        confirmBtn.setPosition(centerX, btnY);
+        cancelBtn.setPosition(-10000, -10000);
+      } else {
+        cancelBtn.setPosition(centerX, btnY);
+        confirmBtn.setPosition(-10000, -10000);
+      }
+      confirmBtn.setFixedSize(194, btnH);
+      cancelBtn.setFixedSize(194, btnH);
+      confirmBtn.setAlign('center');
+      cancelBtn.setAlign('center');
+    } else {
+      confirmBtn.setPosition(-10000, -10000);
+      cancelBtn.setPosition(-10000, -10000);
+    }
   }
 
   _tutorialTick() {
@@ -586,20 +784,10 @@ class GameScene extends Phaser.Scene {
       this._tut.highlightZone = cells || null;
     };
 
-    // Tutorial requires the runtime to be in battle phase.
-    if (phase != null && phase !== 'game') {
-      setCellHighlight(null, null);
-      this.tutorialTxt?.setText('Tutorial (connected)\n\nWaiting for battle phase…');
-      this.tutorialHintTxt?.setText('Finish board scan + HQ setup first.\nThen reopen Tutorial.html.');
-      return;
-    }
-
     // STEP 0: Place P1 ATK A at D4.
     if (this._tut.step === 0) {
       const t = TUTORIAL_TARGETS.p1AtkStart;
       setCellHighlight(t.col, t.row);
-      this.tutorialTxt?.setText('Step 1/7 — Place ATK\n\nMove P1 ATK A onto D4.');
-      this.tutorialHintTxt?.setText('Watch the pulsing tile.\nWhen the marker is detected in D4, we continue.');
       if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row)) this._tut.step = 1;
       return;
     }
@@ -608,8 +796,6 @@ class GameScene extends Phaser.Scene {
     if (this._tut.step === 1) {
       const t = TUTORIAL_TARGETS.p1AtkStart;
       setCellHighlight(t.col, t.row);
-      this.tutorialTxt?.setText('Step 2/7 — Aim\n\nRotate P1 ATK A to point → (E).');
-      this.tutorialHintTxt?.setText('Keep it on D4.\nThe on-screen arrow should show →.');
       if (isVisible(p1.atk_a) && atCell(p1.atk_a, t.col, t.row) && p1.atk_a.direction === 'E') {
         this._tut.step = 2;
       }
@@ -619,8 +805,6 @@ class GameScene extends Phaser.Scene {
     // STEP 2: End P1 turn (physical confirm marker triggers turn change).
     if (this._tut.step === 2) {
       setCellHighlight(null, null);
-      this.tutorialTxt?.setText('Step 3/7 — End turn\n\nEnd P1 turn using the physical confirm marker.');
-      this.tutorialHintTxt?.setText('When the backend detects the confirm marker hold,\nturn will switch to The Mob.');
       if (turnChanged && turn === 2) this._tut.step = 3;
       return;
     }
@@ -628,8 +812,6 @@ class GameScene extends Phaser.Scene {
     // STEP 3: Quickly end P2 turn so we can place defender as P1.
     if (this._tut.step === 3) {
       setCellHighlight(null, null);
-      this.tutorialTxt?.setText('Step 4/7 — Skip enemy turn\n\nEnd P2 turn (use P2 confirm marker) to return to P1.');
-      this.tutorialHintTxt?.setText('We want P1 active so defender placement is accepted.');
       if (turnChanged && turn === 1) this._tut.step = 4;
       return;
     }
@@ -638,8 +820,6 @@ class GameScene extends Phaser.Scene {
     if (this._tut.step === 4) {
       const d = TUTORIAL_TARGETS.p1DefSpot;
       setCellHighlight(d.col, d.row);
-      this.tutorialTxt?.setText('Step 5/7 — Defend\n\nMove P1 DEF to B2.');
-      this.tutorialHintTxt?.setText('After it lands, we will highlight the protected zone.');
       if (isVisible(p1.def) && atCell(p1.def, d.col, d.row)) {
         const tier = (G.tier_p1 ?? 0);
         setZoneHighlight(defZoneCells(d.col, d.row, tier));
@@ -653,8 +833,6 @@ class GameScene extends Phaser.Scene {
       const d = TUTORIAL_TARGETS.p1DefSpot;
       const tier = (G.tier_p1 ?? 0);
       setZoneHighlight(defZoneCells(d.col, d.row, tier));
-      this.tutorialTxt?.setText('Step 6/7 — Set up the demo\n\nEnd P1 turn. Then, as P2, aim an ATK ray into the highlighted zone.');
-      this.tutorialHintTxt?.setText('Goal: make P2 ATK hit ANY protected cell.\nThen end P2 turn to resolve the attack.');
       if (turnChanged && turn === 2) this._tut.step = 6;
       return;
     }
@@ -665,9 +843,6 @@ class GameScene extends Phaser.Scene {
       const tier = (G.tier_p1 ?? 0);
       const zone = defZoneCells(d.col, d.row, tier);
       setZoneHighlight(zone);
-
-      this.tutorialTxt?.setText('Step 7/7 — Defense negates the first hit\n\nAs P2: aim an ATK into the highlighted zone.\nThen end P2 turn.');
-      this.tutorialHintTxt?.setText('We will complete this step when the backend reports\n`cell_damaged` on a protected tile (first hit absorbed).');
 
       // Detect “protected first hit”: cell_damaged where cell is inside the DEF zone.
       const zoneKey = new Set(zone.map(({ col, row }) => `${col},${row}`));
@@ -683,8 +858,6 @@ class GameScene extends Phaser.Scene {
         this._tut.completed = true;
         this._tut.highlightCell = null;
         this._tut.highlightZone = null;
-        this.tutorialTxt?.setText('Tutorial complete!\n\nYou saw defender protection absorb the first hit.');
-        this.tutorialHintTxt?.setText('Now try the same shot again:\nit should destroy the tile on the second hit.');
       }
       return;
     }
@@ -895,35 +1068,25 @@ class GameScene extends Phaser.Scene {
 
     T(8, 10, '⚔  BATTLE LOG', '#f0d070', '13px');
     sep(30);
+    // Phase/turn status at top (moved here to avoid overlapping lower UI).
+    this.turnText   = T(8, 36, 'Phase: —', '#f0d070', '13px');
+    sep(58);
 
-    T(8, 36,  '🌾  OLD MICK\'S SIDE', '#f8c860', '11px');
-    T(8, 53,  'Rifleman 1  (R1) · ATK', '#d0a040');
-    T(8, 68,  'Rifleman 2  (R2) · ATK', '#d0a040');
-    T(8, 83,  'Old Mick    (OM) · DEF', '#d0a040');
-    sep(102);
+    T(8, 64, 'TERRAIN', '#c8a050', '11px');
+    T(8, 80, '██ Hard  — impassable (blocks ray)', '#b0a080');
+    T(8, 93, '▪▪ Soft  — absorbs hit (2 hits)', '#c8d860');
+    sep(108);
 
-    T(8, 108, '🐦  THE MOB\'S SIDE', '#b0ee50', '11px');
-    T(8, 125, 'Mob 1       (M1) · ATK', '#80c030');
-    T(8, 140, 'Mob 2       (M2) · ATK', '#80c030');
-    T(8, 155, 'Cassowary   (CW) · DEF', '#80c030');
-    sep(174);
-
-    T(8, 178, 'TERRAIN', '#c8a050', '11px');
-    T(8, 194, '██ Hard  — impassable (blocks ray)', '#b0a080');
-    T(8, 207, '▪▪ Soft  — absorbs hit (2 hits)', '#c8d860');
-    sep(222);
-
-    T(8, 226, 'TIER UPGRADES', '#c8a050', '11px');
+    T(8, 112, 'TIER UPGRADES', '#c8a050', '11px');
 
     // Dynamic texts (updated each frame)
-    this.turnText   = T(8, H - 192, 'Turn: —',    '#f0d070', '13px');
     this.scoreText  = T(8, H - 174, 'Paddock score: 0/40  Feeding ground score: 0/40', '#ffb060', '10px');
     this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
     this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
 
     // Tier display
-    this.p1TierTxt = T(8,  244, 'P1 Tier: 0', '#f0c060');
-    this.p2TierTxt = T(8,  258, 'P2 Tier: 0', '#90e050');
+    this.p1TierTxt = T(8,  130, 'P1 Tier: 0', '#f0c060');
+    this.p2TierTxt = T(8,  144, 'P2 Tier: 0', '#90e050');
 
     // Tier +/− buttons  (manual override for demo)
     const mkBtn = (label, x, y, cb, col) => {
@@ -946,30 +1109,11 @@ class GameScene extends Phaser.Scene {
     mkBtn('[P2 +Tier]', 8,  288, () => this._changeTier(2,  1), '#90e050');
     mkBtn('[P2 −Tier]', 90, 288, () => this._changeTier(2, -1), '#70c030');
 
-    // Token position info texts
-    const infoStyle = { fontSize: '10px', fontFamily: 'monospace', color: '#908060' };
-    this.p1AtkAInfo = this.add.text(PANEL_X + 8, 53,  '', infoStyle);
-    this.p1AtkBInfo = this.add.text(PANEL_X + 8, 68,  '', infoStyle);
-    this.p1DefInfo  = this.add.text(PANEL_X + 8, 83,  '', infoStyle);
-    this.p2AtkAInfo = this.add.text(PANEL_X + 8, 125, '', infoStyle);
-    this.p2AtkBInfo = this.add.text(PANEL_X + 8, 140, '', infoStyle);
-    this.p2DefInfo  = this.add.text(PANEL_X + 8, 155, '', infoStyle);
-
     T(8, 320, 'LATEST ALERT', '#c89060', '11px');
     this.warningMiniTxt = this.add.text(PANEL_X + 8, 338, 'Recent alert: none', {
       fontSize: '10px', fontFamily: 'Georgia', color: '#9a7a58',
       wordWrap: { width: PW - 16 },
     });
-
-    T(8, 382, 'SETUP CONTROLS', '#c8a050', '11px');
-    this.setupControlTxt = this.add.text(PANEL_X + 8, 400, 'Waiting for setup phase.', {
-      fontSize: '10px', fontFamily: 'Georgia', color: '#9e8868',
-      wordWrap: { width: PW - 16 },
-    });
-    this.setupCandidateTxt = this.add.text(PANEL_X + 8, 440, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#d8c890',
-      wordWrap: { width: PW - 16 },
-    }).setVisible(false);
 
     const mkActionBtn = (label, x, y, width, bgColor, color, onClick) => {
       const btn = this.add.text(PANEL_X + x, y, label, {
@@ -992,17 +1136,7 @@ class GameScene extends Phaser.Scene {
       return btn;
     };
 
-    // Side-selection is now defaulted to Mob first, so the player no longer chooses
-    // "Old Mick First" vs "Mob First" via UI buttons.
-    this.confirmHqBtn = mkActionBtn('Confirm HQ', 8, 504, 194, '#6a3812', '#ffe0a0', () => {
-      const activeSide = gameState?.setup?.active_setup_side;
-      if (activeSide) this._sendAction({ action: 'confirm_hq', side: activeSide });
-    });
-    this.resetSetupBtn = mkActionBtn('Restart Setup', 8, 536, 194, '#402318', '#f0c8b0', () => {
-      this.setupSelection.pendingBySide = { p1: null, p2: null };
-      this._sendAction({ action: 'reset_setup' });
-    });
-    this.nukeBtn = mkActionBtn('Arm Nuke', 8, 568, 194, '#5a1f12', '#ffd070', () => {
+    this.nukeBtn = mkActionBtn('Arm Nuke', 8, 400, 194, '#5a1f12', '#ffd070', () => {
       const activeSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
       if (!activeSide) return;
       this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
@@ -1063,44 +1197,12 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    const statusMessage = setup.status_message || 'Waiting for backend setup state.';
-    const activeSide = setup.active_setup_side ? sideLabel(setup.active_setup_side) : 'Waiting';
-    const firstSide = setup.side_selection_complete ? sideLabel(setup.first_player_side) : 'Pending';
-    const p1Hq = hqProgressLabel(setup.hq?.p1);
-    const p2Hq = hqProgressLabel(setup.hq?.p2);
-
+    // Setup UX is the centered modal (`_ensureSetupModal`). Keep this legacy card hidden
+    // so instructions are not duplicated on the board.
     this.setupCardGfx.clear();
-    this.setupCardGfx.fillStyle(0x120904, 0.90);
-    this.setupCardGfx.fillRoundedRect(BX + 12, BY + 10, COLS * CELL - 24, 206, 14);
-    this.setupCardGfx.lineStyle(2, 0xb88338, 0.85);
-    this.setupCardGfx.strokeRoundedRect(BX + 12, BY + 10, COLS * CELL - 24, 206, 14);
-    this.setupCardGfx.lineStyle(1, 0xf0d070, 0.22);
-    this.setupCardGfx.strokeRoundedRect(BX + 18, BY + 16, COLS * CELL - 36, 194, 12);
-    this.setupCardGfx.setVisible(true);
-
-    this.setupTitleTxt.setText(`HQ Setup Placeholder  |  ${phaseLabel(phase)}`).setVisible(true);
-    this.setupStatusTxt.setText(statusMessage).setVisible(true);
-    this.setupScanTxt
-      .setText(`Board scan: ${setupFlag(!!setup.board_scan_ready, 'ready', 'waiting')}`)
-      .setColor(setup.board_scan_ready ? '#8cf0a0' : '#ffcc88')
-      .setVisible(true);
-    this.setupSideTxt
-      .setText(`First HQ side: ${firstSide}`)
-      .setColor(setup.side_selection_complete ? '#f2df9a' : '#ffcc88')
-      .setVisible(true);
-    this.setupActiveTxt
-      .setText(`Active setup side: ${activeSide}`)
-      .setColor(setup.active_setup_side === 'p2' ? '#b8ff78' : '#ffd878')
-      .setVisible(true);
-    this.setupP1Txt
-      .setText(`Old Mick HQ: ${p1Hq}`)
-      .setColor(setup.hq?.p1?.confirmed ? '#8cf0a0' : '#f2df9a')
-      .setVisible(true);
-    this.setupP2Txt
-      .setText(`The Mob HQ:  ${p2Hq}`)
-      .setColor(setup.hq?.p2?.confirmed ? '#8cf0a0' : '#d8ef9a')
-      .setVisible(true);
-    this.setupHintTxt.setVisible(true);
+    this.setupCardGfx.setVisible(false);
+    texts.forEach((txt) => txt.setVisible(false));
+    return;
   }
 
   _hideSetupUi() {
@@ -1265,6 +1367,7 @@ class GameScene extends Phaser.Scene {
     button.setAlpha(enabled ? 1 : 0.45);
     button.setColor(enabled ? button._baseColor : '#8a7a68');
     button.setBackgroundColor(enabled ? button._baseBgColor : '#241812');
+    if (button.input) button.input.enabled = visible && enabled;
   }
 
   _syncSetupSelection(phase, setup = {}) {
@@ -1286,73 +1389,139 @@ class GameScene extends Phaser.Scene {
     const hasActiveCandidate = activeSide && !!setup.hq?.[activeSide]?.has_candidate;
     const localCandidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
 
-    this.setupControlTxt.setVisible(true);
-    this.setupCandidateTxt.setVisible(false);
+    const inBattle = phase === 'game' || phase === null;
+    if (inBattle) {
+      this._setSetupModalVisible(false);
+      const activeTurnSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+      const activeTier = activeTurnSide === 'p1' ? (gameState?.game?.tier_p1 ?? 0) : activeTurnSide === 'p2' ? (gameState?.game?.tier_p2 ?? 0) : 0;
+      const nukeUsed = activeTurnSide === 'p1' ? !!gameState?.game?.nuke_used_p1 : activeTurnSide === 'p2' ? !!gameState?.game?.nuke_used_p2 : true;
+      const isArming = !!activeTurnSide && this._nukeArmingSide === activeTurnSide;
+      const canArmNuke = !!activeTurnSide && activeTier >= 4 && !nukeUsed;
+      this._setActionButtonState(this.nukeBtn, {
+        visible: !!activeTurnSide,
+        enabled: canArmNuke || isArming,
+        label: isArming ? 'Cancel Nuke' : (nukeUsed ? 'Nuke Spent' : 'Arm Nuke'),
+      });
+      return;
+    }
+
+    this._ensureSetupModal();
+
+    if (phase !== 'hq_placement') {
+      this._hqPlacementUiSide = null;
+      this._hqPlacementInstructionAck = false;
+    }
+
+    // Tutorial intro uses the same full-screen dim style; keep setup modal hidden until it dismisses.
+    const deferForTutorialIntro = !!(this._tut && this._tut.introActive);
+    if (deferForTutorialIntro) {
+      this._setSetupModalVisible(false);
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      return;
+    }
+
+    this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+
+    const m = this._setupModal;
+    m.titleTxt.setText('Setup');
 
     if (phase === 'scan') {
       this._chooseSideSent = false;
-      this.setupControlTxt.setText('Waiting for a valid board scan before browser setup controls can be used.').setColor('#9e8868');
+      m.instructionHintTxt.setVisible(false);
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.bodyTxt.setText('Waiting for a valid board scan before HQ setup can continue.').setColor('#f2d8a0');
+      m.candidateTxt.setVisible(false).setText('');
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
       return;
     }
 
     if (phase === 'side_selection') {
       this._chooseSideSent = this._chooseSideSent || false;
-      this.setupControlTxt.setText('The Mob places the hidden HQ first (default).').setColor('#b8ff78');
+      m.instructionHintTxt.setVisible(false);
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.bodyTxt.setText('The Mob places the hidden HQ first (default).').setColor('#b8ff78');
+      m.candidateTxt.setVisible(false).setText('');
 
-      // In tutorial mode, wait until the intro popup is dismissed.
-      const deferForTutorialIntro = !!(this._tut && this._tut.introActive);
-
-      if (!this._chooseSideSent && !deferForTutorialIntro) {
+      if (!this._chooseSideSent) {
         this._chooseSideSent = true;
         this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
       }
 
       this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
-      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
       return;
     }
 
     if (phase === 'hq_placement') {
+      if (activeSide && activeSide !== this._hqPlacementUiSide) {
+        this._hqPlacementUiSide = activeSide;
+        this._hqPlacementInstructionAck = false;
+        this._hqCandidateCancelled = false;
+      }
+
+      const showInstructionOnly = !this._hqPlacementInstructionAck;
+
+      // Phase 1: Instruction modal only (dismiss by clicking anywhere)
+      if (showInstructionOnly) {
+        if (IS_TUTORIAL && this._tut) {
+          const placingMob = activeSide === 'p2';
+          const instructionBody = placingMob
+            ? 'Mob: click a board cell in your territory, then confirm the hidden HQ.\n(Look away, Old Mick!)'
+            : 'Old Mick: click a board cell in your territory, then confirm the hidden HQ.\n(Look away, Mob!)';
+          m.bodyTxt.setText(instructionBody).setColor(placingMob ? '#b8ff78' : '#ffd878');
+        } else {
+          const activeLabel = sideLabel(activeSide);
+          m.bodyTxt
+            .setText(`${activeLabel}: click a board cell in your territory, then confirm the hidden HQ.`)
+            .setColor(activeSide === 'p2' ? '#b8ff78' : '#ffd878');
+        }
+        m.instructionHintTxt.setVisible(true);
+        m.candidateTxt.setVisible(false).setText('');
+        this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+        this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+        if (m.overlay?.input) m.overlay.input.enabled = true;
+        this._chooseSideSent = true;
+        this._setSetupModalVisible(true);
+        this._layoutSetupModal();
+        return;
+      }
+
+      // Phase 2: No modal - user can see board and click a cell
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.instructionHintTxt.setVisible(false);
+
+      // Only show tile-selected modal if there's a LOCAL candidate and user hasn't cancelled
+      const showTileModal = !!localCandidate && !this._hqCandidateCancelled;
+
+      if (!showTileModal) {
+        this._setSetupModalVisible(false);
+        m.candidateTxt.setVisible(false).setText('');
+        this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+        this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+        this._chooseSideSent = true;
+        return;
+      }
+
+      // Phase 3: Tile selected - show confirmation modal (no instruction text)
       const activeLabel = sideLabel(activeSide);
-      this.setupControlTxt
-        .setText(`${activeLabel}: click a board cell in your territory, then confirm the hidden HQ.`)
-        .setColor(activeSide === 'p2' ? '#b8ff78' : '#ffd878');
-      this.setupCandidateTxt
-        .setVisible(true)
-        .setText(
-          localCandidate
-            ? `Selected cell: ${cellLabel(localCandidate.col, localCandidate.row)} (local preview)`
-            : hasActiveCandidate
-              ? 'Candidate saved on backend. Confirm when ready.'
-              : 'Selected cell: --'
-        )
-        .setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
+      const cellText = `${activeLabel} selected cell: ${cellLabel(localCandidate.col, localCandidate.row)}`;
+      m.bodyTxt.setText(cellText).setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
+      m.candidateTxt.setVisible(false).setText('');
       this._chooseSideSent = true;
       this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
-      this._setActionButtonState(this.resetSetupBtn, { visible: true, enabled: true });
-      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.cancelHqBtn, { visible: true, enabled: true });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
       return;
     }
 
-    const activeTurnSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
-    const activeTier = activeTurnSide === 'p1' ? (gameState?.game?.tier_p1 ?? 0) : activeTurnSide === 'p2' ? (gameState?.game?.tier_p2 ?? 0) : 0;
-    const nukeUsed = activeTurnSide === 'p1' ? !!gameState?.game?.nuke_used_p1 : activeTurnSide === 'p2' ? !!gameState?.game?.nuke_used_p2 : true;
-    const isArming = !!activeTurnSide && this._nukeArmingSide === activeTurnSide;
-    const canArmNuke = !!activeTurnSide && activeTier >= 4 && !nukeUsed;
-    this.setupControlTxt
-      .setText(isArming ? `${sideLabel(activeTurnSide)} nuke armed. Click an enemy cell to center the 3x3 strike.` : 'Setup complete. Browser controls are hidden during battle.')
-      .setColor(isArming ? '#ffd878' : '#8fb890');
-    this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
-    this._setActionButtonState(this.resetSetupBtn, { visible: false, enabled: false });
-    this._setActionButtonState(this.nukeBtn, {
-      visible: !!activeTurnSide,
-      enabled: canArmNuke || isArming,
-      label: isArming ? 'Cancel Nuke' : (nukeUsed ? 'Nuke Spent' : 'Arm Nuke'),
-    });
+    // Unknown setup phase — hide modal.
+    this._setSetupModalVisible(false);
   }
 
   _handleBoardPointerDown(pointer) {
@@ -1374,6 +1543,7 @@ class GameScene extends Phaser.Scene {
     }
 
     if (!gameState || gameState.phase !== 'hq_placement') return;
+    if (!this._hqPlacementInstructionAck) return;
     const activeSide = gameState.setup?.active_setup_side;
     if (!activeSide) return;
 
@@ -1385,6 +1555,7 @@ class GameScene extends Phaser.Scene {
 
     if (sideOwnsCell(activeSide, col, row)) {
       this.setupSelection.pendingBySide[activeSide] = { col, row };
+      this._hqCandidateCancelled = false;
     }
   }
 
@@ -1710,19 +1881,6 @@ class GameScene extends Phaser.Scene {
     } else {
       Object.values(this.arrows).forEach((arrow) => arrow.setVisible(false));
     }
-
-    // ── 6. Panel token-position info texts ────────────────────────
-    const colName = (c) => c != null ? String.fromCharCode(65 + c) : '?';
-    const rowName = (r) => r != null ? String(r + 1) : '?';
-    const posStr  = (tok) => tok?.col != null
-      ? `  ${colName(tok.col)}${rowName(tok.row)} →${tok.direction || '?'}`
-      : '';
-    this.p1AtkAInfo.setText(posStr(p1?.atk_a));
-    this.p1AtkBInfo.setText(posStr(p1?.atk_b));
-    this.p1DefInfo .setText(posStr(p1?.def));
-    this.p2AtkAInfo.setText(posStr(p2?.atk_a));
-    this.p2AtkBInfo.setText(posStr(p2?.atk_b));
-    this.p2DefInfo .setText(posStr(p2?.def));
 
     if (inBattle) {
       this._hideSetupUi();
