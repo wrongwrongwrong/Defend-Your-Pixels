@@ -18,7 +18,7 @@ from python_tracker.camera.camera_runtime import configure_camera, open_camera, 
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
-from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states
+from runner.setup_flow import FIRST_PLAYER_SIDE_TO_PLAYER, PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states
 from yu_test1 import game_model, terrain_gen
 
 
@@ -531,6 +531,10 @@ class Session:
         hq_p1, hq_p2 = hidden_hq_positions
         self.model = game_model.new_game(self.terrain, seed=self.seed, hq_p1=hq_p1, hq_p2=hq_p2)
         self._reset_battle_tracking()
+        self._reset_setup_tracking()
+        first_battle_side = FIRST_PLAYER_SIDE_TO_PLAYER.get(self.setup.first_player_side)
+        if first_battle_side in PLAYERS:
+            self.battle_waiting_for_side = first_battle_side
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
 
 
