@@ -29,8 +29,7 @@ from pathlib import Path
 import websockets
 
 import tracker
-import terrain_gen
-import game_model
+from live_rules import terrain_gen, game_model
 
 HERE = Path(__file__).resolve().parent
 FRONTEND_DIR = HERE / "frontend"
@@ -215,8 +214,8 @@ def parse_args():
     p = argparse.ArgumentParser(description="yu_test2 dev server")
     p.add_argument("--no-camera",   action="store_true",
                    help="Skip camera; just run frontend + idle WS broadcasts.")
-    p.add_argument("--camera-index", type=int, default=0,
-                   help="Webcam device index (default 0).")
+    p.add_argument("--camera-index", type=int, default=1,
+                   help="Webcam device index (default 1).")
     p.add_argument("--no-window",    action="store_true",
                    help="Hide the OpenCV preview window (default: shown).")
     p.add_argument("--ws-port",      type=int, default=8765)

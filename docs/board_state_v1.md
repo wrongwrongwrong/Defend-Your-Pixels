@@ -109,7 +109,7 @@ Example:
 
 ## Current frontend usage
 
-`yu_test1/index.html` currently consumes these fields as follows:
+`yu_test2/frontend/index.html` currently consumes these fields as follows:
 
 - When `phase !== "game"`, it shows a pre-game setup placeholder card.
 - During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.

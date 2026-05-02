@@ -15,7 +15,7 @@ Note: only `transport/` exists in the current bridge implementation. The naming 
 Runtime model
 - `python_tracker/` produces tracker observations
 - `bridge/` shapes and transports them
-- `yu_test1/index.html` consumes them
+- `yu_test2/frontend/index.html` consumes them through the live runtime HTTP/WS path
 - `runner/` assembles the live application
 
 Canonical runtime entrypoint

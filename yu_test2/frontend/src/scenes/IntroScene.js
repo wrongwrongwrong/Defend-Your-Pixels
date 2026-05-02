@@ -86,6 +86,8 @@ export class IntroScene extends Phaser.Scene {
     this._slideObjs   = [];
     this._advancing   = false;
     this._inSelection = false;
+    this._latestState = null;
+    this._selectionStatus = null;
   }
 
   create() {
@@ -107,9 +109,13 @@ export class IntroScene extends Phaser.Scene {
     // If server is mid-game already, skip the intro on first state arrival
     if (this.ws) {
       this._stateHandler = (s) => {
-        if (s && s.phase && s.phase !== "side_selection") {
+        this._latestState = s;
+        const setup = s?.setup || {};
+        if (s?.phase === "game" || setup.side_selection_complete) {
           this._goToGame(s);
+          return;
         }
+        this._refreshSelectionStatus();
       };
       this.ws.on("state", this._stateHandler);
     }
@@ -285,7 +291,7 @@ export class IntroScene extends Phaser.Scene {
         "One stubborn farmer.",
         "Forty years of dirt.",
       ]);
-    farmerCard.on("pointerdown", () => this._chooseSide("farmer"));
+    farmerCard.on("pointerdown", () => this._chooseSide("old_mick"));
     objs.push(farmerCard);
 
     const emuCard = this._makeCard(
@@ -301,14 +307,22 @@ export class IntroScene extends Phaser.Scene {
         "One Cassowary.",
         "Twenty thousand strong.",
       ]);
-    emuCard.on("pointerdown", () => this._chooseSide("emu"));
+    emuCard.on("pointerdown", () => this._chooseSide("mob"));
     objs.push(emuCard);
 
     objs.push(this.add.text(CX, H - 52,
-      "Camera mode: hold up marker 20 (Farmer) or marker 21 (Emu)", {
+      "Board scan must be ready before side selection can lock in.", {
         fontFamily: "monospace", fontSize: "9px",
         color: "#3a2810", align: "center",
       }).setOrigin(0.5).setAlpha(0));
+
+    this._selectionStatus = this.add.text(CX, 136,
+      "Waiting for a valid board scan.", {
+        fontFamily: "monospace", fontSize: "10px",
+        color: "#8a7060", align: "center",
+        wordWrap: { width: W - 80 },
+      }).setOrigin(0.5).setAlpha(0);
+    objs.push(this._selectionStatus);
 
     this.tweens.add({
       targets: objs, alpha: 1, duration: 700,
@@ -316,6 +330,19 @@ export class IntroScene extends Phaser.Scene {
     });
 
     this._slideObjs = objs;
+    this._refreshSelectionStatus();
+  }
+
+  _refreshSelectionStatus() {
+    if (!this._selectionStatus) return;
+    const setup = this._latestState?.setup || {};
+    const ready = !!setup.board_scan_ready;
+    const text = ready
+      ? "Board scan ready. Choose who places the first hidden HQ."
+      : (setup.status_message || "Waiting for a valid board scan.");
+    this._selectionStatus
+      .setText(text)
+      .setColor(ready ? "#d4a030" : "#8a7060");
   }
 
   _makeCard(x, y, title, tag, titleColor, bgColor, rimColor, bullets) {
@@ -400,16 +427,21 @@ export class IntroScene extends Phaser.Scene {
 
   _chooseSide(side) {
     if (!this._inSelection) return;
+    const boardReady = !!this._latestState?.setup?.board_scan_ready;
+    if (!boardReady) {
+      this._selectionStatus?.setText("Waiting for board scan before side selection can start.")
+        .setColor("#d87850");
+      return;
+    }
+
     this._inSelection = false;
 
     playSfx(this, "sfx_select");
 
-    // The yu_test1 / FW2 backend doesn't currently consume choose_side, but
-    // sending it here is harmless — and keeps compatibility with prototype3.
-    this.ws?.send("choose_side", { side });
+    this.ws?.send("choose_side", { first_player_side: side });
 
-    const name  = side === "farmer" ? "OLD MICK'S SIDE" : "THE MOB'S SIDE";
-    const color = side === "farmer" ? "#d4a030" : "#6aaa50";
+    const name  = side === "old_mick" ? "OLD MICK'S SIDE" : "THE MOB'S SIDE";
+    const color = side === "old_mick" ? "#d4a030" : "#6aaa50";
 
     this._fadeOutSlide(() => {
       this.add.text(CX, H / 2 - 30, "PLAYER 1:", {

@@ -40,7 +40,7 @@ When each side's HQ marker is locked in.
 |                        |        | `side` field. Frontend would handle it in the `events` switch.   |
 | `sfx_p2_hq_select`     | ⏳     | Same as above.                                                   |
 
-The yu_test1 frontend already references `hq_setup_complete` and
+The yu_test2 mainline frontend already references `hq_setup_complete` and
 `hq_markers` keys in `state` — once we know the exact shape of HQ
 selection events from FW2, wiring is one line each.
 

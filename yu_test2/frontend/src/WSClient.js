@@ -10,8 +10,12 @@
  *   "events"        → fired with the events[] array if non-empty
  *   "disconnected"  → on close
  *
- * Listeners can also `send(type, data)` for client → server messages
- * (`{type, ...data}` JSON).
+ * Listeners can also `send(type, data)` for client → server messages.
+ *
+ * Transport rules:
+ * - `new_map` / `tier` stay as top-level transport commands
+ * - everything else is wrapped in the FW2 action envelope:
+ *   `{type:"action", data:{action:type, ...payload}}`
  */
 export class WSClient {
   constructor(url = "ws://localhost:8765") {
@@ -52,8 +56,11 @@ export class WSClient {
       this._listeners[event] = this._listeners[event].filter(f => f !== fn);
   }
   send(type, payload = {}) {
-    if (this._ws?.readyState === WebSocket.OPEN)
-      this._ws.send(JSON.stringify({ type, ...payload }));
+    if (this._ws?.readyState !== WebSocket.OPEN) return;
+    const message = (type === "new_map" || type === "tier")
+      ? { type, ...payload }
+      : { type: "action", data: { action: type, ...payload } };
+    this._ws.send(JSON.stringify(message));
   }
   _emit(event, data) {
     (this._listeners[event] || []).forEach(fn => fn(data));

@@ -1,31 +1,44 @@
-"""Live runtime entrypoint: camera -> tracker -> yu_test1 rules -> WebSocket UI.
+"""Live runtime entrypoint: camera -> tracker -> shared live rules -> WebSocket UI.
 
 This runtime keeps the current `python_tracker` camera/grid-mapping pipeline, but the
-authoritative gameplay loop and browser payload now follow `yu_test1`.
+authoritative gameplay loop and browser payload now follow the shared live rules.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import functools
+import http.server
 import json
 import os
+from pathlib import Path
+import socketserver
+import sys
+import threading
 import time
 
 import cv2
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
-from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states
-from yu_test1 import game_model, terrain_gen
+from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
+from live_rules import game_model, terrain_gen
 
 
-CAMERA_ID = 0
+CAMERA_ID = 1
 SEND_FPS = 10
+HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
+FRONTEND_DIR = ROOT_DIR / "yu_test2" / "frontend"
 
 ROLE_BY_MARKER_ID = {
     12: ("p1", "atk_a"),
@@ -54,6 +67,26 @@ COMPASS_8 = [
     (270, "N"),
     (315, "NE"),
 ]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Old Mick live tracker")
+    parser.add_argument("--camera-index", type=int, default=CAMERA_ID, help="Camera index for the live tracker.")
+    parser.add_argument("--send-fps", type=int, default=SEND_FPS, help="Broadcast rate for frontend payloads.")
+    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the yu_test2 frontend.")
+    parser.add_argument("--ws-port", type=int, default=WS_PORT, help="WebSocket port for frontend state sync.")
+    parser.add_argument("--no-camera", action="store_true", help="Run the live frontend without opening a camera.")
+    return parser.parse_args()
+
+
+def start_http_server(port: int, root: Path):
+    """Serve the yu_test2 frontend over plain HTTP for ES modules."""
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+    socketserver.TCPServer.allow_reuse_address = True
+    httpd = socketserver.TCPServer(("", port), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(f"[HTTP] Serving {root} at http://localhost:{port}")
+    return httpd
 
 
 def _opponent_side(side: str | None) -> str | None:
@@ -129,6 +162,84 @@ def _new_hq_marker_state(*, stale: bool = True) -> dict:
         "p1": {"col": None, "row": None, "stale": stale},
         "p2": {"col": None, "row": None, "stale": stale},
     }
+
+
+def _demo_hq_cell(side: str, terrain: dict) -> tuple[int, int]:
+    for row in range(12):
+        for col in range(12):
+            position = {"x": col, "y": row}
+            if side_of_cell(col, row) == side and is_valid_hq_position(side, position, terrain):
+                return col, row
+    raise RuntimeError(f"Cannot find a simulated HQ cell for {side}")
+
+
+def _demo_side_states() -> tuple[dict, dict]:
+    p1 = new_side_state(stale=False)
+    p2 = new_side_state(stale=False)
+    p1["atk_a"] = {"col": 2, "row": 7, "angle": 0.0, "direction": "E", "stale": False}
+    p1["atk_b"] = {"col": 4, "row": 6, "angle": 45.0, "direction": "SE", "stale": False}
+    p1["def"] = {"col": 1, "row": 8, "angle": 90.0, "direction": None, "stale": False}
+    p2["atk_a"] = {"col": 9, "row": 4, "angle": 180.0, "direction": "W", "stale": False}
+    p2["atk_b"] = {"col": 8, "row": 6, "angle": 225.0, "direction": "NW", "stale": False}
+    p2["def"] = {"col": 10, "row": 3, "angle": 270.0, "direction": None, "stale": False}
+    return p1, p2
+
+
+class NoCameraSimulation:
+    def __init__(self, session: "Session"):
+        self.session = session
+        self.p1_tokens, self.p2_tokens = _demo_side_states()
+        self._terrain_seed = session.seed
+        self.hq_cells = self._build_hq_cells()
+        self._setup_side: str | None = None
+        self._setup_since = 0.0
+        self._battle_side: str | None = None
+        self._battle_since = 0.0
+
+    def _build_hq_cells(self) -> dict[str, tuple[int, int]]:
+        return {
+            "p1": _demo_hq_cell("p1", self.session.terrain),
+            "p2": _demo_hq_cell("p2", self.session.terrain),
+        }
+
+    def _pulse(self, start_after: float, duration: float, elapsed: float) -> bool:
+        return start_after <= elapsed < start_after + duration
+
+    def step(self) -> tuple[dict, dict, int | None, dict, bool]:
+        if self.session.seed != self._terrain_seed:
+            self._terrain_seed = self.session.seed
+            self.hq_cells = self._build_hq_cells()
+
+        hq_markers = _new_hq_marker_state()
+        turn: int | None = None
+        confirm_present = False
+        now = time.monotonic()
+
+        if self.session.setup.phase == PHASE_HQ_PLACEMENT:
+            active_side = self.session.setup.active_setup_side
+            if active_side != self._setup_side:
+                self._setup_side = active_side
+                self._setup_since = now
+            if active_side in PLAYERS:
+                elapsed = now - self._setup_since
+                col, row = self.hq_cells[active_side]
+                hq_markers[active_side] = {"col": col, "row": row, "stale": False}
+                turn = 1 if active_side == "p1" else 2
+                confirm_present = self._pulse(0.9, 0.35, elapsed)
+            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
+
+        if self.session.setup.phase == PHASE_GAME:
+            active_side = self.session.battle_active_side or self.session.battle_waiting_for_side or "p1"
+            if active_side != self._battle_side:
+                self._battle_side = active_side
+                self._battle_since = now
+            elapsed = now - self._battle_since
+            turn = 1 if active_side == "p1" else 2
+            if self.session.battle_active_side in PLAYERS:
+                confirm_present = self._pulse(1.0, 0.35, elapsed)
+            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
+
+        return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
 
 
 def _confirm_marker_present(snapshot: dict) -> bool:
@@ -610,10 +721,44 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
         print("[Camera] Released.")
 
 
-async def async_main():
+async def publish_no_camera(send_fps: int = SEND_FPS):
+    session = Session()
+    simulation = NoCameraSimulation(session)
+    interval = 1.0 / send_fps
+
+    print(f"[Runtime] --no-camera active at {send_fps} fps")
+
+    while True:
+        session.sync_scan_state(board_scan_ready=True)
+        frame_errors: list[dict] = []
+
+        for command in await drain_actions():
+            frame_errors.extend(session.apply_command(command, board_scan_ready=True))
+
+        raw_p1, raw_p2, turn, hq_markers, confirm_present = simulation.step()
+        frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present))
+
+        events = session.game_events()
+        payload = session.payload(
+            corners_found=4,
+            turn_angle=0.0 if turn == 1 else 180.0 if turn == 2 else None,
+            errors=frame_errors,
+            events=events,
+        )
+        await broadcast(json.dumps(payload))
+        await asyncio.sleep(interval)
+
+
+async def async_main(args: argparse.Namespace):
+    if not FRONTEND_DIR.is_dir():
+        raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
+
+    start_http_server(args.http_port, FRONTEND_DIR)
+
     print("=" * 55)
     print("  Old Mick Live Tracker")
-    print(f"  ws://{WS_HOST}:{WS_PORT}")
+    print(f"  ws://{WS_HOST}:{args.ws_port}")
+    print(f"  http://localhost:{args.http_port}")
     print("=" * 55)
     print()
     print("  Board corner markers (ArUco DICT_4X4_50):")
@@ -638,13 +783,18 @@ async def async_main():
     print()
     print("  Hidden HQ setup is marker-driven once board scan is ready.")
     print()
-    print("[Server] Open yu_test1/index.html in your browser\n")
+    print("[Server] Open yu_test2/frontend via the HTTP URL above\n")
 
-    await run_server(publish_live_tracker)
+    if args.no_camera:
+        publisher = functools.partial(publish_no_camera, args.send_fps)
+    else:
+        publisher = functools.partial(publish_live_tracker, args.camera_index, args.send_fps)
+
+    await run_server(publisher, port=args.ws_port)
 
 
 def main() -> int:
-    asyncio.run(async_main())
+    asyncio.run(async_main(parse_args()))
     return 0
 
 

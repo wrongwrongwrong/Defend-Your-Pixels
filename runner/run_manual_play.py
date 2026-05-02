@@ -1,4 +1,4 @@
-"""Manual runtime entrypoint: terminal/browser setup -> yu_test1 rules -> WebSocket UI.
+"""Manual runtime entrypoint: terminal/browser setup -> shared live rules -> WebSocket/HTTP UI.
 
 This runner is the no-camera fallback for local UI testing. It keeps the same payload shape
 as the live tracker path, but token/setup input comes from terminal commands and browser
@@ -8,10 +8,19 @@ actions instead of ArUco markers.
 from __future__ import annotations
 
 import asyncio
+import functools
+import http.server
 import json
+from pathlib import Path
 import queue
+import socketserver
+import sys
 import threading
 import time
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
 from runner.setup_flow import (
@@ -25,10 +34,12 @@ from runner.setup_flow import (
     new_side_state,
     sanitize_token_states,
 )
-from yu_test1 import game_model, terrain_gen
+from live_rules import game_model, terrain_gen
 
 
 SEND_FPS = 10
+HTTP_PORT = 8080
+FRONTEND_DIR = ROOT_DIR / "yu_test2" / "frontend"
 PLAYER_SET = set(PLAYERS)
 SLOT_SET = set(SLOTS)
 ATTACKER_SLOT_SET = set(ATTACKER_SLOTS)
@@ -44,6 +55,16 @@ ANGLE_BY_DIRECTION = {
     "N": 270.0,
     "NE": 315.0,
 }
+
+
+def start_http_server(port: int, root: Path):
+    """Serve the yu_test2 frontend over plain HTTP for manual play."""
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+    socketserver.TCPServer.allow_reuse_address = True
+    httpd = socketserver.TCPServer(("", port), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(f"[HTTP] Serving {root} at http://localhost:{port}")
+    return httpd
 
 
 def _manual_empty_token() -> dict:
@@ -559,12 +580,18 @@ async def publish_manual_play(send_fps: int = SEND_FPS) -> None:
 
 
 async def async_main() -> None:
+    if not FRONTEND_DIR.is_dir():
+        raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
+
+    start_http_server(HTTP_PORT, FRONTEND_DIR)
+
     print("=" * 55)
     print("  Old Mick Manual Play")
     print(f"  ws://{WS_HOST}:{WS_PORT}")
+    print(f"  http://localhost:{HTTP_PORT}")
     print("=" * 55)
     print()
-    print("  Browser: open yu_test1/index.html")
+    print("  Browser: open http://localhost:8080")
     print("  Input: terminal commands and browser setup actions")
     print()
 
