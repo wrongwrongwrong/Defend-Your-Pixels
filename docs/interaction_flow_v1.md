@@ -40,7 +40,7 @@ Confirmed hidden-information rule:
 
 Current live frontend behavior:
 
-- `yu_test1/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
+- `yu_test2/frontend/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
 - the placeholder shows backend setup status and safe HQ progress only
 - the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
 - during `hq_placement`, the active side is chosen by `ID10` / `ID20`

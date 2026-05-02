@@ -147,7 +147,7 @@ The runtime payload includes safe setup metadata only:
 
 ## Frontend placeholder rendering
 
-`yu_test1/index.html` now renders a marker-guided setup placeholder whenever `phase` is not `game`.
+`yu_test2/frontend/index.html` now renders a marker-guided setup placeholder whenever `phase` is not `game`.
 
 - `scan`: shows a setup status card and scan-waiting messaging
 - `side_selection`: fallback/debug state only

@@ -40,7 +40,7 @@ Python behavior:
 - Stores `first_player_side`.
 - Records the first player and maintains or enters `hq_placement`.
 
-`yu_test1/index.html` can still send this action from its fallback setup controls.
+The `yu_test2` mainline frontend can send this action from its side-selection flow.
 
 ### `set_hq_candidate`
 
@@ -92,7 +92,7 @@ Purpose: reset the current pre-game HQ setup.
 }
 ```
 
-`yu_test1/index.html` exposes this through a restart-setup control during `hq_placement`.
+The live frontend may expose this through fallback or debug setup controls during `hq_placement`.
 
 ### `cancel_hq`
 
