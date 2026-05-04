@@ -158,6 +158,7 @@ export class GameScene extends Phaser.Scene {
     this._buildTokenSprites();
     this._buildHqSprites();
     this._buildWinOverlay();
+    this._buildTutorialOverlay();
     this._buildMuteButton();
     this._bindWS();
 
@@ -524,6 +525,150 @@ export class GameScene extends Phaser.Scene {
     this.winContainer.add([bg, this._winTitleTxt, this._winSubTxt]);
   }
 
+  // ─── Tutorial overlay ────────────────────────────────────────────────────
+
+  _buildTutorialOverlay() {
+    const cx = BOARD_OFF_X + BOARD_PX / 2;
+    const topY = BOARD_OFF_Y + 80;
+
+    // Container for all tutorial UI elements
+    this.tutorialContainer = this.add.container(cx, topY)
+      .setDepth(50)
+      .setVisible(false);
+
+    // Background panel with border
+    const panelW = 550;
+    const panelH = 140;
+    const bg = this.add.rectangle(0, 0, panelW, panelH, 0x1a1008, 0.95)
+      .setStrokeStyle(2, 0xffd060);
+
+    // Step counter (top right of panel)
+    this._tutStepTxt = this.add.text(panelW / 2 - 12, -panelH / 2 + 12, "", {
+      fontFamily: FONT_MONO, fontSize: "11px",
+      color: "#8a7060",
+    }).setOrigin(1, 0);
+
+    // Title text
+    this._tutTitleTxt = this.add.text(0, -panelH / 2 + 30, "", {
+      fontFamily: FONT_TITLE, fontSize: "20px", fontStyle: "bold",
+      color: "#ffd060",
+    }).setOrigin(0.5, 0);
+
+    // Instruction text (multi-line, centred)
+    this._tutTextTxt = this.add.text(0, -panelH / 2 + 65, "", {
+      fontFamily: FONT_LABEL, fontSize: "14px",
+      color: "#d0c0a0",
+      align: "center",
+      wordWrap: { width: panelW - 40 },
+      lineSpacing: 4,
+    }).setOrigin(0.5, 0);
+
+    // "Press SPACE to continue" hint (shown only when needs_dismiss)
+    this._tutHintTxt = this.add.text(0, panelH / 2 - 18, "Press SPACE or click to continue", {
+      fontFamily: FONT_MONO, fontSize: "11px",
+      color: "#7a6a50",
+    }).setOrigin(0.5).setVisible(false);
+
+    this.tutorialContainer.add([bg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt]);
+
+    // Graphics layer for cell highlighting (separate from tutorialContainer)
+    this.tutHighlightGfx = this.add.graphics().setDepth(45);
+
+    // Listen for SPACE key to dismiss tutorial steps
+    this.input.keyboard.on("keydown-SPACE", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && tut?.needs_dismiss) {
+        this._sendTutorialDismiss();
+      }
+    });
+
+    // Also allow clicking anywhere on the panel to dismiss
+    this.tutorialContainer.setInteractive(
+      new Phaser.Geom.Rectangle(-275, -70, 550, 140),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.tutorialContainer.on("pointerdown", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && tut?.needs_dismiss) {
+        this._sendTutorialDismiss();
+      }
+    });
+  }
+
+  /** Send tutorial dismiss message to backend. */
+  _sendTutorialDismiss() {
+    if (this.ws) {
+      this.ws.send("tutorial_dismiss", {});
+      playSfx(this, "sfx_select");
+    }
+  }
+
+  /** Render tutorial overlay and highlights based on backend state. */
+  _renderTutorial(tut) {
+    this.tutHighlightGfx.clear();
+
+    if (!tut?.active) {
+      this.tutorialContainer.setVisible(false);
+      return;
+    }
+
+    // Update text content
+    this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
+    this._tutTitleTxt.setText(tut.title || "");
+    this._tutTextTxt.setText(tut.text || "");
+
+    // Show/hide "press SPACE" hint based on whether this step needs user dismissal
+    this._tutHintTxt.setVisible(!!tut.needs_dismiss);
+
+    this.tutorialContainer.setVisible(true);
+
+    // Draw pulsing highlight on target cell if specified
+    if (tut.highlight) {
+      const { col, row } = tut.highlight;
+      const cellW = GRID_DRAW_W / GRID_SIZE;
+      const cellH = GRID_DRAW_H / GRID_SIZE;
+      const bx = BOARD_OFF_X + GRID_INSET_X + col * cellW;
+      const by = BOARD_OFF_Y + GRID_INSET_Y + row * cellH;
+
+      // Pulsing effect
+      const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 200);
+
+      // Filled highlight
+      this.tutHighlightGfx.fillStyle(0xffd060, 0.15 + 0.15 * pulse);
+      this.tutHighlightGfx.fillRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+
+      // Border
+      this.tutHighlightGfx.lineStyle(3, 0xffd060, 0.6 + 0.4 * pulse);
+      this.tutHighlightGfx.strokeRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+
+      // Cell label (e.g. "D4")
+      const label = `${colLabel(col)}${row + 1}`;
+      // Use a temporary text object or draw with the graphics (text needs special handling)
+      // For simplicity, we'll draw a small label below the cell
+      if (!this._tutCellLabel) {
+        this._tutCellLabel = this.add.text(0, 0, "", {
+          fontFamily: FONT_MONO, fontSize: "12px", fontStyle: "bold",
+          color: "#ffd060",
+          stroke: "#000000", strokeThickness: 3,
+        }).setOrigin(0.5).setDepth(46);
+      }
+      this._tutCellLabel.setText(label)
+        .setPosition(bx + cellW / 2, by + cellH + 8)
+        .setVisible(true);
+    } else {
+      // Hide cell label when no highlight
+      if (this._tutCellLabel) {
+        this._tutCellLabel.setVisible(false);
+      }
+    }
+
+    // Show completion message differently
+    if (tut.completed) {
+      this._tutHintTxt.setText("Tutorial Complete! Press SPACE to continue playing.")
+        .setVisible(true);
+    }
+  }
+
   // ─── Mute button ──────────────────────────────────────────────────────────
 
   _buildMuteButton() {
@@ -605,6 +750,9 @@ export class GameScene extends Phaser.Scene {
 
     // ── Win overlay ────────────────────────────────────────────────────────────
     this._renderWinOverlay(G);
+
+    // ── Tutorial overlay ──────────────────────────────────────────────────────
+    this._renderTutorial(s.tutorial);
   }
 
   // ─── Resource / terrain overlay ──────────────────────────────────────────

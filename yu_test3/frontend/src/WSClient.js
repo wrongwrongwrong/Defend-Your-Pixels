@@ -57,7 +57,9 @@ export class WSClient {
   }
   send(type, payload = {}) {
     if (this._ws?.readyState !== WebSocket.OPEN) return;
-    const message = (type === "new_map" || type === "tier")
+    // Top-level transport commands (not wrapped in action envelope)
+    const isTopLevel = type === "new_map" || type === "tier" || type === "tutorial_dismiss";
+    const message = isTopLevel
       ? { type, ...payload }
       : { type: "action", data: { action: type, ...payload } };
     this._ws.send(JSON.stringify(message));

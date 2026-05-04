@@ -10,6 +10,7 @@ Usage:
     python3 server.py --no-camera           # frontend only (UI testing)
     python3 server.py --camera-index 1      # alt webcam
     python3 server.py --ws-port 8765 --http-port 8080
+    python3 server.py --tutorial            # run with guided tutorial
 
 Designed to keep the same WS message shape that the FW2 backend emits, so
 the frontend works against either source.
@@ -36,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import tracker
-from live_rules import terrain_gen, game_model
+from live_rules import terrain_gen, game_model, tutorial
 FRONTEND_DIR = HERE / "frontend"
 
 WS_HOST = "localhost"
@@ -45,15 +46,25 @@ WS_HOST = "localhost"
 # ─── Game session ─────────────────────────────────────────────────────────────
 
 class Session:
-    def __init__(self):
+    def __init__(self, tutorial_mode: bool = False):
+        self.tutorial_mode = tutorial_mode
+        self.tutorial_ctrl = tutorial.new_tutorial() if tutorial_mode else None
         self.reset()
 
     def reset(self):
-        self.seed    = int(time.time() * 1000) % (2 ** 31)
+        # Use fixed seed in tutorial mode for predictable terrain
+        if self.tutorial_mode:
+            self.seed = tutorial.TUTORIAL_SEED
+        else:
+            self.seed = int(time.time() * 1000) % (2 ** 31)
         self.terrain = terrain_gen.generate(seed=self.seed)
         self.model   = game_model.new_game(self.terrain, seed=self.seed)
+        # Reset tutorial if in tutorial mode
+        if self.tutorial_ctrl:
+            self.tutorial_ctrl = tutorial.new_tutorial()
         print(f"[MAP] New game (seed={self.seed}) "
-              f"HQ p1={self.model.hq_p1} p2={self.model.hq_p2}")
+              f"HQ p1={self.model.hq_p1} p2={self.model.hq_p2}"
+              f"{' [TUTORIAL]' if self.tutorial_mode else ''}")
 
 
 # ─── HTTP static server (background thread) ───────────────────────────────────
@@ -89,6 +100,10 @@ async def ws_handler(websocket, *, session: Session):
                         session.model.tier_p1 = max(0, min(4, session.model.tier_p1 + d))
                     else:
                         session.model.tier_p2 = max(0, min(4, session.model.tier_p2 + d))
+                elif t == "tutorial_dismiss":
+                    # Handle tutorial step dismissal
+                    if session.tutorial_ctrl:
+                        session.tutorial_ctrl.dismiss()
             except (json.JSONDecodeError, KeyError, ValueError):
                 pass
     except websockets.exceptions.ConnectionClosed:
@@ -219,7 +234,7 @@ async def idle_loop(session: Session):
 
 
 def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
-    return {
+    state = {
         "phase":         "game",
         "corners_found": len(cc),
         "turn":          turn,
@@ -232,6 +247,10 @@ def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
         "game":          session.model.snapshot(),
         "events":        events,
     }
+    # Include tutorial state if in tutorial mode
+    if session.tutorial_ctrl:
+        state["tutorial"] = session.tutorial_ctrl.tick(p1, p2, turn, hq_markers)
+    return state
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -246,6 +265,8 @@ def parse_args():
                    help="Hide the OpenCV preview window (default: shown).")
     p.add_argument("--ws-port",      type=int, default=8765)
     p.add_argument("--http-port",    type=int, default=8080)
+    p.add_argument("--tutorial",     action="store_true",
+                   help="Run in tutorial mode with fixed seed and guided steps.")
     return p.parse_args()
 
 
@@ -256,10 +277,11 @@ async def main():
         print(f"[ERROR] Frontend dir missing: {FRONTEND_DIR}")
         return
 
-    session = Session()
+    session = Session(tutorial_mode=args.tutorial)
     start_http_server(args.http_port, FRONTEND_DIR)
 
-    print(f"[WS] Game state on  ws://localhost:{args.ws_port}")
+    mode_str = " [TUTORIAL MODE]" if args.tutorial else ""
+    print(f"[WS] Game state on  ws://localhost:{args.ws_port}{mode_str}")
     print(f"[UI] Open browser → http://localhost:{args.http_port}\n")
 
     handler = functools.partial(ws_handler, session=session)
