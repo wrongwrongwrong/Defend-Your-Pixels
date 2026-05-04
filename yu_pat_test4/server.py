@@ -37,7 +37,13 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import tracker
-from live_rules import terrain_gen, game_model, tutorial
+
+try:
+    from live_rules import terrain_gen, game_model, tutorial
+    _LIVE_RULES = True
+except ImportError:
+    _LIVE_RULES = False
+
 FRONTEND_DIR = HERE / "frontend"
 
 WS_HOST = "localhost"
@@ -45,8 +51,175 @@ WS_HOST = "localhost"
 
 # ─── Game session ─────────────────────────────────────────────────────────────
 
+# ─── Demo mode data ───────────────────────────────────────────────────────────
+
+_STALE_TOK = {"col": None, "row": None, "angle": None, "direction": None, "stale": True}
+_STALE_HQ  = {"col": None, "row": None, "stale": True}
+
+
+def _p_empty():
+    return {r: dict(_STALE_TOK) for r in ("atk_a", "atk_b", "def")}
+
+
+DEMO_TERRAIN = {
+    "p1_resources": [
+        {"col": 2, "row": 8, "hp": 2, "resource_type": "normal"},
+        {"col": 1, "row": 9, "hp": 2, "resource_type": "normal"},
+        {"col": 3, "row": 9, "hp": 2, "resource_type": "stronghold"},
+        {"col": 0, "row": 10, "hp": 2, "resource_type": "normal"},
+        {"col": 2, "row": 10, "hp": 2, "resource_type": "normal"},
+    ],
+    "p2_resources": [
+        {"col": 9,  "row": 2, "hp": 2, "resource_type": "normal"},
+        {"col": 10, "row": 1, "hp": 2, "resource_type": "normal"},
+        {"col": 8,  "row": 3, "hp": 2, "resource_type": "stronghold"},
+        {"col": 11, "row": 1, "hp": 2, "resource_type": "normal"},
+        {"col": 9,  "row": 3, "hp": 2, "resource_type": "normal"},
+    ],
+    "p1_hard": [{"col": 4, "row": 7}],
+    "p2_hard": [{"col": 7, "row": 4}],
+    "p1_soft": [{"col": 3, "row": 8}],
+    "p2_soft": [{"col": 8, "row": 4}],
+}
+
+
+def _game(tier1=0, tier2=0, score1=0, score2=0,
+          destroyed=None, damage=None, soft_gone=None,
+          hq_revealed=None, winner=None, win_reason=None):
+    return {
+        "tier_p1": tier1, "tier_p2": tier2,
+        "score_p1_attrition": score1, "score_p2_attrition": score2,
+        "attrition_threshold": 40,
+        "winner": winner, "win_reason": win_reason,
+        "hq_revealed": hq_revealed or {},
+        "destroyed": destroyed or [],
+        "damage": damage or {},
+        "soft_gone": soft_gone or [],
+    }
+
+
+def _hq_setup(p1_confirmed=False, p1_cand=False, p2_confirmed=False, p2_cand=False):
+    return {
+        "board_scan_ready": True,
+        "hq": {
+            "p1": {"confirmed": p1_confirmed, "has_candidate": p1_cand},
+            "p2": {"confirmed": p2_confirmed, "has_candidate": p2_cand},
+        },
+    }
+
+
+def _tok(col, row, direction=None):
+    return {"col": col, "row": row, "angle": 0, "direction": direction, "stale": False}
+
+
+def build_demo_states():
+    pe = _p_empty()
+
+    p1_live = {
+        "atk_a": _tok(4, 6, "NE"),
+        "atk_b": _tok(3, 7, "E"),
+        "def":   _tok(1, 9),
+    }
+    p2_live = {
+        "atk_a": _tok(7, 5, "SW"),
+        "atk_b": _tok(8, 4, "W"),
+        "def":   _tok(10, 2),
+    }
+
+    hq1 = {"col": 2, "row": 9, "stale": False}
+    hq2 = {"col": 10, "row": 1, "stale": False}
+    hq1s = {**hq1, "stale": True}
+    hq2s = {**hq2, "stale": True}
+
+    def _s(phase, active, p1, p2, hq_p1, hq_p2, game_snap,
+           corners=4, setup=None, errors=None, events=None):
+        return {
+            "phase": phase,
+            "demo_mode": True,
+            "corners_found": corners,
+            "battle": {"active_side": active},
+            "setup": setup or _hq_setup(True, True, True, True),
+            "p1": p1, "p2": p2,
+            "hq_markers": {
+                "p1": hq_p1 if hq_p1 else dict(_STALE_HQ),
+                "p2": hq_p2 if hq_p2 else dict(_STALE_HQ),
+            },
+            "terrain": DEMO_TERRAIN,
+            "map_seed": 42,
+            "game": game_snap,
+            "errors": errors or [],
+            "events": events or [],
+        }
+
+    return [
+        # 0 — Board scanning
+        _s("scan", None, _p_empty(), _p_empty(), None, None,
+           _game(), corners=2,
+           setup={"board_scan_ready": False, "hq": None},
+           errors=[{"code": "marker_map_scan_failed",
+                    "message": "Align all 4 corner markers to begin"}]),
+        # 1 — Board ready, side selection
+        _s("side_selection", None, _p_empty(), _p_empty(), None, None,
+           _game(), corners=4,
+           setup={"board_scan_ready": True,
+                  "hq": {"p1": {"confirmed": False, "has_candidate": False},
+                         "p2": {"confirmed": False, "has_candidate": False}}}),
+        # 2 — HQ placement (P1 placed, P2 pending)
+        _s("hq_placement", None, _p_empty(), _p_empty(), hq1, None,
+           _game(), corners=4,
+           setup=_hq_setup(p1_cand=True)),
+        # 3 — Game start, P1's turn
+        _s("game", "p1", p1_live, _p_empty(), hq1s, None,
+           _game()),
+        # 4 — P2's turn, damage on board
+        _s("game", "p2", _p_empty(), p2_live, None, hq2s,
+           _game(tier1=1, score1=8,
+                 destroyed=[[10, 1]],
+                 damage={"9,2": 1}),
+           events=[{"type": "cell_destroyed"}]),
+        # 5 — Tier upgrade moment (both sides upgraded)
+        _s("game", "p1", p1_live, _p_empty(), None, None,
+           _game(tier1=2, tier2=1, score1=18, score2=10,
+                 destroyed=[[10, 1], [11, 1]],
+                 damage={"9,2": 1, "8,3": 1})),
+        # 6 — Enemy HQ revealed
+        _s("game", "p2", _p_empty(), p2_live, None, hq2s,
+           _game(tier1=2, tier2=2, score1=26, score2=18,
+                 hq_revealed={"p2": [10, 1]},
+                 destroyed=[[10, 1], [11, 1], [9, 2]],
+                 damage={"8,3": 1})),
+        # 7 — Victory
+        _s("game", None, _p_empty(), _p_empty(), hq1s, hq2s,
+           _game(tier1=3, tier2=2, score1=32, score2=20,
+                 winner="p1", win_reason="nest_destroyed",
+                 hq_revealed={"p1": [2, 9], "p2": [10, 1]},
+                 destroyed=[[10, 1], [11, 1], [9, 2], [9, 3]])),
+    ]
+
+
+class DemoSession:
+    """Cycles through scripted demo states; compatible with ws_handler."""
+    def __init__(self):
+        self.states = build_demo_states()
+        self.index  = 0
+
+    def current(self):
+        return self.states[self.index]
+
+    def advance(self):
+        self.index = (self.index + 1) % len(self.states)
+        return self.current()
+
+    def reset(self):
+        self.index = 0
+
+
+# ─── Live game session ────────────────────────────────────────────────────────
+
 class Session:
     def __init__(self, tutorial_mode: bool = False):
+        if not _LIVE_RULES:
+            raise RuntimeError("live_rules not available — use --demo mode instead")
         self.tutorial_mode = tutorial_mode
         self.tutorial_ctrl = tutorial.new_tutorial() if tutorial_mode else None
         self.reset()
@@ -92,16 +265,18 @@ async def ws_handler(websocket, *, session: Session):
             try:
                 data = json.loads(message)
                 t = data.get("type")
-                if t == "new_map":
+                if t == "demo_next":
+                    if isinstance(session, DemoSession):
+                        session.advance()
+                elif t == "new_map":
                     session.reset()
-                elif t == "tier":
+                elif t == "tier" and not isinstance(session, DemoSession):
                     p, d = int(data["player"]), int(data["delta"])
                     if p == 1:
                         session.model.tier_p1 = max(0, min(4, session.model.tier_p1 + d))
                     else:
                         session.model.tier_p2 = max(0, min(4, session.model.tier_p2 + d))
-                elif t == "tutorial_dismiss":
-                    # Handle tutorial step dismissal
+                elif t == "tutorial_dismiss" and not isinstance(session, DemoSession):
                     if session.tutorial_ctrl:
                         session.tutorial_ctrl.dismiss()
             except (json.JSONDecodeError, KeyError, ValueError):
@@ -220,6 +395,18 @@ async def camera_loop(session: Session, camera_index: int, show_window: bool):
             cv2.destroyAllWindows()
 
 
+async def demo_loop(session: DemoSession):
+    """Demo mode: cycle through scripted states, auto-advance every 6 s."""
+    print("[DEMO] Running demo mode — press N in browser to step through states.")
+    last_broadcast = 0
+    while True:
+        now = time.time()
+        if now - last_broadcast >= 0.25:   # 4 fps is plenty
+            await broadcast(session.current())
+            last_broadcast = now
+        await asyncio.sleep(0.1)
+
+
 async def idle_loop(session: Session):
     """No-camera mode: still broadcast state so the UI can render."""
     print("[OK] Running in --no-camera mode. UI will render but markers are inactive.")
@@ -256,7 +443,9 @@ def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def parse_args():
-    p = argparse.ArgumentParser(description="yu_test3 dev server")
+    p = argparse.ArgumentParser(description="yu_test4 dev server")
+    p.add_argument("--demo",         action="store_true",
+                   help="Run scripted demo — no camera or live_rules needed.")
     p.add_argument("--no-camera",   action="store_true",
                    help="Skip camera; just run frontend + idle WS broadcasts.")
     p.add_argument("--camera-index", type=int, default=0,
@@ -277,12 +466,25 @@ async def main():
         print(f"[ERROR] Frontend dir missing: {FRONTEND_DIR}")
         return
 
-    session = Session(tutorial_mode=args.tutorial)
     start_http_server(args.http_port, FRONTEND_DIR)
+    print(f"[UI] Open browser → http://localhost:{args.http_port}")
 
+    if args.demo:
+        session = DemoSession()
+        print(f"[WS] Demo mode on  ws://localhost:{args.ws_port}")
+        print(f"[DEMO] {len(session.states)} stages — press N in browser to step, auto-cycles every 6 s\n")
+        handler = functools.partial(ws_handler, session=session)
+        async with websockets.serve(handler, WS_HOST, args.ws_port):
+            await demo_loop(session)
+        return
+
+    if not _LIVE_RULES:
+        print("[ERROR] live_rules not found. Run with --demo for UI testing without the game engine.")
+        return
+
+    session = Session(tutorial_mode=args.tutorial)
     mode_str = " [TUTORIAL MODE]" if args.tutorial else ""
-    print(f"[WS] Game state on  ws://localhost:{args.ws_port}{mode_str}")
-    print(f"[UI] Open browser → http://localhost:{args.http_port}\n")
+    print(f"[WS] Game state on  ws://localhost:{args.ws_port}{mode_str}\n")
 
     handler = functools.partial(ws_handler, session=session)
     async with websockets.serve(handler, WS_HOST, args.ws_port):

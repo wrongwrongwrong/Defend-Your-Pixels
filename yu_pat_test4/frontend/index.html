@@ -4,44 +4,231 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Old Mick Against the Mob</title>
-
-  <!--
-    FONT OPTIONS — swap these <link> tags to change the game's typeface.
-
-    Currently active:
-      "Special Elite"  → vintage typewriter, great for 1932 war theme  ← RECOMMENDED
-      "Oswald"         → bold condensed sans, clear for labels/numbers
-      "Share Tech Mono"→ clean monospace for coordinates
-
-    Other options to try (just replace the href):
-      Rye              → rugged western/outback feel
-      Cinzel           → classical roman gravitas
-      Press Start 2P   → retro pixel-game look
-      VT323            → lo-fi LCD retro
-      Raleway          → elegant modern
-
-    Google Fonts URL builder: https://fonts.google.com
-  -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;600;700&family=Share+Tech+Mono&display=swap"
-        rel="stylesheet">
-
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0a0804;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-    #game-container canvas { display: block; }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="game-container"></div>
+
+  <!-- ══ HEADER ══════════════════════════════════════════════ -->
+  <div id="header">
+    <h1>Old Mick Against the Mob</h1>
+    <span class="turn-badge" id="turn-badge"></span>
+  </div>
+
+  <!-- ══ MAIN ════════════════════════════════════════════════ -->
+  <div id="main">
+
+    <!-- ── LEFT PANEL — Old Mick ─────────────────────────── -->
+    <aside class="side-panel" id="panel-left">
+
+      <div class="panel-head">
+        <h2>OLD MICK</h2>
+        <p>THE FARMER</p>
+      </div>
+
+      <!-- Score -->
+      <div class="ps">
+        <div class="ps-label">SCORE</div>
+        <div class="score-row">
+          <div class="score-bar-wrap"><div class="score-bar" id="p1-score-bar"></div></div>
+          <span class="score-val" id="p1-score-val">0 / 40</span>
+        </div>
+      </div>
+
+      <!-- Tier -->
+      <div class="ps">
+        <div class="ps-label">TIER</div>
+        <div class="tier-row">
+          <span class="tier-num" id="p1-tier-num">0</span>
+          <span class="tier-pips" id="p1-tier-pips">○○○○</span>
+          <span class="tier-name" id="p1-tier-name">Raw Determination</span>
+        </div>
+      </div>
+
+      <!-- Tokens -->
+      <div class="ps">
+        <div class="ps-label">TOKENS</div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/atk-mick-a.png" alt="Keith A">
+          </div>
+          <div class="token-info">
+            <div class="token-name">⚔ Keith A</div>
+            <div class="token-pos" id="p1-pos-atk_a">—</div>
+          </div>
+          <div class="token-tier" id="p1-tier-atk_a">○○○○</div>
+        </div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/atk-mick-b.png" alt="Keith B">
+          </div>
+          <div class="token-info">
+            <div class="token-name">⚔ Keith B</div>
+            <div class="token-pos" id="p1-pos-atk_b">—</div>
+          </div>
+          <div class="token-tier" id="p1-tier-atk_b">○○○○</div>
+        </div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/def-mick.png" alt="Old Mick">
+          </div>
+          <div class="token-info">
+            <div class="token-name">🛡 Old Mick</div>
+            <div class="token-pos" id="p1-pos-def">—</div>
+          </div>
+          <div class="token-tier" id="p1-tier-def">—</div>
+        </div>
+      </div>
+
+      <!-- HQ -->
+      <div class="ps">
+        <div class="ps-label">HOMESTEAD</div>
+        <div class="hq-row">
+          <div class="hq-img-wrap hidden" id="p1-hq-wrap">
+            <img src="assets/images/hq-mick.png" id="p1-hq-img" alt="Homestead">
+          </div>
+          <div class="hq-info">
+            <div class="hq-status" id="p1-hq-status">HIDDEN</div>
+            <div class="hq-sub"    id="p1-hq-sub"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upgrade path -->
+      <div class="ps upgrade-section">
+        <div class="ps-label">UPGRADE PATH</div>
+        <div class="upgrade-stages" id="p1-upgrades">
+          <div class="upg-stage current" data-tier="0"><span class="upg-dot"></span><span class="upg-label">T0 — Raw Determination</span></div>
+          <div class="upg-stage"         data-tier="1"><span class="upg-dot"></span><span class="upg-label">T1 — Campaigners</span></div>
+          <div class="upg-stage"         data-tier="2"><span class="upg-dot"></span><span class="upg-label">T2 — Veterans</span></div>
+          <div class="upg-stage"         data-tier="3"><span class="upg-dot"></span><span class="upg-label">T3 — Legends</span></div>
+          <div class="upg-stage"         data-tier="4"><span class="upg-dot"></span><span class="upg-label">T4 — ★ Champions</span></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── CENTER COLUMN ─────────────────────────────────── -->
+    <div id="center">
+
+      <div id="notification">
+        <span id="notif-text">Connecting…</span>
+      </div>
+
+      <div id="game-canvas">
+        <!-- Phaser mounts here -->
+      </div>
+
+      <div id="log">
+        <div class="log-label">GAME LOG</div>
+        <div class="log-entry" id="log-0"></div>
+        <div class="log-entry" id="log-1"></div>
+        <div class="log-entry" id="log-2"></div>
+        <div class="log-entry" id="log-3"></div>
+      </div>
+
+    </div>
+
+    <!-- ── RIGHT PANEL — Emu Mob ─────────────────────────── -->
+    <aside class="side-panel" id="panel-right">
+
+      <div class="panel-head">
+        <h2>THE MOB</h2>
+        <p>THE EMU MOB</p>
+      </div>
+
+      <!-- Score -->
+      <div class="ps">
+        <div class="ps-label">SCORE</div>
+        <div class="score-row">
+          <div class="score-bar-wrap"><div class="score-bar" id="p2-score-bar"></div></div>
+          <span class="score-val" id="p2-score-val">0 / 40</span>
+        </div>
+      </div>
+
+      <!-- Tier -->
+      <div class="ps">
+        <div class="ps-label">TIER</div>
+        <div class="tier-row">
+          <span class="tier-num" id="p2-tier-num">0</span>
+          <span class="tier-pips" id="p2-tier-pips">○○○○</span>
+          <span class="tier-name" id="p2-tier-name">Raw Determination</span>
+        </div>
+      </div>
+
+      <!-- Tokens -->
+      <div class="ps">
+        <div class="ps-label">TOKENS</div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/atk-emu-a.png" alt="Mob A">
+          </div>
+          <div class="token-info">
+            <div class="token-name">⚔ Mob A</div>
+            <div class="token-pos" id="p2-pos-atk_a">—</div>
+          </div>
+          <div class="token-tier" id="p2-tier-atk_a">○○○○</div>
+        </div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/atk-emu-b.png" alt="Mob B">
+          </div>
+          <div class="token-info">
+            <div class="token-name">⚔ Mob B</div>
+            <div class="token-pos" id="p2-pos-atk_b">—</div>
+          </div>
+          <div class="token-tier" id="p2-tier-atk_b">○○○○</div>
+        </div>
+
+        <div class="token-row">
+          <div class="token-img-wrap">
+            <img src="assets/images/atk-emu-cassowary.png" alt="Cassowary">
+          </div>
+          <div class="token-info">
+            <div class="token-name">🛡 Cassowary</div>
+            <div class="token-pos" id="p2-pos-def">—</div>
+          </div>
+          <div class="token-tier" id="p2-tier-def">—</div>
+        </div>
+      </div>
+
+      <!-- HQ -->
+      <div class="ps">
+        <div class="ps-label">THE NEST</div>
+        <div class="hq-row">
+          <div class="hq-img-wrap hidden" id="p2-hq-wrap">
+            <img src="assets/images/hq-emu.png" id="p2-hq-img" alt="The Nest">
+          </div>
+          <div class="hq-info">
+            <div class="hq-status" id="p2-hq-status">HIDDEN</div>
+            <div class="hq-sub"    id="p2-hq-sub"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upgrade path -->
+      <div class="ps upgrade-section">
+        <div class="ps-label">UPGRADE PATH</div>
+        <div class="upgrade-stages" id="p2-upgrades">
+          <div class="upg-stage current" data-tier="0"><span class="upg-dot"></span><span class="upg-label">T0 — Raw Determination</span></div>
+          <div class="upg-stage"         data-tier="1"><span class="upg-dot"></span><span class="upg-label">T1 — Campaigners</span></div>
+          <div class="upg-stage"         data-tier="2"><span class="upg-dot"></span><span class="upg-label">T2 — Veterans</span></div>
+          <div class="upg-stage"         data-tier="3"><span class="upg-dot"></span><span class="upg-label">T3 — Legends</span></div>
+          <div class="upg-stage"         data-tier="4"><span class="upg-dot"></span><span class="upg-label">T4 — ★ Champions</span></div>
+        </div>
+      </div>
+
+    </aside>
+
+  </div><!-- #main -->
+
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
   <script type="module" src="src/main.js"></script>
 </body>

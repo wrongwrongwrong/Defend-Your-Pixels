@@ -110,6 +110,8 @@ export class IntroScene extends Phaser.Scene {
     if (this.ws) {
       this._stateHandler = (s) => {
         this._latestState = s;
+        // Demo mode: skip straight to game scene
+        if (s?.demo_mode) { this._goToGame(s); return; }
         const setup = s?.setup || {};
         if (s?.phase === "game" || setup.side_selection_complete) {
           this._goToGame(s);
