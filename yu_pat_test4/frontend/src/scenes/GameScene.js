@@ -64,6 +64,20 @@ function posLabel(tok) {
   return `${colLabel(tok.col)}${tok.row + 1}`;
 }
 
+// ─── Idle Animation Helpers ───────────────────────────────────────────────────
+
+function addAttackIdle(scene, image, posRef) {
+  scene.time.addEvent({
+    delay: 120,
+    loop: true,
+    callback: () => {
+      if (!image.visible || posRef.x == null) return;
+      image.x = posRef.x + Phaser.Math.Between(-1, 1);
+      image.y = posRef.y + Phaser.Math.Between(0, 1);
+    }
+  });
+}
+
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
 export class GameScene extends Phaser.Scene {
@@ -149,6 +163,7 @@ export class GameScene extends Phaser.Scene {
     this.tokenBadges     = {};
     this.tokenArrows     = {};
     this.tokenWarnLabels = {};
+    this.tokenIdlePos    = {};
 
     for (const [key, tex] of Object.entries(TEX)) {
       this.tokenSprites[key] = this.add.image(0, 0, tex)
@@ -172,6 +187,10 @@ export class GameScene extends Phaser.Scene {
         padding: { x: 5, y: 3 },
       }).setOrigin(0.5, 0).setDepth(20).setVisible(false);
     }
+
+    // Apply aggressive idle animation to Mick's first rifleman (demo)
+    this.tokenIdlePos["p1_atk_a"] = { x: 0, y: 0 };
+    addAttackIdle(this, this.tokenSprites["p1_atk_a"], this.tokenIdlePos["p1_atk_a"]);
   }
 
   _buildHqSprites() {
@@ -476,6 +495,12 @@ export class GameScene extends Phaser.Scene {
       const alpha    = stale ? 0.45 : 1;
       const side     = key.startsWith("p1") ? "p1" : "p2";
       const tier     = side === "p1" ? (G?.tier_p1 ?? 0) : (G?.tier_p2 ?? 0);
+
+      // Update idle animation reference position when token moves
+      if (this.tokenIdlePos[key]) {
+        this.tokenIdlePos[key].x = x;
+        this.tokenIdlePos[key].y = y;
+      }
 
       if (tier > 0 && !stale) {
         const haloColor = side === "p1" ? 0xffd060 : 0x60ef50;
