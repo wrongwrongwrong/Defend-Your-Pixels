@@ -6,6 +6,7 @@ authoritative gameplay loop and browser payload now follow `yu_test1`.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
@@ -26,6 +27,10 @@ from yu_test1 import game_model, terrain_gen
 CAMERA_ID = 0 if sys.platform == "darwin" else 1
 SEND_FPS = 10
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
+
+# Fixed seed for tutorial mode - ensures F6 is clear and no terrain blocks Mob's line of fire
+TUTORIAL_SEED = 42
+TUTORIAL_MODE = False  # Set via --tutorial command line flag
 
 ROLE_BY_MARKER_ID = {
     10: ("p1", "atk_a"),
@@ -152,7 +157,10 @@ class Session:
         self.reset(board_scan_ready=False)
 
     def reset(self, *, board_scan_ready: bool) -> None:
-        self.seed = int(time.time() * 1000) % (2**31)
+        if TUTORIAL_MODE:
+            self.seed = TUTORIAL_SEED
+        else:
+            self.seed = int(time.time() * 1000) % (2**31)
         self.terrain = terrain_gen.generate(seed=self.seed)
         self.accepted_p1 = new_side_state()
         self.accepted_p2 = new_side_state()
@@ -386,6 +394,15 @@ async def async_main():
 
 
 def main() -> int:
+    global TUTORIAL_MODE
+    parser = argparse.ArgumentParser(description="Old Mick Live Tracker")
+    parser.add_argument("--tutorial", action="store_true", help="Run in tutorial mode with fixed map seed")
+    args = parser.parse_args()
+    
+    if args.tutorial:
+        TUTORIAL_MODE = True
+        print("[Tutorial] Running in tutorial mode with fixed seed")
+    
     asyncio.run(async_main())
     return 0
 

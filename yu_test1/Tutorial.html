@@ -1,19 +1,1768 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Old Mick Against the Mob — Tutorial</title>
-  <meta http-equiv="refresh" content="0; url=./index.html?tutorial=1" />
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
-  </style>
+<meta charset="UTF-8">
+<title>Old Mick Tutorial - Attack Phase</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1008;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: Georgia, serif;
+  }
+  #game-container canvas { display: block; }
+</style>
 </head>
 <body>
-  <p>
-    Redirecting to tutorial mode…
-    If nothing happens, open <a href="./index.html?tutorial=1">index.html?tutorial=1</a>.
-  </p>
+<div id="game-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  LAYOUT CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const CELL   = 52;
+const COLS   = 12;
+const ROWS   = 12;
+const BX     = 38;
+const BY     = 58;
+const PANEL_X = BX + COLS * CELL + 14;
+const PW      = 210;
+const W       = PANEL_X + PW + 8;
+const H       = BY + ROWS * CELL + 28;
+
+// ═══════════════════════════════════════════════════════════════════
+//  COLOUR PALETTE
+// ═══════════════════════════════════════════════════════════════════
+const C = {
+  farmer_cell : 0xe8c890,
+  emu_cell    : 0xb8d090,
+  p1_target   : 0xc84818,
+  p2_target   : 0x0f4a10,
+  fence_cell  : 0xe8d068,
+  board_bg    : 0x2a1e0e,
+  panel_bg    : 0x1e1408,
+  panel_border: 0x6a4a20,
+  p1_atk : 0xe06820,
+  p2_atk : 0x2a8a20,
+  p1_def : 0x905020,
+  p2_def : 0x1a6010,
+  p1_border : 0xf8e090,
+  p2_border : 0xb8ee60,
+  hard_fill   : 0x706050,
+  hard_border : 0xb0a080,
+  soft_fill   : 0xc0d060,
+  soft_border : 0xe0f080,
+  ray_path    : 0x44ff88,
+  ray_blocked : 0xff2200,
+  ray_soft    : 0xff9900,
+  ray_hit     : 0xff4400,
+  p1_zone : 0xf8c040,
+  p2_zone : 0x44cc20,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  RAY DIRECTION VECTORS
+// ═══════════════════════════════════════════════════════════════════
+const DIR_VEC = {
+  E  : [ 1,  0],
+  SE : [ 1,  1],
+  S  : [ 0,  1],
+  SW : [-1,  1],
+  W  : [-1,  0],
+  NW : [-1, -1],
+  N  : [ 0, -1],
+  NE : [ 1, -1],
+};
+
+const ARROW_CHAR = {
+  E: '→', SE: '↘', S: '↓', SW: '↙',
+  W: '←', NW: '↖', N: '↑', NE: '↗',
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  TUTORIAL TARGETS
+// ═══════════════════════════════════════════════════════════════════
+const TUTORIAL_TARGETS = {
+  mobAtkTarget: { col: 5, row: 5 },  // F6 - target cell for Mob to aim at
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  TUTORIAL STEPS
+// ═══════════════════════════════════════════════════════════════════
+const TUTORIAL_STEPS = {
+  INTRO: 0,                    // Story intro popup
+  HQ_SETUP: 1,                 // HQ placement (delegated to setup modal)
+  ATTACK_INSTRUCTION: 2,       // "Mobs: Get ready to invade!"
+  WAIT_FOR_TOKEN: 3,           // Wait for Mob attack token on board
+  AIM_INSTRUCTION: 4,          // "Plan your raid..." + highlight F6
+  WAIT_FOR_AIM: 5,             // Wait for direction toward F6
+  END_TURN_INSTRUCTION: 6,     // "Turn the end_turn token..."
+  WAIT_FOR_TURN_END: 7,        // Wait for turn change
+  OLD_MICK_DEFEND: 8,          // (Future: Old Mick defend tutorial)
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  SHARED STATE
+// ═══════════════════════════════════════════════════════════════════
+let gameState  = null;
+let prevState  = null;
+let wsInstance = null;
+
+// ═══════════════════════════════════════════════════════════════════
+//  PHASE LABELS
+// ═══════════════════════════════════════════════════════════════════
+const PHASE_LABEL = {
+  scan: 'Board Scan',
+  side_selection: 'Choose First HQ Side',
+  hq_placement: 'Hidden HQ Placement',
+  game: 'Battle',
+};
+
+const SIDE_LABEL = {
+  p1: 'Old Mick',
+  p2: 'The Mob',
+};
+
+function phaseLabel(phase) { return PHASE_LABEL[phase] || 'Setup'; }
+function sideLabel(side) { return SIDE_LABEL[side] || side; }
+function cellLabel(col, row) {
+  if (col == null || row == null) return '--';
+  return `${String.fromCharCode(65 + col)}${row + 1}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WEB AUDIO SOUND ENGINE
+// ═══════════════════════════════════════════════════════════════════
+class SoundEngine {
+  constructor() {
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) { this.ctx = null; }
+  }
+
+  _osc(type, freq, startT, dur, vol, freqEnd) {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const t   = this.ctx.currentTime + startT;
+    const osc = this.ctx.createOscillator();
+    const g   = this.ctx.createGain();
+    osc.connect(g); g.connect(this.ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.01);
+  }
+
+  place()  { this._osc('sine',    523, 0,    0.12, 0.20); }
+  lock()   { [523, 659, 784].forEach((f, i) => this._osc('sine', f, i * 0.10, 0.14, 0.25)); }
+  fire()   { this._osc('sawtooth', 300, 0, 0.25, 0.35, 55); }
+  hit()    { this._osc('square',   120, 0, 0.40, 0.45, 35); }
+  block()  { this._osc('square',   250, 0, 0.18, 0.30, 80); }
+  nuke()   { this._osc('sawtooth', 110, 0, 1.20, 0.60, 20); this._osc('sine', 55, 0, 1.50, 0.40, 18); }
+  turn()   { this._osc('sine', 660, 0, 0.12, 0.18); this._osc('sine', 880, 0.12, 0.10, 0.14); }
+}
+
+const SFX = new SoundEngine();
+
+const _unlockAudio = () => {
+  if (SFX.ctx && SFX.ctx.state === 'suspended') SFX.ctx.resume();
+  SFX._osc('sine', 880, 0, 0.02, 0.001);
+  window.removeEventListener('click',    _unlockAudio);
+  window.removeEventListener('keydown',  _unlockAudio);
+  window.removeEventListener('touchend', _unlockAudio);
+};
+window.addEventListener('click',    _unlockAudio);
+window.addEventListener('keydown',  _unlockAudio);
+window.addEventListener('touchend', _unlockAudio);
+
+// ═══════════════════════════════════════════════════════════════════
+//  HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+function cc(col, row) {
+  return { x: BX + col * CELL + CELL / 2, y: BY + row * CELL + CELL / 2 };
+}
+
+function isP1(col, row) { return col + row < 11; }
+function isP2(col, row) { return col + row > 11; }
+
+function sideOwnsCell(side, col, row) {
+  if (side === 'p1') return isP1(col, row);
+  if (side === 'p2') return isP2(col, row);
+  return false;
+}
+
+function computeRay(startCol, startRow, dir, hardMap, softMap, attackerSide, destroyedMap, resourceMap) {
+  if (!dir || !DIR_VEC[dir]) return [];
+  const [dc, dr] = DIR_VEC[dir];
+  const cells = [];
+  let c = startCol + dc, r = startRow + dr;
+  const isEnemyCell = attackerSide === 'p1' ? isP2 : isP1;
+
+  while (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+    const k = `${c},${r}`;
+    if (hardMap[k])  { cells.push({ col: c, row: r, type: 'blocked' }); break; }
+    if (softMap[k])  { cells.push({ col: c, row: r, type: 'soft'    }); break; }
+    if (isEnemyCell(c, r) && resourceMap[k] && !destroyedMap[k]) {
+      cells.push({ col: c, row: r, type: 'hit' });
+      break;
+    }
+    cells.push({ col: c, row: r, type: 'path' });
+    c += dc; r += dr;
+  }
+  return cells;
+}
+
+function defZoneCells(col, row, tier) {
+  const rad = tier >= 2 ? 2 : 1;
+  const out = [];
+  for (let dr = -rad; dr <= rad; dr++)
+    for (let dc = -rad; dc <= rad; dc++) {
+      const c = col + dc, r = row + dr;
+      if (c >= 0 && c < COLS && r >= 0 && r < ROWS) out.push({ col: c, row: r });
+    }
+  return out;
+}
+
+function hex(n) { return '#' + n.toString(16).padStart(6, '0'); }
+
+function buildResourceMaps(terrain) {
+  const p1 = {};
+  const p2 = {};
+  for (const resource of (terrain?.p1_resources || [])) p1[`${resource.col},${resource.row}`] = resource;
+  for (const resource of (terrain?.p2_resources || [])) p2[`${resource.col},${resource.row}`] = resource;
+  return { p1, p2 };
+}
+
+function detectSoundEvents(prev, curr) {
+  if (!prev || !curr) return;
+  if (prev.turn !== curr.turn && curr.turn !== null) SFX.turn();
+  if (prev.map_seed !== curr.map_seed) SFX.lock();
+
+  const checkMove = (a, b) => {
+    if (!a || !b) return;
+    if (a.col !== b.col || a.row !== b.row) {
+      if (b.col !== null) SFX.place();
+    }
+  };
+  if (prev.p1 && curr.p1) {
+    checkMove(prev.p1.atk_a, curr.p1.atk_a);
+    checkMove(prev.p1.atk_b, curr.p1.atk_b);
+    checkMove(prev.p1.def,   curr.p1.def);
+  }
+  if (prev.p2 && curr.p2) {
+    checkMove(prev.p2.atk_a, curr.p2.atk_a);
+    checkMove(prev.p2.atk_b, curr.p2.atk_b);
+    checkMove(prev.p2.def,   curr.p2.def);
+  }
+}
+
+// Check if a ray from token would pass through target cell
+function doesRayHitCell(tok, targetCol, targetRow, hardMap, softMap) {
+  if (!tok?.direction || tok.col == null || tok.row == null) return false;
+  const dir = tok.direction;
+  if (!DIR_VEC[dir]) return false;
+  const [dc, dr] = DIR_VEC[dir];
+  let c = tok.col + dc, r = tok.row + dr;
+
+  while (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+    const k = `${c},${r}`;
+    if (hardMap && hardMap[k]) return false;  // blocked before reaching target
+    if (softMap && softMap[k]) return false;  // absorbed before reaching target
+    if (c === targetCol && r === targetRow) return true;
+    c += dc; r += dr;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PHASER SCENE - TUTORIAL
+// ═══════════════════════════════════════════════════════════════════
+class TutorialScene extends Phaser.Scene {
+  constructor() { super({ key: 'TutorialScene' }); }
+
+  create() {
+    this.boardGfx = this.add.graphics().setDepth(0);
+    this.dynGfx   = this.add.graphics().setDepth(2);
+
+    this._drawBoardLabels();
+    this._drawStaticBoard();
+    this._buildPanel();
+    this._buildSetupUi();
+    this._buildWarningUi();
+    this._buildLabels();
+    this._buildLockButton();
+    this._connectWS();
+    this._initTutorial();
+
+    this.time.addEvent({ delay: 50, callback: this._applyState, callbackScope: this, loop: true });
+    this.input.on('pointerdown', this._handleBoardPointerDown, this);
+
+    this.tweens.add({
+      targets: this.lockBtnGfx, alpha: { from: 1, to: 0.55 },
+      yoyo: true, repeat: -1, duration: 800, ease: 'Sine.easeInOut'
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TUTORIAL INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════
+  _initTutorial() {
+    this._tut = {
+      step: TUTORIAL_STEPS.INTRO,
+      lastTurn: null,
+      highlightCell: null,
+      highlightZone: null,
+      panelVisible: false,
+      panelDismissed: false,
+      hqSetupComplete: false,
+      chooseSideSent: false,
+    };
+
+    this._showStoryIntro();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TUTORIAL PANELS
+  // ═══════════════════════════════════════════════════════════════
+  _showStoryIntro() {
+    if (this._tutPopup) this._dismissTutorialPanel();
+
+    const modalW = Math.min(560, W * 0.92);
+    const modalH = 230;
+    const padX = 20;
+    const padY = 18;
+    const centerX = W / 2;
+    const centerY = H / 2 - 10;
+    const modalX = centerX - modalW / 2;
+    const modalY = centerY - modalH / 2;
+
+    const gfx = this.add.graphics().setDepth(60);
+    gfx.fillStyle(0x000000, 0.35);
+    gfx.fillRect(0, 0, W, H);
+    gfx.fillStyle(0x2a2010, 1);
+    gfx.lineStyle(2, 0x6a4a20, 1);
+    gfx.fillRoundedRect(modalX, modalY, modalW, modalH, 14);
+    gfx.strokeRoundedRect(modalX, modalY, modalW, modalH, 14);
+
+    const textStyle = { fontSize: '15px', fontFamily: 'Georgia', color: '#f2d8a0', lineSpacing: 6 };
+    const p1 = "In 1932, a mysterious Hive Mind from outer space landed in the outback. It brainwashed the flocks of emus in the wilderness, mutated them and wants to blaze the land fenced by the Farmers.";
+    const p2 = "Farmers, hiding their families in a dugout, need to find the Hive Mind and destroy it before it is too late.";
+
+    const wrapW = modalW - padX * 2;
+    const t1 = this.add.text(modalX + padX, modalY + padY, p1, { ...textStyle, wordWrap: { width: wrapW } }).setDepth(61);
+    const t2Y = modalY + padY + (t1.height || 100) + 10;
+    const t2 = this.add.text(modalX + padX, t2Y, p2, { ...textStyle, wordWrap: { width: wrapW } }).setDepth(61);
+
+    const hint = this.add.text(centerX, modalY + modalH + 22, '[ Click anywhere to continue ]', {
+      fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'italic', color: '#ffe070',
+    }).setOrigin(0.5, 0).setDepth(61);
+
+    this._tutPopup = { gfx, texts: [t1, t2], hint, dismissOnClick: true, dismissOnSpace: false };
+
+    gfx.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, H), Phaser.Geom.Rectangle.Contains);
+    gfx.on('pointerdown', () => this._onPanelDismiss());
+  }
+
+  _showTutorialPanel(text, options = {}) {
+    if (this._tutPopup) this._dismissTutorialPanel();
+
+    const { dismissOnClick = false, dismissOnSpace = true } = options;
+
+    const modalW = Math.min(520, W * 0.88);
+    const padX = 20;
+    const padY = 18;
+    const centerX = W / 2;
+    const centerY = H / 2 - 10;
+
+    const gfx = this.add.graphics().setDepth(60);
+
+    const textStyle = { fontSize: '15px', fontFamily: 'Georgia', color: '#f2d8a0', lineSpacing: 6 };
+    const wrapW = modalW - padX * 2;
+    const bodyTxt = this.add.text(0, 0, text, { ...textStyle, wordWrap: { width: wrapW } }).setDepth(61);
+    const bodyH = bodyTxt.height || 60;
+
+    const hintText = dismissOnSpace ? '[ Press SPACE to continue ]' : '[ Click anywhere to continue ]';
+    const hint = this.add.text(0, 0, hintText, {
+      fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'italic', color: '#ffe070',
+    }).setOrigin(0.5, 0).setDepth(61);
+    const hintH = hint.height || 20;
+
+    const modalH = padY + bodyH + 14 + hintH + padY;
+    const modalX = centerX - modalW / 2;
+    const modalY = centerY - modalH / 2;
+
+    gfx.fillStyle(0x000000, 0.35);
+    gfx.fillRect(0, 0, W, H);
+    gfx.fillStyle(0x2a2010, 1);
+    gfx.lineStyle(2, 0x6a4a20, 1);
+    gfx.fillRoundedRect(modalX, modalY, modalW, modalH, 14);
+    gfx.strokeRoundedRect(modalX, modalY, modalW, modalH, 14);
+
+    bodyTxt.setPosition(modalX + padX, modalY + padY);
+    hint.setPosition(centerX, modalY + padY + bodyH + 14);
+
+    this._tutPopup = { gfx, texts: [bodyTxt], hint, dismissOnClick, dismissOnSpace };
+    this._tut.panelVisible = true;
+    this._tut.panelDismissed = false;
+
+    if (dismissOnClick) {
+      gfx.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, H), Phaser.Geom.Rectangle.Contains);
+      gfx.on('pointerdown', () => this._onPanelDismiss());
+    }
+
+    if (dismissOnSpace) {
+      this._spaceListener = (e) => {
+        if (e.code === 'Space') {
+          this._onPanelDismiss();
+          window.removeEventListener('keydown', this._spaceListener);
+        }
+      };
+      window.addEventListener('keydown', this._spaceListener);
+    }
+  }
+
+  _dismissTutorialPanel() {
+    if (!this._tutPopup) return;
+    const { gfx, texts, hint } = this._tutPopup;
+    gfx?.destroy?.();
+    texts?.forEach(t => t?.destroy?.());
+    hint?.destroy?.();
+    this._tutPopup = null;
+    this._tut.panelVisible = false;
+
+    if (this._spaceListener) {
+      window.removeEventListener('keydown', this._spaceListener);
+      this._spaceListener = null;
+    }
+  }
+
+  _onPanelDismiss() {
+    this._dismissTutorialPanel();
+    this._tut.panelDismissed = true;
+    this._advanceTutorialStep();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TUTORIAL STEP LOGIC
+  // ═══════════════════════════════════════════════════════════════
+  _advanceTutorialStep() {
+    const step = this._tut.step;
+
+    if (step === TUTORIAL_STEPS.INTRO) {
+      this._tut.step = TUTORIAL_STEPS.HQ_SETUP;
+      return;
+    }
+
+    if (step === TUTORIAL_STEPS.ATTACK_INSTRUCTION) {
+      this._tut.step = TUTORIAL_STEPS.WAIT_FOR_TOKEN;
+      return;
+    }
+
+    if (step === TUTORIAL_STEPS.AIM_INSTRUCTION) {
+      this._tut.step = TUTORIAL_STEPS.WAIT_FOR_AIM;
+      this._tut.highlightCell = TUTORIAL_TARGETS.mobAtkTarget;
+      return;
+    }
+
+    if (step === TUTORIAL_STEPS.END_TURN_INSTRUCTION) {
+      this._tut.step = TUTORIAL_STEPS.WAIT_FOR_TURN_END;
+      return;
+    }
+  }
+
+  _tutorialTick() {
+    if (!gameState) return;
+
+    const phase = gameState.phase;
+    const turn = gameState.turn;
+    const p2 = gameState.p2 || {};
+    const setup = gameState.setup || {};
+    const terrain = gameState.terrain || {};
+    const step = this._tut.step;
+
+    // Track turn changes
+    if (this._tut.lastTurn == null && turn != null) this._tut.lastTurn = turn;
+    const turnChanged = (turn != null && this._tut.lastTurn != null && turn !== this._tut.lastTurn);
+    if (turnChanged) this._tut.lastTurn = turn;
+
+    const isVisible = (tok) => tok?.col != null && tok?.row != null && !tok?.stale;
+
+    // HQ SETUP PHASE - Auto-send choose_side for Mob first
+    if (step === TUTORIAL_STEPS.HQ_SETUP) {
+      if (phase === 'side_selection' && !this._tut.chooseSideSent) {
+        this._tut.chooseSideSent = true;
+        this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
+      }
+
+      // Wait for game phase to start (HQ setup complete)
+      if (phase === 'game') {
+        this._tut.hqSetupComplete = true;
+        this._tut.step = TUTORIAL_STEPS.ATTACK_INSTRUCTION;
+        this._tut.panelDismissed = false;
+      }
+      return;
+    }
+
+    // ATTACK INSTRUCTION - Show panel
+    if (step === TUTORIAL_STEPS.ATTACK_INSTRUCTION) {
+      if (!this._tut.panelVisible && !this._tut.panelDismissed) {
+        this._showTutorialPanel(
+          "Mobs: Get ready to invade!\n\nPlace your attack token on your territory.",
+          { dismissOnClick: true, dismissOnSpace: false }
+        );
+      }
+      return;
+    }
+
+    // WAIT FOR TOKEN - Wait for Mob attack token to appear
+    if (step === TUTORIAL_STEPS.WAIT_FOR_TOKEN) {
+      if (isVisible(p2.atk_a) && isP2(p2.atk_a.col, p2.atk_a.row)) {
+        this._tut.step = TUTORIAL_STEPS.AIM_INSTRUCTION;
+        this._tut.panelDismissed = false;
+      }
+      return;
+    }
+
+    // AIM INSTRUCTION - Show panel + highlight F6
+    if (step === TUTORIAL_STEPS.AIM_INSTRUCTION) {
+      if (!this._tut.panelVisible && !this._tut.panelDismissed) {
+        this._showTutorialPanel(
+          "Mob can attack horizontally, vertically and diagonally.\n\nPlan your raid toward the farmer's grazeland!",
+          { dismissOnClick: false, dismissOnSpace: true }
+        );
+        this._tut.highlightCell = TUTORIAL_TARGETS.mobAtkTarget;
+      }
+      return;
+    }
+
+    // WAIT FOR AIM - Check if Mob's attack is aimed at F6
+    if (step === TUTORIAL_STEPS.WAIT_FOR_AIM) {
+      this._tut.highlightCell = TUTORIAL_TARGETS.mobAtkTarget;
+
+      // Build terrain maps
+      const hardMap = {};
+      const softMap = {};
+      [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
+        if (t.col != null) hardMap[`${t.col},${t.row}`] = t;
+      });
+      [...(terrain.p1_soft || []), ...(terrain.p2_soft || [])].forEach(t => {
+        if (t.col != null) softMap[`${t.col},${t.row}`] = t;
+      });
+
+      const target = TUTORIAL_TARGETS.mobAtkTarget;
+      if (isVisible(p2.atk_a) && doesRayHitCell(p2.atk_a, target.col, target.row, hardMap, softMap)) {
+        this._tut.step = TUTORIAL_STEPS.END_TURN_INSTRUCTION;
+        this._tut.panelDismissed = false;
+        this._tut.highlightCell = null;
+      }
+      return;
+    }
+
+    // END TURN INSTRUCTION - Show message
+    if (step === TUTORIAL_STEPS.END_TURN_INSTRUCTION) {
+      if (!this._tut.panelVisible && !this._tut.panelDismissed) {
+        this._showTutorialPanel(
+          "You have planned the attack!\n\nTurn the end_turn token to finish your turn and wait for the raid to happen.",
+          { dismissOnClick: true, dismissOnSpace: true }
+        );
+      }
+      return;
+    }
+
+    // WAIT FOR TURN END - Wait for turn to change to Old Mick
+    if (step === TUTORIAL_STEPS.WAIT_FOR_TURN_END) {
+      if (turnChanged && turn === 1) {
+        this._tut.step = TUTORIAL_STEPS.OLD_MICK_DEFEND;
+        this._showTutorialPanel(
+          "Great! Now it's Old Mick's turn.\n\n(Defend tutorial coming soon...)",
+          { dismissOnClick: true, dismissOnSpace: true }
+        );
+      }
+      return;
+    }
+  }
+
+  _drawTutorialHighlights() {
+    if (!this._tut) return;
+    const pulse = 0.55 + 0.35 * Math.sin(this.time.now / 180);
+
+    if (this._tut.highlightCell) {
+      const { col, row } = this._tut.highlightCell;
+      const x = BX + col * CELL, y = BY + row * CELL;
+      const pad = 2;
+      this.dynGfx.lineStyle(4, 0xffe070, pulse);
+      this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+    }
+
+    if (Array.isArray(this._tut.highlightZone)) {
+      this.dynGfx.lineStyle(2.5, 0xffe070, 0.22 + 0.25 * pulse);
+      for (const cell of this._tut.highlightZone) {
+        const x = BX + cell.col * CELL, y = BY + cell.row * CELL;
+        const pad = 3;
+        this.dynGfx.strokeRect(x + pad, y + pad, CELL - pad * 2, CELL - pad * 2);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  HQ SETUP MODAL (simplified from index.html)
+  // ═══════════════════════════════════════════════════════════════
+  _ensureSetupModal() {
+    if (this._setupModal) return;
+
+    const overlay = this.add.graphics().setDepth(54);
+    const gfx = this.add.graphics().setDepth(55);
+
+    const titleTxt = this.add.text(0, 0, '', {
+      fontSize: '18px', fontFamily: 'Georgia', color: '#ffe070', fontStyle: 'bold',
+    }).setDepth(56);
+
+    const bodyTxt = this.add.text(0, 0, '', {
+      fontSize: '15px', fontFamily: 'Georgia', color: '#f2d8a0', lineSpacing: 6,
+    }).setDepth(56);
+
+    const candidateTxt = this.add.text(0, 0, '', {
+      fontSize: '13px', fontFamily: 'monospace', color: '#d8c890', lineSpacing: 5,
+    }).setDepth(56);
+
+    const hintTxt = this.add.text(0, 0, '[ Click anywhere to continue ]', {
+      fontSize: '14px', fontFamily: 'Georgia', fontStyle: 'italic', color: '#ffe070',
+    }).setDepth(56).setVisible(false);
+
+    const mkBtn = (label, bgColor, color, onClick) => {
+      const btn = this.add.text(0, 0, label, {
+        fontSize: '13px', fontFamily: 'Georgia', color,
+        backgroundColor: bgColor, padding: { x: 10, y: 8 }, fontStyle: 'bold',
+      }).setInteractive({ useHandCursor: true }).setDepth(56).setOrigin(0.5, 0.5);
+      btn._baseColor = color;
+      btn._baseBgColor = bgColor;
+      btn._enabled = true;
+      btn.on('pointerdown', () => { if (btn._enabled) onClick(); });
+      btn.on('pointerover', () => { if (btn._enabled) btn.setColor('#fff8dc'); });
+      btn.on('pointerout', () => { btn.setColor(btn._enabled ? btn._baseColor : '#8a7a68'); });
+      return btn;
+    };
+
+    const confirmBtn = mkBtn('Confirm HQ', '#6a3812', '#ffe0a0', () => {
+      const activeSide = gameState?.setup?.active_setup_side;
+      if (activeSide) this._sendAction({ action: 'confirm_hq', side: activeSide });
+    });
+
+    const cancelBtn = mkBtn('Cancel', '#402318', '#f0c8b0', () => {
+      const activeSide = gameState?.setup?.active_setup_side;
+      if (activeSide) this.setupSelection.pendingBySide[activeSide] = null;
+      this._hqCandidateCancelled = true;
+      this._setSetupModalVisible(false);
+    });
+
+    overlay.setInteractive(new Phaser.Geom.Rectangle(0, 0, W, H), Phaser.Geom.Rectangle.Contains);
+    overlay.input.enabled = false;
+    overlay.on('pointerdown', () => {
+      if (!this._setupModal?.visible) return;
+      if (gameState?.phase !== 'hq_placement') return;
+      if (this._hqInstructionAck) return;
+      this._hqInstructionAck = true;
+      if (this._setupModal.overlay?.input) this._setupModal.overlay.input.enabled = false;
+      this._setSetupModalVisible(false);
+    });
+
+    this._setupModal = { overlay, gfx, titleTxt, bodyTxt, candidateTxt, hintTxt, confirmBtn, cancelBtn, visible: false };
+    this.confirmHqBtn = confirmBtn;
+    this.cancelHqBtn = cancelBtn;
+    this.setupSelection = { pendingBySide: { p1: null, p2: null } };
+    this._hqInstructionAck = false;
+    this._hqUiSide = null;
+    this._hqCandidateCancelled = false;
+
+    this._setSetupModalVisible(false);
+  }
+
+  _setSetupModalVisible(visible) {
+    if (!this._setupModal) return;
+    this._setupModal.visible = visible;
+    const { overlay, gfx, titleTxt, bodyTxt, candidateTxt, hintTxt, confirmBtn, cancelBtn } = this._setupModal;
+    overlay.setVisible(visible);
+    gfx.setVisible(visible);
+    titleTxt.setVisible(visible);
+    bodyTxt.setVisible(visible);
+    if (!visible) {
+      hintTxt.setVisible(false);
+      candidateTxt.setVisible(false);
+      confirmBtn.setVisible(false);
+      cancelBtn.setVisible(false);
+      if (confirmBtn.input) confirmBtn.input.enabled = false;
+      if (cancelBtn.input) cancelBtn.input.enabled = false;
+      if (overlay.input) overlay.input.enabled = false;
+    }
+  }
+
+  _layoutSetupModal() {
+    if (!this._setupModal) return;
+
+    const modalW = Math.min(560, W * 0.92);
+    const padX = 20, padY = 18;
+    const centerX = W / 2, centerY = H / 2 - 10;
+
+    const { overlay, gfx, titleTxt, bodyTxt, candidateTxt, hintTxt, confirmBtn, cancelBtn } = this._setupModal;
+    const wrapW = modalW - padX * 2;
+
+    titleTxt.setWordWrapWidth(wrapW, true);
+    bodyTxt.setWordWrapWidth(wrapW, true);
+    candidateTxt.setWordWrapWidth(wrapW, true);
+
+    const titleH = titleTxt.height || 24;
+    const bodyH = bodyTxt.height || 0;
+    const hintLineH = hintTxt.visible ? (hintTxt.height || 18) : 0;
+    const candH = candidateTxt.visible ? (candidateTxt.height || 0) : 0;
+    const gapTitleBody = 10;
+    const gapBodyHint = hintTxt.visible ? 10 : 0;
+    const gapBodyCand = candidateTxt.visible ? 10 : 0;
+    const gapCandBtns = 16;
+    const showConfirm = !!confirmBtn.visible;
+    const showCancel = !!cancelBtn.visible;
+    const anyButtons = showConfirm || showCancel;
+    const btnH = anyButtons ? 40 : 0;
+    const gapAfterCand = anyButtons ? gapCandBtns : 0;
+    const modalH = padY + titleH + gapTitleBody + bodyH + gapBodyHint + hintLineH + gapBodyCand + candH + gapAfterCand + btnH + padY;
+
+    const modalX = centerX - modalW / 2;
+    const modalY = centerY - modalH / 2;
+
+    overlay.clear();
+    overlay.fillStyle(0x000000, 0.35);
+    overlay.fillRect(0, 0, W, H);
+
+    gfx.clear();
+    gfx.fillStyle(0x2a2010, 1);
+    gfx.lineStyle(2, 0x6a4a20, 1);
+    gfx.fillRoundedRect(modalX, modalY, modalW, modalH, 14);
+    gfx.strokeRoundedRect(modalX, modalY, modalW, modalH, 14);
+
+    titleTxt.setPosition(modalX + padX, modalY + padY);
+    let y = modalY + padY + titleH + gapTitleBody;
+    bodyTxt.setPosition(modalX + padX, y);
+    y += bodyH;
+
+    if (hintTxt.visible) {
+      y += gapBodyHint;
+      hintTxt.setPosition(modalX + padX, y);
+      y += hintLineH;
+    }
+
+    if (candidateTxt.visible) y += gapBodyCand;
+    if (candidateTxt.visible) {
+      candidateTxt.setPosition(modalX + padX, y);
+      y += candH;
+    }
+
+    if (anyButtons) {
+      const btnY = modalY + modalH - padY - btnH / 2;
+      const gap = 18;
+      if (showConfirm && showCancel) {
+        confirmBtn.setPosition(centerX - (194 / 2 + gap / 2), btnY);
+        cancelBtn.setPosition(centerX + (194 / 2 + gap / 2), btnY);
+      } else if (showConfirm) {
+        confirmBtn.setPosition(centerX, btnY);
+        cancelBtn.setPosition(-10000, -10000);
+      } else {
+        cancelBtn.setPosition(centerX, btnY);
+        confirmBtn.setPosition(-10000, -10000);
+      }
+      confirmBtn.setFixedSize(194, btnH);
+      cancelBtn.setFixedSize(194, btnH);
+      confirmBtn.setAlign('center');
+      cancelBtn.setAlign('center');
+    } else {
+      confirmBtn.setPosition(-10000, -10000);
+      cancelBtn.setPosition(-10000, -10000);
+    }
+  }
+
+  _updateSetupControls(phase, setup = {}) {
+    const activeSide = setup.active_setup_side;
+    const hasActiveCandidate = activeSide && !!setup.hq?.[activeSide]?.has_candidate;
+    const localCandidate = activeSide ? this.setupSelection?.pendingBySide?.[activeSide] : null;
+
+    const inBattle = phase === 'game' || phase === null;
+    if (inBattle) {
+      this._setSetupModalVisible(false);
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      return;
+    }
+
+    // Skip if tutorial intro/story is showing
+    if (this._tut && this._tut.step === TUTORIAL_STEPS.INTRO && this._tutPopup) {
+      this._setSetupModalVisible(false);
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+      return;
+    }
+
+    this._ensureSetupModal();
+
+    if (phase !== 'hq_placement') {
+      this._hqUiSide = null;
+      this._hqInstructionAck = false;
+    }
+
+    this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+
+    const m = this._setupModal;
+    m.titleTxt.setText('Setup');
+
+    if (phase === 'scan') {
+      this._chooseSideSent = false;
+      m.hintTxt.setVisible(false);
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.bodyTxt.setText('Waiting for a valid board scan before HQ setup can continue.').setColor('#f2d8a0');
+      m.candidateTxt.setVisible(false).setText('');
+      this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
+      return;
+    }
+
+    if (phase === 'side_selection') {
+      this._chooseSideSent = this._chooseSideSent || false;
+      m.hintTxt.setVisible(false);
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.bodyTxt.setText('The Mob places the hidden HQ first (default).').setColor('#b8ff78');
+      m.candidateTxt.setVisible(false).setText('');
+      if (!this._chooseSideSent) {
+        this._chooseSideSent = true;
+        this._sendAction({ action: 'choose_side', first_player_side: 'mob' });
+      }
+      this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+      this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
+      return;
+    }
+
+    if (phase === 'hq_placement') {
+      if (activeSide && activeSide !== this._hqUiSide) {
+        this._hqUiSide = activeSide;
+        this._hqInstructionAck = false;
+        this._hqCandidateCancelled = false;
+      }
+
+      const showInstructionOnly = !this._hqInstructionAck;
+
+      if (showInstructionOnly) {
+        const placingMob = activeSide === 'p2';
+        const instructionBody = placingMob
+          ? 'Mob: click a board cell in your territory, then confirm the hidden HQ.\n(Look away, Old Mick!)'
+          : 'Old Mick: click a board cell in your territory, then confirm the hidden HQ.\n(Look away, Mob!)';
+        m.bodyTxt.setText(instructionBody).setColor(placingMob ? '#b8ff78' : '#ffd878');
+        m.hintTxt.setVisible(true);
+        m.candidateTxt.setVisible(false).setText('');
+        this._setActionButtonState(this.confirmHqBtn, { visible: false, enabled: false });
+        this._setActionButtonState(this.cancelHqBtn, { visible: false, enabled: false });
+        if (m.overlay?.input) m.overlay.input.enabled = true;
+        this._chooseSideSent = true;
+        this._setSetupModalVisible(true);
+        this._layoutSetupModal();
+        return;
+      }
+
+      if (m.overlay?.input) m.overlay.input.enabled = false;
+      m.hintTxt.setVisible(false);
+
+      const showTileModal = !!localCandidate && !this._hqCandidateCancelled;
+      if (!showTileModal) {
+        this._setSetupModalVisible(false);
+        return;
+      }
+
+      const activeLabel = sideLabel(activeSide);
+      const cellText = `${activeLabel} selected cell: ${cellLabel(localCandidate.col, localCandidate.row)}`;
+      m.bodyTxt.setText(cellText).setColor(hasActiveCandidate ? '#f0d8a0' : '#a89878');
+      m.candidateTxt.setVisible(false).setText('');
+      this._setActionButtonState(this.confirmHqBtn, { visible: true, enabled: !!hasActiveCandidate });
+      this._setActionButtonState(this.cancelHqBtn, { visible: true, enabled: true });
+      this._setSetupModalVisible(true);
+      this._layoutSetupModal();
+      return;
+    }
+
+    this._setSetupModalVisible(false);
+  }
+
+  _handleBoardPointerDown(pointer) {
+    const col = Math.floor((pointer.x - BX) / CELL);
+    const row = Math.floor((pointer.y - BY) / CELL);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+    if (!gameState || gameState.phase !== 'hq_placement') return;
+    if (!this._hqInstructionAck) return;
+    const activeSide = gameState.setup?.active_setup_side;
+    if (!activeSide) return;
+
+    this._sendAction({
+      action: 'set_hq_candidate',
+      side: activeSide,
+      position: { x: col, y: row },
+    });
+
+    if (sideOwnsCell(activeSide, col, row)) {
+      if (!this.setupSelection) this.setupSelection = { pendingBySide: { p1: null, p2: null } };
+      this.setupSelection.pendingBySide[activeSide] = { col, row };
+      this._hqCandidateCancelled = false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  NETWORK
+  // ═══════════════════════════════════════════════════════════════
+  _sendAction(data) {
+    if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) return;
+    wsInstance.send(JSON.stringify({ type: 'action', data }));
+  }
+
+  _connectWS() {
+    wsInstance = new WebSocket('ws://localhost:8765');
+    wsInstance.onopen = () => { this.wsText.setText('● connected').setColor('#44ff88'); };
+    wsInstance.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        detectSoundEvents(prevState, data);
+        prevState = gameState;
+        gameState = data;
+      } catch(_) {}
+    };
+    wsInstance.onclose = () => {
+      this.wsText.setText('◌ disconnected — retry…').setColor('#ff8844');
+      setTimeout(() => this._connectWS(), 2000);
+    };
+    wsInstance.onerror = () => { this.wsText.setText('✕ WS error').setColor('#ff2200'); };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MAIN STATE APPLY (called at 20 fps)
+  // ═══════════════════════════════════════════════════════════════
+  _applyState() {
+    if (!gameState) return;
+    const { phase, turn, corners_found, p1, p2, terrain, map_seed, game } = gameState;
+    const setup = gameState.setup || {};
+    const G = game || {};
+    const inBattle = (phase === 'game' || phase == null);
+
+    this._syncSetupSelection(phase, setup);
+
+    let illuminatedSide = null;
+    if (phase === 'game') {
+      if (turn === 1) illuminatedSide = 'p1';
+      else if (turn === 2) illuminatedSide = 'p2';
+    } else {
+      illuminatedSide = setup.active_setup_side || null;
+      if (!illuminatedSide && setup.side_selection_complete) {
+        illuminatedSide = setup.first_player_side === 'mob' ? 'p2' : 'p1';
+      }
+      if (!illuminatedSide) illuminatedSide = 'p2';
+    }
+
+    if (terrain && (map_seed !== this._drawnSeed || illuminatedSide !== this._drawnIlluminatedSide)) {
+      this._drawStaticBoard(terrain, illuminatedSide);
+      this._drawnSeed = map_seed;
+      this._drawnIlluminatedSide = illuminatedSide;
+    }
+
+    const tierThresholds = Array.isArray(G.tier_thresholds) ? G.tier_thresholds : [6, 14, 22, 32];
+    const nextThreshold = (tier) => tier >= 4 ? null : tierThresholds[tier] ?? null;
+    if (G.tier_p1 != null) {
+      this._p1Tier = G.tier_p1;
+      const nextP1 = nextThreshold(G.tier_p1);
+      const p1Progress = G.progress_p1 ?? 0;
+      this.p1TierTxt?.setText(`P1 Tier: ${G.tier_p1}${G.tier_p1 === 4 ? ' 💥' : nextP1 != null ? ` (${p1Progress}/${nextP1})` : ''}`);
+    }
+    if (G.tier_p2 != null) {
+      this._p2Tier = G.tier_p2;
+      const nextP2 = nextThreshold(G.tier_p2);
+      const p2Progress = G.progress_p2 ?? 0;
+      this.p2TierTxt?.setText(`P2 Tier: ${G.tier_p2}${G.tier_p2 === 4 ? ' 💥' : nextP2 != null ? ` (${p2Progress}/${nextP2})` : ''}`);
+    }
+
+    const thr = G.attrition_threshold ?? 40;
+    const s1 = G.score_p2_attrition ?? 0;
+    const s2 = G.score_p1_attrition ?? 0;
+    if (inBattle) {
+      this.scoreText?.setText(`Paddock score: ${s1}/${thr}   Feeding ground score: ${s2}/${thr}`).setColor('#ffb060');
+    } else {
+      this.scoreText?.setText('Setup: backend-guided hidden HQ flow').setColor('#d8c890');
+    }
+
+    if (Array.isArray(gameState.events)) {
+      for (const ev of gameState.events) {
+        if (ev.type === 'cell_destroyed') SFX.hit();
+        else if (ev.type === 'cell_damaged') SFX.fire();
+        else if (ev.type === 'hq_destroyed') SFX.nuke();
+        else if (ev.type === 'soft_destroyed') SFX.block();
+      }
+    }
+
+    if (!inBattle) {
+      this.turnText.setText(`Phase: ${phaseLabel(phase)}`).setColor('#f0d070');
+    } else if (turn === 1) {
+      this.turnText.setText(`Turn: 🌾 Old Mick  |  Tier ${G.tier_p1 ?? 0}`).setColor('#f8d060');
+    } else if (turn === 2) {
+      this.turnText.setText(`Turn: 🐦 The Mob  |  Tier ${G.tier_p2 ?? 0}`).setColor('#90ee40');
+    } else {
+      this.turnText.setText('Turn: — waiting —').setColor('#807060');
+    }
+
+    this.cornerText.setText(`Corners: ${corners_found || 0}/4`)
+      .setColor(corners_found === 4 ? '#44ff88' : '#ff8844');
+
+    const hardMap = {}, softMap = {};
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
+    const softGoneKeys = new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`));
+    if (terrain) {
+      [...(terrain.p1_hard || []), ...(terrain.p2_hard || [])].forEach(t => {
+        if (t.col != null) hardMap[`${t.col},${t.row}`] = t;
+      });
+      [...(terrain.p1_soft || []), ...(terrain.p2_soft || [])].forEach(t => {
+        if (t.col != null && !softGoneKeys.has(`${t.col},${t.row}`)) softMap[`${t.col},${t.row}`] = t;
+      });
+    }
+
+    const destroyedMap = {};
+    (G.destroyed || []).forEach(([c, r]) => { destroyedMap[`${c},${r}`] = true; });
+
+    this.dynGfx.clear();
+
+    this._drawDamageLayer(G, terrain);
+    this._drawTerrain(terrain, softGoneKeys);
+
+    if (inBattle && p1?.def?.col != null)
+      this._drawDefZone(p1.def.col, p1.def.row, this._p1Tier, C.p1_zone);
+    if (inBattle && p2?.def?.col != null)
+      this._drawDefZone(p2.def.col, p2.def.row, this._p2Tier, C.p2_zone);
+
+    if (inBattle) {
+      ['atk_a', 'atk_b'].forEach(role => {
+        if (p1?.[role]?.col != null && p1[role].direction) {
+          const ray = computeRay(p1[role].col, p1[role].row, p1[role].direction, hardMap, softMap, 'p1', destroyedMap, p2ResourceMap);
+          this._drawRay(p1[role].col, p1[role].row, ray);
+        }
+        if (p2?.[role]?.col != null && p2[role].direction) {
+          const ray = computeRay(p2[role].col, p2[role].row, p2[role].direction, hardMap, softMap, 'p2', destroyedMap, p1ResourceMap);
+          this._drawRay(p2[role].col, p2[role].row, ray);
+        }
+      });
+    }
+
+    const drawTok = (tok, role, p1side) => {
+      if (!tok || tok.col == null) return;
+      this._drawToken(tok.col, tok.row, tok.angle, role, p1side, !!tok.stale);
+    };
+    if (p1) { drawTok(p1.atk_a, 'atk', true);  drawTok(p1.atk_b, 'atk', true);  drawTok(p1.def, 'def', true); }
+    if (p2) { drawTok(p2.atk_a, 'atk', false); drawTok(p2.atk_b, 'atk', false); drawTok(p2.def, 'def', false); }
+
+    this._placeLabel('p1_atk_a', p1?.atk_a?.col, p1?.atk_a?.row);
+    this._placeLabel('p1_atk_b', p1?.atk_b?.col, p1?.atk_b?.row);
+    this._placeLabel('p1_def',   p1?.def?.col,   p1?.def?.row);
+    this._placeLabel('p2_atk_a', p2?.atk_a?.col, p2?.atk_a?.row);
+    this._placeLabel('p2_atk_b', p2?.atk_b?.col, p2?.atk_b?.row);
+    this._placeLabel('p2_def',   p2?.def?.col,   p2?.def?.row);
+
+    if (inBattle) {
+      this._placeArrow('p1_atk_a', p1?.atk_a);
+      this._placeArrow('p1_atk_b', p1?.atk_b);
+      this._placeArrow('p2_atk_a', p2?.atk_a);
+      this._placeArrow('p2_atk_b', p2?.atk_b);
+    } else {
+      Object.values(this.arrows).forEach(a => a.setVisible(false));
+    }
+
+    if (inBattle) {
+      this._hideSetupUi();
+      const activeSide = turn === 1 ? 'p1' : turn === 2 ? 'p2' : null;
+      if (this._nukeArmingSide && activeSide !== this._nukeArmingSide) this._nukeArmingSide = null;
+      this._setActionButtonState(this.nukeBtn, { visible: false, enabled: false });
+    } else {
+      this._drawPlacementGuide(phase, setup);
+      this._drawPendingHqCandidate(phase, setup);
+      this._updateSetupUi(phase, setup);
+    }
+
+    this._updateSetupControls(phase, setup);
+    this._updateWarningUi(gameState.errors || []);
+    this._tutorialTick();
+    this._drawTutorialHighlights();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  DRAWING HELPERS (simplified from index.html)
+  // ═══════════════════════════════════════════════════════════════
+  _drawBoardLabels() {
+    const style = { fontSize: '11px', fontFamily: 'monospace', color: '#b0a080' };
+    for (let c = 0; c < COLS; c++)
+      this.add.text(BX + c * CELL + CELL / 2, BY - 16, String.fromCharCode(65 + c), style).setOrigin(0.5, 0.5);
+    for (let r = 0; r < ROWS; r++)
+      this.add.text(BX - 16, BY + r * CELL + CELL / 2, `${r + 1}`, style).setOrigin(0.5, 0.5);
+
+    this.add.text(BX + COLS * CELL / 2, 18, 'Old Mick Against the Mob - TUTORIAL', {
+      fontSize: '16px', fontFamily: 'Georgia', color: '#d0b880', fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+  }
+
+  _drawStaticBoard(terrain, illuminatedSide) {
+    const g = this.boardGfx;
+    g.clear();
+    g.fillStyle(C.board_bg, 1);
+    g.fillRect(BX - 2, BY - 2, COLS * CELL + 4, ROWS * CELL + 4);
+
+    const { p1: p1Res, p2: p2Res } = buildResourceMaps(terrain);
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x = BX + c * CELL, y = BY + r * CELL;
+        const k = `${c},${r}`;
+        const onFence = (c + r === 11);
+        let fill;
+
+        if (onFence) fill = C.fence_cell;
+        else if (isP1(c, r)) {
+          if (p1Res[k]) fill = illuminatedSide === 'p1' ? C.p1_target : 0xa86838;
+          else fill = C.farmer_cell;
+        } else if (isP2(c, r)) {
+          if (p2Res[k]) fill = illuminatedSide === 'p2' ? C.p2_target : 0x2a5a28;
+          else fill = C.emu_cell;
+        } else fill = C.fence_cell;
+
+        g.fillStyle(fill, 1);
+        g.fillRect(x, y, CELL - 1, CELL - 1);
+      }
+    }
+  }
+
+  _buildPanel() {
+    const g = this.boardGfx;
+    const px = PANEL_X;
+
+    g.fillStyle(C.panel_bg, 1);
+    g.fillRect(px, 0, PW, H);
+    g.lineStyle(1, C.panel_border, 0.8);
+    g.strokeRect(px, 0, PW, H);
+
+    const sep = (y) => {
+      g.lineStyle(0.5, C.panel_border, 0.4);
+      g.lineBetween(px + 6, y, px + PW - 6, y);
+    };
+
+    const T = (x, y, str, col, size = '11px') =>
+      this.add.text(px + x, y, str, { fontSize: size, fontFamily: 'Georgia', color: col });
+
+    T(8, 10, '⚔  TUTORIAL', '#f0d070', '13px');
+    sep(30);
+    this.turnText = T(8, 36, 'Phase: —', '#f0d070', '13px');
+    sep(58);
+
+    T(8, 64, 'TERRAIN', '#c8a050', '11px');
+    T(8, 80, '██ Hard  — impassable (blocks ray)', '#b0a080');
+    T(8, 93, '▪▪ Soft  — absorbs hit (2 hits)', '#c8d860');
+    sep(108);
+
+    T(8, 112, 'TIER UPGRADES', '#c8a050', '11px');
+
+    this.scoreText  = T(8, H - 174, 'Paddock score: 0/40  Feeding ground score: 0/40', '#ffb060', '10px');
+    this.cornerText = T(8, H - 156, 'Corners: 0/4', '#a08040');
+    this.wsText     = T(8, H - 138, '◌ connecting…', '#888860');
+
+    this.p1TierTxt = T(8,  130, 'P1 Tier: 0', '#f0c060');
+    this.p2TierTxt = T(8,  144, 'P2 Tier: 0', '#90e050');
+
+    const mkBtn = (label, x, y, cb, col) => {
+      const btn = this.add.text(PANEL_X + x, y, label,
+        { fontSize: '11px', fontFamily: 'Georgia', color: col,
+          backgroundColor: '#2a2010', padding: { x: 4, y: 2 } })
+        .setInteractive({ useHandCursor: true });
+      btn.on('pointerdown', cb);
+      btn.on('pointerover', () => btn.setColor('#ffffff'));
+      btn.on('pointerout',  () => btn.setColor(col));
+      return btn;
+    };
+
+    this._p1Tier = 0;
+    this._p2Tier = 0;
+    mkBtn('[P1 +Tier]', 8,  272, () => this._changeTier(1,  1), '#f0c060');
+    mkBtn('[P1 −Tier]', 90, 272, () => this._changeTier(1, -1), '#c8a040');
+    mkBtn('[P2 +Tier]', 8,  288, () => this._changeTier(2,  1), '#90e050');
+    mkBtn('[P2 −Tier]', 90, 288, () => this._changeTier(2, -1), '#70c030');
+
+    T(8, 320, 'LATEST ALERT', '#c89060', '11px');
+    this.warningMiniTxt = this.add.text(PANEL_X + 8, 338, 'Recent alert: none', {
+      fontSize: '10px', fontFamily: 'Georgia', color: '#9a7a58',
+      wordWrap: { width: PW - 16 },
+    });
+
+    const mkActionBtn = (label, x, y, width, bgColor, color, onClick) => {
+      const btn = this.add.text(PANEL_X + x, y, label, {
+        fontSize: '11px', fontFamily: 'Georgia', color,
+        backgroundColor: bgColor, padding: { x: 6, y: 4 }, fontStyle: 'bold',
+      }).setInteractive({ useHandCursor: true }).setVisible(false);
+      btn._baseColor = color;
+      btn._baseBgColor = bgColor;
+      btn._enabled = true;
+      btn._fullWidth = width;
+      btn.setFixedSize(width, 24);
+      btn.setAlign('center');
+      btn.on('pointerdown', () => { if (btn._enabled) onClick(); });
+      btn.on('pointerover', () => { if (btn._enabled) btn.setColor('#fff8dc'); });
+      btn.on('pointerout', () => { btn.setColor(btn._enabled ? btn._baseColor : '#8a7a68'); });
+      return btn;
+    };
+
+    this.nukeBtn = mkActionBtn('Arm Nuke', 8, 400, 194, '#5a1f12', '#ffd070', () => {
+      const activeSide = gameState?.turn === 1 ? 'p1' : gameState?.turn === 2 ? 'p2' : null;
+      if (!activeSide) return;
+      this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
+    });
+    this._nukeArmingSide = null;
+  }
+
+  _buildSetupUi() {
+    const tx = BX + 24;
+    const ty = BY + 18;
+    const titleStyle = { fontSize: '16px', fontFamily: 'Georgia', fontStyle: 'bold', color: '#fff0b0', stroke: '#2a1408', strokeThickness: 3 };
+    const bodyStyle = { fontSize: '12px', fontFamily: 'Georgia', color: '#f2d8a0', stroke: '#241208', strokeThickness: 2 };
+    const monoStyle = { fontSize: '11px', fontFamily: 'monospace', color: '#e6d2a8', stroke: '#1e0e06', strokeThickness: 2 };
+
+    this.setupCardGfx = this.add.graphics().setDepth(18).setVisible(false);
+    this.setupTitleTxt = this.add.text(tx, ty, '', titleStyle).setDepth(19).setVisible(false);
+    this.setupStatusTxt = this.add.text(tx, ty + 24, '', { ...bodyStyle, wordWrap: { width: COLS * CELL - 110 } }).setDepth(19).setVisible(false);
+    this.setupScanTxt = this.add.text(tx, ty + 80, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupSideTxt = this.add.text(tx, ty + 98, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupActiveTxt = this.add.text(tx, ty + 116, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupP1Txt = this.add.text(tx, ty + 134, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupP2Txt = this.add.text(tx, ty + 152, '', monoStyle).setDepth(19).setVisible(false);
+    this.setupHintTxt = this.add.text(tx, ty + 174, 'Confirmed HQ cells stay hidden until an HQ is destroyed.', {
+      fontSize: '11px', fontFamily: 'Georgia', fontStyle: 'italic', color: '#ffdf90', stroke: '#2a1408', strokeThickness: 2,
+    }).setDepth(19).setVisible(false);
+  }
+
+  _updateSetupUi(phase, setup = {}) {
+    const isSetupPhase = phase != null && phase !== 'game';
+    const texts = [this.setupTitleTxt, this.setupStatusTxt, this.setupScanTxt, this.setupSideTxt, this.setupActiveTxt, this.setupP1Txt, this.setupP2Txt, this.setupHintTxt];
+    this.setupCardGfx.clear();
+    this.setupCardGfx.setVisible(false);
+    texts.forEach((txt) => txt.setVisible(false));
+  }
+
+  _hideSetupUi() {
+    this._hidePlacementLabels();
+    this._updateSetupUi('game');
+  }
+
+  _hidePlacementLabels() {
+    if (this._zoneLabels) {
+      this._zoneLabels.p1?.setVisible(false);
+      this._zoneLabels.p2?.setVisible(false);
+      this._zoneLabels.fence?.setVisible(false);
+    }
+  }
+
+  _buildWarningUi() {
+    this.warningState = {
+      activeCode: null, activeTitle: '', activeMessage: '', activeTone: 'error',
+      showUntil: 0, suppressUntil: 0, recentTitle: '', recentMessage: '', recentTone: 'error', recentUntil: 0,
+    };
+
+    this.setupSelection = { pendingBySide: { p1: null, p2: null } };
+
+    const centerX = BX + COLS * CELL / 2;
+    const topY = BY + 96;
+    this.warningCardGfx = this.add.graphics().setDepth(24).setVisible(false);
+    this.warningTitleTxt = this.add.text(centerX, topY, '', {
+      fontSize: '18px', fontFamily: 'Georgia', fontStyle: 'bold', color: '#ffe0a0', stroke: '#2a1008', strokeThickness: 3,
+    }).setOrigin(0.5, 0).setDepth(25).setVisible(false);
+    this.warningBodyTxt = this.add.text(centerX, topY + 28, '', {
+      fontSize: '13px', fontFamily: 'Georgia', color: '#ffd0a0', align: 'center',
+      wordWrap: { width: 380 }, stroke: '#220c06', strokeThickness: 2,
+    }).setOrigin(0.5, 0).setDepth(25).setVisible(false);
+  }
+
+  _hideWarningOverlay() {
+    this.warningCardGfx.clear();
+    this.warningCardGfx.setVisible(false);
+    this.warningTitleTxt.setVisible(false);
+    this.warningBodyTxt.setVisible(false);
+  }
+
+  _updateWarningUi(errors) {
+    this._hideWarningOverlay();
+  }
+
+  _buildLockButton() {
+    const bx = PANEL_X + 8, by = H - 108, bw = PW - 16, bh = 36;
+
+    this.newMapBtnGfx = this.add.graphics().setDepth(5);
+    this.newMapBtnGfx.fillStyle(0x3a5aa0, 1);
+    this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    this.newMapBtnGfx.setInteractive(new Phaser.Geom.Rectangle(bx, by, bw, bh), Phaser.Geom.Rectangle.Contains);
+    this.newMapBtnTxt = this.add.text(bx + 12, by + 9, '🎲  NEW RANDOM MAP', {
+      fontSize: '12px', fontFamily: 'Georgia', color: '#e0e8ff', fontStyle: 'bold'
+    }).setDepth(6);
+
+    this.lockBtnGfx = this.newMapBtnGfx;
+
+    const redraw = (fill) => {
+      this.newMapBtnGfx.clear();
+      this.newMapBtnGfx.fillStyle(fill, 1);
+      this.newMapBtnGfx.fillRoundedRect(bx, by, bw, bh, 8);
+    };
+    this.newMapBtnGfx.on('pointerover', () => redraw(0x5c7cc8));
+    this.newMapBtnGfx.on('pointerout',  () => redraw(0x3a5aa0));
+    this.newMapBtnGfx.on('pointerdown', () => this._requestNewMap());
+
+    const fbx = PANEL_X + 8, fby = H - 60, fbw = PW - 16, fbh = 28;
+    const fireGfx = this.add.graphics().setDepth(5);
+    fireGfx.fillStyle(0x882200, 1);
+    fireGfx.fillRoundedRect(fbx, fby, fbw, fbh, 6);
+    fireGfx.setInteractive(new Phaser.Geom.Rectangle(fbx, fby, fbw, fbh), Phaser.Geom.Rectangle.Contains);
+    this.add.text(fbx + 12, fby + 6, '🔫  FIRE  (demo sound)', {
+      fontSize: '11px', fontFamily: 'Georgia', color: '#ffccaa', fontStyle: 'bold'
+    }).setDepth(6);
+    fireGfx.on('pointerdown', () => { SFX.fire(); setTimeout(() => SFX.hit(), 280); });
+  }
+
+  _requestNewMap() {
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+      wsInstance.send(JSON.stringify({ type: 'new_map' }));
+    }
+    this.tweens.add({ targets: this.newMapBtnGfx, alpha: { from: 0.5, to: 1 }, duration: 250, ease: 'Sine.easeOut' });
+    SFX.lock();
+  }
+
+  _changeTier(player, delta) {
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+      wsInstance.send(JSON.stringify({ type: 'tier', player, delta }));
+    }
+    SFX.lock();
+  }
+
+  _setActionButtonState(button, { visible, enabled, label = null }) {
+    if (!button) return;
+    if (label != null) button.setText(label);
+    button._enabled = enabled;
+    button.setVisible(visible);
+    button.setAlpha(enabled ? 1 : 0.45);
+    button.setColor(enabled ? button._baseColor : '#8a7a68');
+    button.setBackgroundColor(enabled ? button._baseBgColor : '#241812');
+    if (button.input) button.input.enabled = visible && enabled;
+  }
+
+  _syncSetupSelection(phase, setup = {}) {
+    const hq = setup.hq || {};
+    ['p1', 'p2'].forEach((side) => {
+      const sideState = hq[side] || {};
+      if (phase !== 'hq_placement') { this.setupSelection.pendingBySide[side] = null; return; }
+      if (sideState.confirmed || sideState.has_candidate === false) { this.setupSelection.pendingBySide[side] = null; }
+    });
+  }
+
+  _buildLabels() {
+    const style = { fontSize: '10px', fontFamily: 'monospace', color: '#ffffff',
+                    fontStyle: 'bold', stroke: '#000000', strokeThickness: 2 };
+    this.labels = {
+      p1_atk_a : this.add.text(0, 0, 'R1', style).setDepth(10).setVisible(false),
+      p1_atk_b : this.add.text(0, 0, 'R2', style).setDepth(10).setVisible(false),
+      p1_def   : this.add.text(0, 0, 'OM', style).setDepth(10).setVisible(false),
+      p2_atk_a : this.add.text(0, 0, 'M1', style).setDepth(10).setVisible(false),
+      p2_atk_b : this.add.text(0, 0, 'M2', style).setDepth(10).setVisible(false),
+      p2_def   : this.add.text(0, 0, 'CW', style).setDepth(10).setVisible(false),
+    };
+
+    const arrStyle = { fontSize: '32px', fontFamily: 'Arial', fontStyle: 'bold', stroke: '#000000', strokeThickness: 5 };
+    this.arrows = {
+      p1_atk_a : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5).setDepth(12).setVisible(false).setColor('#ffdc40'),
+      p1_atk_b : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5).setDepth(12).setVisible(false).setColor('#ffdc40'),
+      p2_atk_a : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5).setDepth(12).setVisible(false).setColor('#b8ff60'),
+      p2_atk_b : this.add.text(0, 0, '→', arrStyle).setOrigin(0.5, 0.5).setDepth(12).setVisible(false).setColor('#b8ff60'),
+    };
+  }
+
+  _placeLabel(key, col, row) {
+    const lbl = this.labels[key];
+    if (col == null) { lbl.setVisible(false); return; }
+    const { x, y } = cc(col, row);
+    lbl.setPosition(x - 7, y - 7).setVisible(true);
+  }
+
+  _placeArrow(key, tok) {
+    const arr = this.arrows[key];
+    if (!arr) return;
+    if (!tok || tok.col == null || !tok.direction) { arr.setVisible(false); return; }
+    const { x, y } = cc(tok.col, tok.row);
+    const [dc, dr] = DIR_VEC[tok.direction] || [0, 0];
+    arr.setPosition(x + dc * CELL * 0.55, y + dr * CELL * 0.55);
+    arr.setText(ARROW_CHAR[tok.direction] || '?');
+    arr.setVisible(true);
+  }
+
+  _drawTerrain(terrain, softGoneKeys = new Set()) {
+    if (!terrain) return;
+    const g = this.dynGfx;
+
+    const drawPiece = (col, row, isHard, isP1side) => {
+      if (col == null) return;
+      if (!isHard && softGoneKeys.has(`${col},${row}`)) return;
+      const x = BX + col * CELL, y = BY + row * CELL;
+      const pad = 3, s = CELL - 1 - pad * 2;
+
+      if (isHard) {
+        g.fillStyle(isP1side ? 0x907050 : 0x606050, 0.90);
+        g.fillRect(x + pad, y + pad, s, s);
+        g.lineStyle(2, isP1side ? 0xd0b880 : 0xa09070, 1);
+        g.strokeRect(x + pad, y + pad, s, s);
+        const m = 7;
+        g.lineStyle(5, 0x000000, 0.50);
+        g.lineBetween(x + m, y + m, x + CELL - m, y + CELL - m);
+        g.lineBetween(x + CELL - m, y + m, x + m, y + CELL - m);
+        g.lineStyle(3.5, 0xffffff, 0.85);
+        g.lineBetween(x + m, y + m, x + CELL - m, y + CELL - m);
+        g.lineBetween(x + CELL - m, y + m, x + m, y + CELL - m);
+      } else {
+        g.fillStyle(isP1side ? 0xc8be38 : 0x80c448, 0.70);
+        g.fillRect(x + pad + 2, y + pad + 2, s - 4, s - 4);
+        g.lineStyle(1.5, isP1side ? 0xe8e060 : 0xa0e870, 0.9);
+        this._dashRect(g, x + pad + 2, y + pad + 2, s - 4, s - 4, 5, 3);
+        const hx = x + CELL / 2, hy = y + CELL / 2, hr = 10;
+        g.lineStyle(1.5, 0xffffff, 0.40);
+        g.lineBetween(hx - hr - 4, hy + hr, hx + hr - 4, hy - hr);
+        g.lineBetween(hx - hr,     hy + hr, hx + hr,     hy - hr);
+        g.lineBetween(hx - hr + 4, hy + hr, hx + hr + 4, hy - hr);
+      }
+    };
+
+    (terrain.p1_hard || []).forEach(t => drawPiece(t.col, t.row, true, true));
+    (terrain.p1_soft || []).forEach(t => drawPiece(t.col, t.row, false, true));
+    (terrain.p2_hard || []).forEach(t => drawPiece(t.col, t.row, true, false));
+    (terrain.p2_soft || []).forEach(t => drawPiece(t.col, t.row, false, false));
+  }
+
+  _drawDamageLayer(G, terrain) {
+    const g = this.dynGfx;
+    const { p1: p1ResourceMap, p2: p2ResourceMap } = buildResourceMaps(terrain);
+    const dmg = G.damage || {};
+    for (const key in dmg) {
+      const [c, r] = key.split(',').map(Number);
+      if ((G.destroyed || []).some(d => d[0] === c && d[1] === r)) continue;
+      const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+      const resource = p1ResourceMap[key] || p2ResourceMap[key];
+      g.fillStyle(0x000000, 0.28);
+      g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+      g.lineStyle(1.5, 0x201008, 0.8);
+      g.lineBetween(x + 6, y + 10, x + CELL - 12, y + CELL - 8);
+      g.lineBetween(x + CELL - 14, y + 12, x + CELL - 6, y + CELL - 14);
+      if (resource?.visible && resource?.value === 5) {
+        const maxHp = resource.max_hp ?? 3;
+        const hits = dmg[key] ?? 0;
+        const remain = Math.max(0, maxHp - hits);
+        for (let i = 0; i < maxHp; i++) {
+          const cx = x + 14 + i * 12;
+          const cy = y + CELL - 12;
+          g.fillStyle(i < remain ? 0xffe070 : 0x4a3010, 0.95);
+          g.fillCircle(cx, cy, 4);
+          g.lineStyle(1, 0x120904, 0.8);
+          g.strokeCircle(cx, cy, 4);
+        }
+      }
+    }
+    (G.destroyed || []).forEach(([c, r]) => this._drawScorched(c, r));
+    const hqR = G.hq_revealed || {};
+    Object.entries(hqR).forEach(([side, pos]) => {
+      if (!pos) return;
+      const [c, r] = pos;
+      const cx = BX + c * CELL + CELL / 2, cy = BY + r * CELL + CELL / 2;
+      g.lineStyle(3, 0xffd060, 0.95);
+      g.strokeCircle(cx, cy, CELL * 0.38);
+      g.lineStyle(1.5, 0xffffff, 0.8);
+      g.strokeCircle(cx, cy, CELL * 0.28);
+    });
+  }
+
+  _drawScorched(c, r) {
+    const g = this.dynGfx;
+    const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+    const w = CELL - 3, h = CELL - 3;
+    g.fillStyle(0x0a0603, 0.92);
+    g.fillRoundedRect(x, y, w, h, 3);
+    const rnd = (k) => {
+      const v = Math.sin((c * 91 + r * 17 + k * 131) * 12.97) * 43758.55;
+      return v - Math.floor(v);
+    };
+    for (let i = 0; i < 5; i++) {
+      const ex = x + 4 + rnd(i) * (w - 8);
+      const ey = y + 4 + rnd(i + 10) * (h - 8);
+      g.fillStyle(0xff6a20, 0.55);
+      g.fillCircle(ex, ey, 1.4);
+    }
+    g.lineStyle(1, 0x502010, 0.8);
+    g.lineBetween(x + 4, y + 8,  x + w - 8, y + h - 6);
+    g.lineBetween(x + w - 6, y + 10, x + 10, y + h - 10);
+    g.lineStyle(2, 0x802010, 0.55);
+    g.lineBetween(x + w / 2 - 5, y + h / 2 - 5, x + w / 2 + 5, y + h / 2 + 5);
+    g.lineBetween(x + w / 2 + 5, y + h / 2 - 5, x + w / 2 - 5, y + h / 2 + 5);
+  }
+
+  _drawPlacementGuide(phase, setup = {}) {
+    const g = this.dynGfx;
+    const isScan = phase === 'scan';
+    const isHqPlacement = phase === 'hq_placement';
+    const activeSide = setup.active_setup_side;
+    const t = this.time.now;
+    const pulseA = 0.18 + 0.10 * Math.sin(t / 350);
+    const pulseB = 0.18 + 0.10 * Math.sin(t / 350 + Math.PI);
+
+    g.fillStyle(0x120904, isScan ? 0.44 : 0.24);
+    g.fillRoundedRect(BX + 1, BY + 1, COLS * CELL - 2, ROWS * CELL - 2, 8);
+
+    if (!isScan) {
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r < 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          const p1Alpha = activeSide === 'p2' ? pulseA * 0.45 : pulseA;
+          g.fillStyle(C.p1_border, p1Alpha);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          g.lineStyle(1.5, 0x40a040, 0.85);
+          g.lineBetween(x + CELL - 11, y + 6, x + CELL - 8, y + 9);
+          g.lineBetween(x + CELL - 8,  y + 9, x + CELL - 4, y + 4);
+        }
+      }
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r > 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          const p2Alpha = activeSide === 'p1' ? pulseB * 0.45 : pulseB;
+          g.fillStyle(C.p2_border, p2Alpha);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          g.lineStyle(1.5, 0x40a040, 0.85);
+          g.lineBetween(x + 4, y + 7, x + 7, y + 10);
+          g.lineBetween(x + 7, y + 10, x + 11, y + 5);
+        }
+      }
+      const noPlaceA = 0.30 + 0.10 * Math.sin(t / 250);
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (c + r === 11) {
+          const x = BX + c * CELL + 1, y = BY + r * CELL + 1;
+          g.fillStyle(0xff4040, noPlaceA * 0.35);
+          g.fillRoundedRect(x, y, CELL - 3, CELL - 3, 3);
+          g.lineStyle(2, 0xff3030, noPlaceA);
+          g.lineBetween(x + 6, y + CELL - 9, x + CELL - 9, y + 6);
+        }
+      }
+    }
+
+    if (!this._zoneLabels) {
+      const mk = (x, y, txt, col) => this.add.text(x, y, txt, {
+        fontSize: '12px', fontFamily: 'Georgia', fontStyle: 'bold', color: col,
+        backgroundColor: 'rgba(20,14,4,0.78)', padding: { x: 8, y: 4 },
+        stroke: '#000', strokeThickness: 2,
+      }).setDepth(9).setOrigin(0.5, 0.5);
+      this._zoneLabels = {
+        p1: mk(BX + CELL * 3, BY + CELL * 9.5, '🌾 OLD MICK TERRITORY', '#f8d870'),
+        p2: mk(BX + CELL * 9, BY + CELL * 2.5, '🐦 THE MOB TERRITORY', '#b8ff60'),
+        fence: mk(BX + CELL * 6, BY + CELL * 6, '🚫 FENCE LINE — NO HQ', '#ff9090'),
+      };
+    }
+    this._zoneLabels.p1.setText(isHqPlacement && activeSide === 'p1' ? '🌾 OLD MICK TERRITORY — ACTIVE HQ SIDE' : '🌾 OLD MICK TERRITORY');
+    this._zoneLabels.p2.setText(isHqPlacement && activeSide === 'p2' ? '🐦 THE MOB TERRITORY — ACTIVE HQ SIDE' : '🐦 THE MOB TERRITORY');
+    this._zoneLabels.p1.setVisible(!isScan);
+    this._zoneLabels.p2.setVisible(!isScan);
+    this._zoneLabels.fence.setVisible(!isScan);
+  }
+
+  _drawPendingHqCandidate(phase, setup = {}) {
+    if (phase !== 'hq_placement') return;
+    const activeSide = setup.active_setup_side;
+    const candidate = activeSide ? this.setupSelection.pendingBySide[activeSide] : null;
+    if (!candidate) return;
+    const { col, row } = candidate;
+    const g = this.dynGfx;
+    const x = BX + col * CELL + 2;
+    const y = BY + row * CELL + 2;
+    const ring = activeSide === 'p2' ? 0xb8ff60 : 0xffdc70;
+    const cx = x + (CELL - 4) / 2;
+    const cy = y + (CELL - 4) / 2;
+    const pulse = 0.55 + 0.20 * Math.sin(this.time.now / 170);
+    g.fillStyle(0x120904, 0.25);
+    g.fillRoundedRect(x, y, CELL - 4, CELL - 4, 5);
+    g.lineStyle(3, ring, pulse);
+    g.strokeRoundedRect(x, y, CELL - 4, CELL - 4, 5);
+    g.lineStyle(1.5, 0xffffff, 0.82);
+    g.strokeCircle(cx, cy, CELL * 0.18);
+  }
+
+  _drawDefZone(defCol, defRow, tier, color) {
+    const g = this.dynGfx;
+    const rad = tier >= 2 ? 2 : 1;
+    const sx = BX + (defCol - rad) * CELL;
+    const sy = BY + (defRow - rad) * CELL;
+    const sz = (rad * 2 + 1) * CELL;
+
+    g.fillStyle(color, 0.10);
+    g.fillRect(sx, sy, sz, sz);
+    g.lineStyle(2, color, 0.65);
+    g.strokeRect(sx, sy, sz, sz);
+
+    g.lineStyle(3, color, 0.9);
+    [[sx, sy], [sx + sz, sy], [sx, sy + sz], [sx + sz, sy + sz]].forEach(([cx, cy]) => {
+      const dx = cx === sx ? 6 : -6, dy = cy === sy ? 6 : -6;
+      g.lineBetween(cx, cy, cx + dx, cy);
+      g.lineBetween(cx, cy, cx, cy + dy);
+    });
+  }
+
+  _drawRay(startCol, startRow, rayCells) {
+    const g = this.dynGfx;
+    if (!rayCells || rayCells.length === 0) return;
+
+    for (const cell of rayCells) {
+      const x = BX + cell.col * CELL, y = BY + cell.row * CELL;
+      const w = CELL - 1, h = CELL - 1;
+      if (cell.type === 'path') { g.fillStyle(C.ray_path, 0.28); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'hit') { g.fillStyle(C.ray_hit, 0.55); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'blocked') { g.fillStyle(0x303030, 0.70); g.fillRect(x, y, w, h); }
+      else if (cell.type === 'soft') { g.fillStyle(C.ray_soft, 0.45); g.fillRect(x, y, w, h); }
+    }
+
+    let px = BX + startCol * CELL + CELL / 2;
+    let py = BY + startRow * CELL + CELL / 2;
+    for (const cell of rayCells) {
+      const cx = BX + cell.col * CELL + CELL / 2;
+      const cy = BY + cell.row * CELL + CELL / 2;
+      if (cell.type === 'path') {
+        g.lineStyle(2, C.ray_path, 0.9);
+        this._dashLine(g, px, py, cx, cy, 7, 4);
+      } else {
+        g.lineStyle(2.5, cell.type === 'blocked' ? C.ray_blocked : C.ray_hit, 1);
+        g.lineBetween(px, py, cx, cy);
+      }
+      px = cx; py = cy;
+    }
+
+    const last = rayCells[rayCells.length - 1];
+    const lx = BX + last.col * CELL + CELL / 2;
+    const ly = BY + last.row * CELL + CELL / 2;
+    const m = CELL * 0.30;
+
+    if (last.type === 'hit') {
+      g.lineStyle(5, 0x000000, 0.5);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      g.lineStyle(4, 0xffffff, 1);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        g.lineStyle(2, 0xffffff, 0.75);
+        g.lineBetween(lx + Math.cos(a) * (m + 2), ly + Math.sin(a) * (m + 2),
+                      lx + Math.cos(a) * (m + 10), ly + Math.sin(a) * (m + 10));
+      }
+    } else if (last.type === 'blocked') {
+      g.lineStyle(5, 0x000000, 0.5);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      g.lineStyle(4, C.ray_blocked, 1);
+      g.lineBetween(lx - m, ly - m, lx + m, ly + m);
+      g.lineBetween(lx + m, ly - m, lx - m, ly + m);
+      g.lineStyle(2, C.ray_blocked, 0.7);
+      g.strokeCircle(lx, ly, m + 5);
+    } else if (last.type === 'soft') {
+      const tr = m + 2;
+      g.lineStyle(3, 0x000000, 0.4);
+      g.fillStyle(C.ray_soft, 1);
+      g.fillTriangle(lx, ly - tr, lx - tr, ly + tr * 0.7, lx + tr, ly + tr * 0.7);
+      g.lineStyle(2.5, 0xffffff, 0.9);
+      g.strokeTriangle(lx, ly - tr, lx - tr, ly + tr * 0.7, lx + tr, ly + tr * 0.7);
+      g.fillStyle(0x000000, 0.7);
+      g.fillRect(lx - 1.5, ly - tr * 0.45, 3, tr * 0.5);
+      g.fillCircle(lx, ly + tr * 0.25, 2);
+    }
+  }
+
+  _drawToken(col, row, angle, role, isP1, stale = false) {
+    const g = this.dynGfx;
+    const { x: cx0, y: cy0 } = cc(col, row);
+    const r16 = CELL * 0.36;
+    const fill = isP1 ? (role === 'atk' ? C.p1_atk : C.p1_def) : (role === 'atk' ? C.p2_atk : C.p2_def);
+    const border = isP1 ? C.p1_border : C.p2_border;
+
+    const phase = (col * 7 + row * 13) * 0.3;
+    const bob = Math.sin(this.time.now / 450 + phase) * 1.4;
+    const cx = cx0, cy = cy0 + bob;
+
+    const bodyA = stale ? 0.45 : 1.0;
+    const borderA = stale ? 0.6 : 1.0;
+
+    g.fillStyle(0x000000, 0.28 * bodyA);
+    g.fillEllipse(cx + 1, cy0 + r16 + 3, r16 * 1.6, r16 * 0.45);
+
+    if (role === 'atk') {
+      g.fillStyle(fill, bodyA);
+      g.fillRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
+      g.fillStyle(0xffffff, 0.20 * bodyA);
+      g.fillRoundedRect(cx - r16 + 2, cy - r16 + 2, r16 * 2 - 4, r16 * 0.7, 5);
+      g.lineStyle(2.5, border, borderA);
+      g.strokeRoundedRect(cx - r16, cy - r16, r16 * 2, r16 * 2, 6);
+    } else {
+      g.fillStyle(fill, bodyA);
+      g.fillPoints([
+        { x: cx, y: cy - r16 }, { x: cx + r16, y: cy },
+        { x: cx, y: cy + r16 }, { x: cx - r16, y: cy }
+      ], true);
+      g.fillStyle(0xffffff, 0.22 * bodyA);
+      g.fillPoints([
+        { x: cx, y: cy - r16 + 2 }, { x: cx + r16 * 0.6, y: cy - r16 * 0.2 },
+        { x: cx, y: cy }, { x: cx - r16 * 0.6, y: cy - r16 * 0.2 }
+      ], true);
+      g.lineStyle(2.5, border, borderA);
+      g.strokePoints([
+        { x: cx, y: cy - r16 }, { x: cx + r16, y: cy },
+        { x: cx, y: cy + r16 }, { x: cx - r16, y: cy }
+      ], true);
+    }
+  }
+
+  _dashLine(g, x1, y1, x2, y2, dashLen, gapLen) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return;
+    const ux = dx / len, uy = dy / len;
+    let d = 0, draw = true;
+    while (d < len) {
+      const seg = Math.min(draw ? dashLen : gapLen, len - d);
+      if (draw)
+        g.lineBetween(x1 + ux * d, y1 + uy * d, x1 + ux * (d + seg), y1 + uy * (d + seg));
+      d += seg; draw = !draw;
+    }
+  }
+
+  _dashRect(g, x, y, w, h, dashLen, gapLen) {
+    this._dashLine(g, x,     y,     x + w, y,     dashLen, gapLen);
+    this._dashLine(g, x + w, y,     x + w, y + h, dashLen, gapLen);
+    this._dashLine(g, x + w, y + h, x,     y + h, dashLen, gapLen);
+    this._dashLine(g, x,     y + h, x,     y,     dashLen, gapLen);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PHASER INIT
+// ═══════════════════════════════════════════════════════════════════
+new Phaser.Game({
+  type      : Phaser.AUTO,
+  width     : W,
+  height    : H,
+  parent    : 'game-container',
+  backgroundColor: '#1a1008',
+  scene     : TutorialScene,
+});
+</script>
 </body>
 </html>
-
