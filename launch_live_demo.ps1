@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$uiPath = Join-Path $repoRoot "yu_test1\index.html"
+$uiUrl = "http://localhost:8080"
 
 function Get-PythonCandidatePaths {
     $paths = New-Object System.Collections.Generic.List[string]
@@ -91,10 +91,6 @@ if (-not $pythonExe) {
     Show-Failure "No repo Python environment found. Tried: $attempted"
 }
 
-if (-not (Test-Path $uiPath)) {
-    Show-Failure "Missing yu_test1\index.html. Run this script from the repository root."
-}
-
 $escapedPythonExe = $pythonExe.Replace("'", "''")
 $trackerCommand = "Set-Location -LiteralPath '$repoRoot'; & '$escapedPythonExe' -m runner.run_live_tracker"
 
@@ -102,6 +98,6 @@ Write-Host "Starting live demo services..." -ForegroundColor Cyan
 Write-Host "Using Python: $pythonExe" -ForegroundColor DarkGray
 
 Start-PowerShellWindow -WorkingDirectory $repoRoot -Command $trackerCommand
-Start-Process $uiPath
+Start-Process $uiUrl
 
-Write-Host "Browser opened at $uiPath" -ForegroundColor Green
+Write-Host "Browser opened at $uiUrl" -ForegroundColor Green
