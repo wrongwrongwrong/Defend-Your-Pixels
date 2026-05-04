@@ -57,9 +57,9 @@ The emus raid Old Mick's wheat paddocks —
 that grain is everything.
 
 The Cassowary guards the Mob's territory.
-The Nest is hidden somewhere in the scrublands.
+The Bird Council is hidden somewhere in the scrublands.
 
-If they find the Homestead first — it ends there.`,
+If they find the Grain Stash first — it ends there.`,
   },
   {
     year:  "THE FENCE STOPPED MEANING ANYTHING WEEKS AGO.",

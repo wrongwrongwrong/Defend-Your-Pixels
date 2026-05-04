@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Help — Old Mick Against the Mob</title>
 <style>
+/* Fonts loaded by main game index.html when injected; kept here for standalone preview */
 @import url('https://fonts.googleapis.com/css2?family=Rye&family=Barlow:wght@400;600;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -211,6 +212,21 @@ body {
   padding: 12px 14px;
 }
 
+.token-img {
+  width: 52px;
+  height: 52px;
+  background: #1a1208;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid rgba(212,164,42,0.25);
+}
+.token-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .token-badge {
   display: inline-block;
   font-size: 10px;
@@ -224,6 +240,7 @@ body {
 .badge-atk  { background: #f0c8b8; color: #7a1f0a; }
 .badge-def  { background: #c8dca0; color: #1e4a08; }
 .badge-hq   { background: #d8d0f0; color: #3a2878; }
+.badge-terrain { background: #e0d8c8; color: #5a4020; }
 
 .token-name {
   font-family: 'Rye', serif;
@@ -241,6 +258,7 @@ body {
 }
 .token-side.farmer-col { color: #7a4800; }
 .token-side.emu-col    { color: #1e4a08; }
+.token-side.both-col   { color: #5a4020; }
 
 .token-desc { font-size: 12px; color: #555; line-height: 1.5; }
 
@@ -286,6 +304,17 @@ body {
   background: var(--paper);
 }
 .upgrade-cell:first-of-type { border-right: 0.5px solid var(--rule); }
+
+.upgrade-img {
+  width: 40px;
+  height: 40px;
+  background: #1a1208;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  border: 1px solid rgba(212,164,42,0.2);
+}
+.upgrade-img img { width: 100%; height: 100%; object-fit: contain; }
 
 .upgrade-name {
   font-family: 'Rye', serif;
@@ -444,66 +473,106 @@ body {
           <div class="side-card farmer">
             <div class="side-tag">Farmer side</div>
             <div class="side-name">Old Mick's Paddock</div>
-            <div class="side-desc">Red dirt, wheat rows, corrugated iron. Old Mick defends. Keith attacks. Nobody asks Keith questions.</div>
+            <div class="side-desc">Red dirt, wheat rows, corrugated iron. Old Mick defends. The Riflemen attack. Nobody asks Keith questions.</div>
           </div>
           <div class="side-card emu">
             <div class="side-tag">Emu side</div>
             <div class="side-name">The Scrublands</div>
-            <div class="side-desc">Dense bush, termite mounds, spinifex. The Mob raids. The Cassowary guards. The Nest is hidden and it's staying that way.</div>
+            <div class="side-desc">Dense bush, termite mounds, spinifex. The Emu Pack raids. The Cassowary guards. The Bird Council is hidden and it's staying that way.</div>
           </div>
         </div>
 
         <div class="sec-label">Attack tokens — 2 per side</div>
         <div class="token-grid">
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/atk-mick-rifleman.png" alt="The Riflemen">
+            </div>
             <span class="token-badge badge-atk">ATK × 2</span>
             <div class="token-name">The Riflemen</div>
             <div class="token-side farmer-col">Farmer side</div>
-            <div class="token-desc">Each turn, direct a Riflemen token. It fires in a straight line — horizontal, vertical, or diagonal — hits the first feeding ground it reaches, and returns. Two units, two shots per turn. A bullet doesn't curve. Position them to find the shot.</div>
+            <div class="token-desc">Each turn you direct a Riflemen token — they fire in a straight line, horizontal, vertical, or diagonal, hit the first feeding ground they reach across the fence, and pull back. Two units, two shots per turn. A bullet doesn't curve. Position them to find the shot.</div>
           </div>
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/atk-emu.png" alt="The Emu Pack">
+            </div>
             <span class="token-badge badge-atk">ATK × 2</span>
-            <div class="token-name">The Mob</div>
+            <div class="token-name">The Emu Pack</div>
             <div class="token-side emu-col">Emu side</div>
-            <div class="token-desc">Each turn, direct a Mob token. It charges in a straight line, hits the first wheat paddock it reaches across the fence, and returns. Two mob tokens, two raids per turn. Position them to open up the lines you need.</div>
+            <div class="token-desc">Each turn you direct a Mob token — it charges in a straight line, horizontal, vertical, or diagonal, hits the first wheat paddock it reaches across the fence, and returns. Two mob tokens, two raids per turn. Position them to open up the lines you need.</div>
           </div>
         </div>
 
         <div class="sec-label">Defence tokens — 1 per side</div>
         <div class="token-grid">
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/def-mick.png" alt="Old Mick">
+            </div>
             <span class="token-badge badge-def">DEF × 1</span>
             <div class="token-name">Old Mick</div>
             <div class="token-side farmer-col">Farmer side</div>
-            <div class="token-desc">Planted on his land, rifle in hand. Every wheat paddock in his 3×3 patrol zone gains +1 HP — takes 2 hits to destroy. After Tier 2 upgrade, zone expands to 5×5. One Mick per game. He is irreplaceable and he knows it.</div>
+            <div class="token-desc">The man himself. Planted on his land, rifle in hand. Every wheat paddock within his 3×3 patrol zone gains +1 HP — takes 2 hits to destroy instead of 1. After Level 2 upgrade he gets a machine gun and that zone expands to 5×5. One Old Mick per game. He is irreplaceable and he knows it.</div>
           </div>
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/atk-emu-cassowary.png" alt="Cassowary">
+            </div>
             <span class="token-badge badge-def">DEF × 1</span>
             <div class="token-name">Cassowary</div>
             <div class="token-side emu-col">Emu side</div>
-            <div class="token-desc">Doesn't raid. Just radiates menace. Every feeding ground in its 3×3 patrol zone gains +1 HP. After Tier 2 upgrade, zone expands to 5×5. One cassowary per game. It is irreplaceable and it knows it.</div>
+            <div class="token-desc">Doesn't raid. Doesn't roam. Just stands there and radiates menace. Every feeding ground within its 3×3 patrol zone gains +1 HP — takes 2 hits to destroy instead of 1. After Level 2 upgrade that zone expands to 5×5. One cassowary per game. It is irreplaceable and it knows it.</div>
           </div>
         </div>
 
         <div class="sec-label">Hidden HQs — 1 per side</div>
         <div class="token-grid">
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/hq-mick.png" alt="The Grain Stash">
+            </div>
             <span class="token-badge badge-hq">Hidden HQ</span>
-            <div class="token-name">The Homestead</div>
+            <div class="token-name">The Grain Stash</div>
             <div class="token-side farmer-col">Farmer side</div>
-            <div class="token-desc">Old Mick's home. Hidden at game start. If the Mob finds and destroys it — the farm is over. Old Mick has nowhere left to stand.</div>
+            <div class="token-desc">Old Mick's barn. Everything he has is in here — grain stores, supplies, the whole operation. The Emu Pack finds this and the farm dies. Mick has nothing left.</div>
           </div>
           <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/hq-emu.png" alt="The Bird Council">
+            </div>
             <span class="token-badge badge-hq">Hidden HQ</span>
-            <div class="token-name">The Nest</div>
+            <div class="token-name">The Bird Council</div>
             <div class="token-side emu-col">Emu side</div>
-            <div class="token-desc">Hidden in the scrublands at game start. If the Riflemen find and destroy it — the mob's breeding heart is gone. Every future emu, unborn.</div>
+            <div class="token-desc">The gathering place. Emu elders, ostrich magicians from lands nobody's mapped. This is where the dark foreign magic lives and where every upgrade comes from. The Riflemen destroy this and it's over — the tribe is broken, the ostriches go home.</div>
+          </div>
+        </div>
+
+        <div class="sec-label">Terrain — both sides</div>
+        <div class="token-grid">
+          <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/hard-mick-v2.png" alt="Rocks">
+            </div>
+            <span class="token-badge badge-terrain">Hard</span>
+            <div class="token-name">Rocks</div>
+            <div class="token-side both-col">Both sides</div>
+            <div class="token-desc">Impassable. Permanently blocks straight-line attacks through it.</div>
+          </div>
+          <div class="token-card">
+            <div class="token-img">
+              <img src="assets/images/soft-mick-v1.png" alt="Termite Mounds">
+            </div>
+            <span class="token-badge badge-terrain">Soft</span>
+            <div class="token-name">Termite Mounds</div>
+            <div class="token-side both-col">Both sides</div>
+            <div class="token-desc">Slows tokens passing through. Takes 2 hits to destroy.</div>
           </div>
         </div>
 
         <div class="sec-label">Movement rule</div>
         <div class="prose-block">
-          All tokens move in a <strong>straight line only</strong> — horizontal, vertical, or diagonal. <strong>Unlimited range</strong>, but the line must be clear. ATK tokens hit the first enemy cell they reach across the fence and return. DEF tokens reposition using the same movement — doing so spends their action for that turn. <strong>Hard terrain</strong> (fence barricades, termite mounds) permanently blocks lines. <strong>Soft terrain</strong> (scarecrows, spinifex) slows tokens and takes 2 hits to clear.
+          All tokens move in a <strong>straight line only</strong> — horizontal, vertical, or diagonal. <strong>Unlimited range</strong>, but the line must be clear. ATK tokens hit the first enemy cell they reach across the fence and return. DEF tokens reposition using the same movement — doing so spends their action for that turn. <strong>Rocks</strong> permanently block straight-line attacks. <strong>Termite Mounds</strong> block the line until destroyed — they take 2 hits to clear.
         </div>
 
       </div>
@@ -517,7 +586,7 @@ body {
           <strong>Emu side</strong> funds upgrades by raiding wheat paddocks — stolen grain pays the ostriches, and the ostriches bring the magic.
         </div>
 
-        <div class="sec-label">Upgrade tiers</div>
+        <div class="sec-label">Upgrade levels</div>
         <div class="col-headers">
           <div class="col-hdr blank"></div>
           <div class="col-hdr farmer-hdr">🌾 Farmer side</div>
@@ -531,14 +600,20 @@ body {
               <span class="tier-tag">ATK</span>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/atk-mick-rifleman.png" alt="Better Aim">
+              </div>
               <div class="upgrade-name">Better Aim</div>
               <div class="upgrade-token farmer-col">The Riflemen</div>
-              <div class="upgrade-desc">ATK token now hits the target feeding ground plus one neighbouring ground in the same move.</div>
+              <div class="upgrade-desc">Old Mick re-arms his boys with better rifles. ATK token now hits the target feeding ground plus one neighbouring feeding ground in the same move.</div>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/atk-emu.png" alt="First Lesson">
+              </div>
               <div class="upgrade-name">First Lesson</div>
-              <div class="upgrade-token emu-col">The Mob</div>
-              <div class="upgrade-desc">ATK token now hits the target wheat paddock plus one neighbouring paddock.</div>
+              <div class="upgrade-token emu-col">The Emu Pack</div>
+              <div class="upgrade-desc">The ostriches arrive and start drilling the pack. Stop running in random directions. ATK token now hits the target wheat paddock plus one neighbour.</div>
             </div>
           </div>
 
@@ -548,14 +623,20 @@ body {
               <span class="tier-tag">DEF</span>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/def-mick.png" alt="Machine Gun Nest">
+              </div>
               <div class="upgrade-name">Machine Gun Nest</div>
               <div class="upgrade-token farmer-col">Old Mick</div>
-              <div class="upgrade-desc">Old Mick's patrol zone expands from 3×3 to 5×5. A much bigger chunk of paddock under his protection.</div>
+              <div class="upgrade-desc">Canberra finally sends the hardware. Old Mick's patrol zone expands from 3×3 to 5×5.</div>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/atk-emu-cassowary.png" alt="Dark Awakening">
+              </div>
               <div class="upgrade-name">Dark Awakening</div>
               <div class="upgrade-token emu-col">Cassowary</div>
-              <div class="upgrade-desc">The cassowary gets bigger. Angrier. Patrol zone expands from 3×3 to 5×5.</div>
+              <div class="upgrade-desc">The ostrich magic stirs something in the cassowary. It gets bigger. Angrier. Patrol zone expands from 3×3 to 5×5.</div>
             </div>
           </div>
 
@@ -565,14 +646,20 @@ body {
               <span class="tier-tag">ATK</span>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/atk-mick-rifleman.png" alt="Call Canberra">
+              </div>
               <div class="upgrade-name">Call Canberra</div>
               <div class="upgrade-token farmer-col">The Riflemen</div>
-              <div class="upgrade-desc">ATK token now hits the target plus up to two neighbouring feeding grounds. Bureaucratic overkill.</div>
+              <div class="upgrade-desc">Old Mick writes a strongly worded letter. Federal government intervenes. ATK token now hits target plus up to two neighbouring feeding grounds. Bureaucratic overkill.</div>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/atk-emu.png" alt="The Stampede">
+              </div>
               <div class="upgrade-name">The Stampede</div>
-              <div class="upgrade-token emu-col">The Mob</div>
-              <div class="upgrade-desc">This is no longer a raid — it's a stampede. ATK token hits target plus up to two neighbouring paddocks.</div>
+              <div class="upgrade-token emu-col">The Emu Pack</div>
+              <div class="upgrade-desc">Full ostrich training complete. This is no longer a raid — it's a stampede. ATK token hits target plus up to two neighbouring wheat paddocks.</div>
             </div>
           </div>
 
@@ -582,14 +669,20 @@ body {
               <span class="tier-tag">NUKE</span>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/nuke-mick-keith.png" alt="Unleash Keith">
+              </div>
               <div class="upgrade-name">Unleash Keith</div>
               <div class="upgrade-token farmer-col">One use only</div>
-              <div class="upgrade-desc">Old Mick opens the shed. Keith gets the ute and a cannon. Nobody asks questions. 3×3 destruction anywhere on emu territory. Keith does not come back.</div>
+              <div class="upgrade-desc">The Riflemen are useless. Old Mick opens the shed. Keith gets the keys to the ute and a cannon. Nobody asks Keith questions. 3×3 destruction. Keith does not come back.</div>
             </div>
             <div class="upgrade-cell">
+              <div class="upgrade-img">
+                <img src="assets/images/nuke-emu-ancestors.png" alt="The Ancestors">
+              </div>
               <div class="upgrade-name">The Ancestors</div>
               <div class="upgrade-token emu-col">One use only</div>
-              <div class="upgrade-desc">Something erupts from the scrublands that has no business being in 1932. 3×3 annihilation anywhere on farmer territory. No explanation given.</div>
+              <div class="upgrade-desc">The ostriches perform the ritual. The grain was never just food — it was an offering. Something erupts from the scrub that has no business being in 1932. 3×3 annihilation. No explanation given.</div>
             </div>
           </div>
 
@@ -604,13 +697,13 @@ body {
         <div class="win-grid">
           <div class="win-card farmer">
             <div class="win-type instant-col">Instant win — Farmer</div>
-            <div class="win-name">Destroy the Nest</div>
-            <div class="win-desc">The Riflemen find and destroy the hidden Nest in the scrublands. The mob's breeding heart is gone. Game ends immediately. Every future emu, unborn.</div>
+            <div class="win-name">Destroy the Bird Council</div>
+            <div class="win-desc">The Bird Council is gone. The ostriches went home. The emus have no idea what they're doing anymore.</div>
           </div>
           <div class="win-card emu">
             <div class="win-type instant-col">Instant win — Emu</div>
-            <div class="win-name">Destroy the Homestead</div>
-            <div class="win-desc">The Mob finds and overruns Old Mick's hidden Homestead. His grain stores, his shelter — gone. Game ends immediately. Old Mick has nowhere left to stand.</div>
+            <div class="win-name">Destroy the Grain Stash</div>
+            <div class="win-desc">The Grain Stash is gone. No wheat, no operation. Old Mick has nothing left to protect.</div>
           </div>
         </div>
 
@@ -619,12 +712,12 @@ body {
           <div class="win-card farmer">
             <div class="win-type attrition-col">Attrition win — Farmer</div>
             <div class="win-name">Wipe the Feeding Grounds</div>
-            <div class="win-desc">Destroy enough emu feeding grounds that the mob can no longer sustain its numbers. No territory, no population. The scrublands go quiet.</div>
+            <div class="win-desc">The scrublands go quiet. The outback belongs to Old Mick.</div>
           </div>
           <div class="win-card emu">
             <div class="win-type attrition-col">Attrition win — Emu</div>
             <div class="win-name">Raze the Paddocks</div>
-            <div class="win-desc">Raid enough wheat paddocks that Old Mick can no longer fund his riflemen or upgrades. No grain, no operation. The farm collapses from the inside.</div>
+            <div class="win-desc">No grain, no operation. The pack eats well tonight.</div>
           </div>
         </div>
 
@@ -657,6 +750,13 @@ function closeHelp() {
   overlay.style.transition = 'opacity 0.15s';
   overlay.style.opacity = '0';
   setTimeout(() => overlay.style.display = 'none', 150);
+}
+
+function openHelp() {
+  const overlay = document.getElementById('helpOverlay');
+  overlay.style.display = 'flex';
+  overlay.style.opacity = '1';
+  overlay.style.transition = '';
 }
 
 document.getElementById('helpOverlay').addEventListener('click', function(e) {

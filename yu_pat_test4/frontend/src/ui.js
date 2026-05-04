@@ -6,8 +6,9 @@
  * any of these elements.
  */
 
-const TIER_NAMES_P1 = ["—", "Better Aim", "Machine Gun Nest", "Call Canberra", "Unleash Keith"];
-const TIER_NAMES_P2 = ["—", "First Lesson", "Dark Awakening", "The Stampede", "The Ancestors"];
+// Level names per side — index = level number (0–4)
+const LEVEL_NAMES_P1 = ["Base Level", "Better Aim", "Machine Gun Nest", "Call Canberra", "Unleash Keith"];
+const LEVEL_NAMES_P2 = ["Base Level", "First Lesson", "Dark Awakening", "The Stampede", "The Ancestors"];
 const ARROW_CHAR = { E:"→", SE:"↘", S:"↓", SW:"↙", W:"←", NW:"↖", N:"↑", NE:"↗" };
 
 function colLabel(col) { return String.fromCharCode(65 + col); }
@@ -78,9 +79,9 @@ function onState(s) {
   _setScore("p1", G.score_p1_attrition ?? 0, threshold);
   _setScore("p2", G.score_p2_attrition ?? 0, threshold);
 
-  // Tier
-  _setTier("p1", tier1, TIER_NAMES_P1);
-  _setTier("p2", tier2, TIER_NAMES_P2);
+  // Level
+  _setTier("p1", tier1, LEVEL_NAMES_P1);
+  _setTier("p2", tier2, LEVEL_NAMES_P2);
 
   // Tokens
   _setToken("p1", "atk_a", p1.atk_a, tier1);
@@ -188,8 +189,8 @@ function _setNotif(s, G, battle) {
       if (tok?.col != null && tok.direction && !tok.stale) {
         const arrow = ARROW_CHAR[tok.direction] ?? "?";
         const name  = role === "atk_a"
-          ? (activeSide === "p1" ? "Rifleman A" : "Mob A")
-          : (activeSide === "p1" ? "Rifleman B" : "Mob B");
+          ? (activeSide === "p1" ? "Rifleman A" : "Emu Pack A")
+          : (activeSide === "p1" ? "Rifleman B" : "Emu Pack B");
         parts.push(`${name} ${arrow} ${posLabel(tok)}`);
       }
     }
@@ -228,8 +229,8 @@ function checkTransitions(s) {
   const tier1 = G.tier_p1 ?? 0;
   const tier2 = G.tier_p2 ?? 0;
 
-  if (tier1 > _prevTiers.p1) addLog(`▲ The Riflemen: ${TIER_NAMES_P1[tier1] ?? `Tier ${tier1}`}`, "highlight");
-  if (tier2 > _prevTiers.p2) addLog(`▲ The Mob: ${TIER_NAMES_P2[tier2] ?? `Tier ${tier2}`}`, "success");
+  if (tier1 > _prevTiers.p1) addLog(`▲ The Riflemen: ${LEVEL_NAMES_P1[tier1] ?? `Level ${tier1}`}`, "highlight");
+  if (tier2 > _prevTiers.p2) addLog(`▲ The Emu Pack: ${LEVEL_NAMES_P2[tier2] ?? `Level ${tier2}`}`, "success");
   _prevTiers.p1 = tier1;
   _prevTiers.p2 = tier2;
 
@@ -238,7 +239,7 @@ function checkTransitions(s) {
     if (_prevHqRevealed[side] !== posKey) {
       _prevHqRevealed[side] = posKey;
       const label = `${colLabel(pos[0])}${pos[1] + 1}`;
-      const name  = side === "p1" ? "The Homestead" : "The Nest";
+      const name  = side === "p1" ? "The Grain Stash" : "The Bird Council";
       addLog(`🎯 ${name} revealed at ${label}!`, "danger");
     }
   }

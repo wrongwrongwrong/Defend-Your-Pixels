@@ -179,10 +179,10 @@ export class GameScene extends Phaser.Scene {
     const make = (tex) => this.add.image(0, 0, tex)
       .setDisplaySize(sz, sz).setDepth(10).setVisible(false);
     this.hqSprites = {
-      p1:      make("hq_mick"),
-      p1_dead: make("hq_mick_dead"),
-      p2:      make("hq_emu"),
-      p2_dead: make("hq_emu_dead"),
+      p1:      make("hq_grain_stash"),
+      p1_dead: make("hq_grain_stash_dead"),
+      p2:      make("hq_bird_council"),
+      p2_dead: make("hq_bird_council_dead"),
     };
   }
 
@@ -212,8 +212,8 @@ export class GameScene extends Phaser.Scene {
       fontFamily: FONT_MONO, fontSize: "10px", color: "#6a5030",
     }).setOrigin(0.5);
 
-    this._winHqLeft  = this.add.image(-220, 0, "hq_mick").setDisplaySize(80, 80).setDepth(41);
-    this._winHqRight = this.add.image( 220, 0, "hq_emu" ).setDisplaySize(80, 80).setDepth(41);
+    this._winHqLeft  = this.add.image(-220, 0, "hq_grain_stash").setDisplaySize(80, 80).setDepth(41);
+    this._winHqRight = this.add.image( 220, 0, "hq_bird_council" ).setDisplaySize(80, 80).setDepth(41);
 
     this.winContainer.add([bg, this._winTitleTxt, this._winSubTxt, this._winHintTxt,
                            this._winHqLeft, this._winHqRight]);
@@ -589,11 +589,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     const msgs = {
-      homestead_destroyed: ["THE MOB WINS",  "The Homestead falls. Old Mick has nowhere left to stand."],
-      nest_destroyed:      ["OLD MICK WINS", "The Nest is gone. Every future emu, unborn."],
+      homestead_destroyed: ["THE MOB WINS",  "The Grain Stash is gone. No wheat, no operation. Old Mick has nothing left to protect."],
+      nest_destroyed:      ["OLD MICK WINS", "The Bird Council is gone. The ostriches went home. The emus have no idea what they're doing anymore."],
       attrition: G.winner === "p1"
         ? ["OLD MICK WINS", "The scrublands go quiet. The outback belongs to Old Mick."]
-        : ["THE MOB WINS",  "No grain, no operation. The mob eats well tonight."],
+        : ["THE MOB WINS",  "No grain, no operation. The pack eats well tonight."],
     };
     const [title, sub] = msgs[G.win_reason] ?? [`${G.winner?.toUpperCase()} WINS`, ""];
     this._winTitleTxt.setText(title);
@@ -601,8 +601,8 @@ export class GameScene extends Phaser.Scene {
 
     const loser      = G.win_reason === "homestead_destroyed" ? "p1" : "p2";
     const winnerSide = loser === "p1" ? "p2" : "p1";
-    this._winHqLeft.setTexture(winnerSide === "p1" ? "hq_mick" : "hq_mick_dead");
-    this._winHqRight.setTexture(loser === "p2"     ? "hq_emu_dead"  : "hq_emu");
+    this._winHqLeft.setTexture(winnerSide === "p1" ? "hq_grain_stash" : "hq_grain_stash_dead");
+    this._winHqRight.setTexture(loser === "p2"     ? "hq_bird_council_dead"  : "hq_bird_council");
 
     this._winDimRect.setFillStyle(0x000000, 0.55).setVisible(true);
 

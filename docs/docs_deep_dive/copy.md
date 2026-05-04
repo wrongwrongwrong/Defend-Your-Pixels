@@ -1,91 +1,120 @@
-# UI Copy — verbatim from GDD
+# Locked Copy — Old Mick Against the Mob
 
-## Token descriptions
+## Game Title
+Old Mick Against the Mob
 
-**The Riflemen** (ATK × 2 — Farmer side)
-Each turn you direct a Riflemen token — they fire in a straight line,
-horizontal, vertical, or diagonal, hit the first feeding ground they reach
-across the fence, and pull back. Two units, two shots per turn. A bullet
-doesn't curve. Position them to find the shot.
+## Panel Titles & Subtitles
+Left panel title:    Old Mick
+Left panel subtitle: The Farmlands — His wheat. His rules. His problem now.
 
-**Old Mick** (DEF × 1 — Farmer side)
-The man himself. Planted on his land, rifle in hand. Every wheat paddock
-within his 3×3 patrol zone gains +1 HP — takes 2 hits to destroy instead
-of 1. After Tier 2 upgrade he gets a machine gun and that zone expands to
-5×5. One Old Mick per game. He is irreplaceable and he knows it.
+Right panel title:    The Mob
+Right panel subtitle: The Scrublands — Nobody mapped this side of the fence.
+                      The emus prefer it that way.
 
-**The Mob** (ATK × 2 — Emu side)
-Each turn you direct a Mob token — it charges in a straight line,
-horizontal, vertical, or diagonal, hits the first wheat paddock it reaches
-across the fence, and returns. Two mob tokens, two raids per turn.
-Position them to open up the lines you need.
+## Tokens
+Farmer ATK × 2:   The Riflemen
+Farmer DEF × 1:   Old Mick
+Farmer HQ:        The Grain Stash
 
-**Cassowary** (DEF × 1 — Emu side)
-Doesn't raid. Doesn't roam. Just stands there and radiates menace. Every
-feeding ground within its 3×3 patrol zone gains +1 HP — takes 2 hits to
-destroy instead of 1. After Tier 2 upgrade that zone expands to 5×5. One
-cassowary per game. It is irreplaceable and it knows it.
+Emu ATK × 2:      The Emu Pack
+Emu DEF × 1:      Cassowary
+Emu HQ:           The Bird Council
 
-**The Homestead** (Hidden HQ — Farmer side)
-Old Mick's home. Hidden at the start. The Mob finds it, the farm is over.
-The old man has nowhere left to stand.
+## Territory Cells
+Farmer cells:     Wheat Paddocks
+Emu cells:        Feeding Grounds
 
-**The Nest** (Hidden HQ — Emu side)
-Hidden in the scrublands at the start. If the Riflemen find it and destroy
-it, the game ends. Every egg in the next generation, gone.
+## Terrain (both sides)
+Hard:             Rocks
+Soft:             Termite Mounds
 
-**Rocks** (Hard terrain — both sides)
-Impassable. Permanently blocks straight-line attacks through it.
+## The Ostriches (background faction, referenced in upgrade flavour)
+"Foreign birds. Nobody invited them. They showed up, set something
+up in the scrub, and the emus started winning."
 
-**Termite Mounds** (Soft terrain — both sides)
-Slows tokens passing through. Takes 2 hits to destroy.
+## Secret HQ Descriptions
 
-## Upgrade names & descriptions
+The Grain Stash (Farmer HQ)
+"Old Mick's barn. Everything he has is in here — grain stores,
+supplies, the whole operation. The Emu Pack finds this and the
+farm dies. Mick has nothing left."
 
-**Tier 1 — Better Aim** (The Riflemen)
-Old Mick re-arms his boys with better rifles. ATK token now hits the target
-paddock plus one neighbouring paddock in the same move.
+The Bird Council (Emu HQ)
+"The gathering place. Emu elders, ostrich magicians from lands
+nobody's mapped. This is where the dark foreign magic lives and
+where every upgrade comes from. The Riflemen destroy this and
+it's over — the tribe is broken, the ostriches go home."
 
-**Tier 1 — First Lesson** (The Mob)
-The ostriches arrive and start drilling the mob. Stop running in random
-directions. ATK token now hits the target feeding ground plus one neighbour.
+## HQ Placement Prompts (shown to player when selecting HQ location)
+Farmer: "Choose your Grain Stash. Hide it well —
+         lose this and the farm is finished."
 
-**Tier 2 — Machine Gun Nest** (Old Mick)
-Canberra finally sends the hardware. Old Mick's patrol zone expands from
-3×3 to 5×5. A much bigger chunk of the paddock is now his to defend.
+Emu:    "Choose the Bird Council's ground. Your elders
+         and ostrich magicians gather here. Protect them
+         or lose everything."
 
-**Tier 2 — Dark Awakening** (Cassowary)
-The ostrich magic stirs something in the cassowary. It gets bigger. Angrier.
-Claims more ground as its own. Patrol zone expands from 3×3 to 5×5.
+## Upgrade Levels
 
-**Tier 3 — Call Canberra** (The Riflemen)
-Old Mick writes a strongly worded letter. Federal government intervenes. ATK
-token now hits target plus up to two neighbouring feeding grounds.
-Bureaucratic overkill.
+Base Level — no upgrades applied
 
-**Tier 3 — The Stampede** (The Mob)
-Full ostrich training complete. This is no longer a raid — it's a stampede.
-ATK token hits target plus up to two neighbouring paddocks. A cluster of
-wheat gone in one move.
+Level 1 (ATK)
+  Farmer — Better Aim / The Riflemen
+  "Old Mick re-arms his boys with better rifles. Hits target
+  feeding ground plus one neighbour."
 
-**Tier 4 — Unleash Keith** (Old Mick's last resort)
-The riflemen are useless. Old Mick opens the shed. Keith gets the keys to
-the ute and a cannon. Nobody asks Keith questions. 3×3 destruction.
-Keith does not come back.
+  Emu — First Lesson / The Emu Pack
+  "The ostriches arrive and start drilling the pack. Stop
+  running in random directions. Hits target wheat paddock
+  plus one neighbour."
 
-**Tier 4 — The Ancestors** (The ostriches' final gift)
-The ostriches perform the ritual. The grain was never just food — it was an
-offering. Something erupts from the scrublands that has no business being in
-1932. 3×3 annihilation. No explanation given.
+Level 2 (DEF)
+  Farmer — Machine Gun Nest / Old Mick
+  "Canberra finally sends the hardware. Old Mick's patrol
+  zone expands from 3×3 to 5×5."
 
-## Win condition notifications
+  Emu — Dark Awakening / Cassowary
+  "The ostrich magic stirs something in the cassowary.
+  It gets bigger. Angrier. Patrol zone expands from 3×3 to 5×5."
 
-Farmer instant win:   "The Nest is gone. Every future emu, unborn."
-Emu instant win:      "The Homestead falls. Old Mick has nowhere left to stand."
-Farmer attrition win: "The scrublands go quiet. The outback belongs to Old Mick."
-Emu attrition win:    "No grain, no operation. The mob eats well tonight."
+Level 3 (ATK)
+  Farmer — Call Canberra / The Riflemen
+  "Old Mick writes a strongly worded letter. Federal government
+  intervenes. Hits target plus up to two neighbouring feeding
+  grounds. Bureaucratic overkill."
 
-## Nuke flavour
+  Emu — The Stampede / The Emu Pack
+  "Full ostrich training complete. This is no longer a raid —
+  it's a stampede. Hits target plus up to two neighbouring
+  wheat paddocks."
 
-Keith: "Nobody asks Keith questions."
+Level 4 (NUKE)
+  Farmer — Unleash Keith / Old Mick's last resort
+  "The Riflemen are useless. Old Mick opens the shed. Keith
+  gets the keys to the ute and a cannon. Nobody asks Keith
+  questions. 3×3 destruction. Keith does not come back."
+
+  Emu — The Ancestors / The Bird Council's final gift
+  "The ostriches perform the ritual. The grain was never just
+  food — it was an offering. Something erupts from the scrub
+  that has no business being in 1932. 3×3 annihilation.
+  No explanation given."
+
+## Win Condition Notifications
+
+Farmer instant win:   "The Bird Council is gone. The ostriches
+                       went home. The emus have no idea what
+                       they're doing anymore."
+
+Emu instant win:      "The Grain Stash is gone. No wheat, no
+                       operation. Old Mick has nothing left
+                       to protect."
+
+Farmer attrition win: "The scrublands go quiet. The outback
+                       belongs to Old Mick."
+
+Emu attrition win:    "No grain, no operation. The pack eats
+                       well tonight."
+
+## Nuke Flavour Lines
+Keith:         "Nobody asks Keith questions."
 The Ancestors: "No explanation given."

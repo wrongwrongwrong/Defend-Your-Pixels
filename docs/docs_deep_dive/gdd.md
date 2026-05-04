@@ -13,9 +13,9 @@ Emu territory cells: Feeding Grounds
 ## Tokens
 | Role | Farmer Side | Emu Side |
 |------|-------------|----------|
-| ATK × 2 | The Riflemen | The Mob |
+| ATK × 2 | The Riflemen | The Emu Pack |
 | DEF × 1 | Old Mick | Cassowary |
-| Hidden HQ × 1 | The Homestead | The Nest |
+| Hidden HQ × 1 | The Grain Stash | The Bird Council |
 
 ## Terrain (both sides)
 | Type | Name | Effect |
@@ -34,28 +34,28 @@ Emu territory cells: Feeding Grounds
 ## Cell HP
 - Default: 1 hit to destroy
 - Inside DEF patrol zone: +1 HP, takes 2 hits to destroy
-- DEF patrol zone: 3×3 default, expands to 5×5 after Tier 2 upgrade
+- DEF patrol zone: 3×3 default, expands to 5×5 after Level 2 upgrade
 
 ## Upgrades
 Farmer funds upgrades by destroying Feeding Grounds.
 Emu funds upgrades by raiding Wheat Paddocks.
 
-| Tier | Type | Farmer | Emu |
-|------|------|--------|-----|
-| 1 | ATK | Better Aim — The Riflemen | First Lesson — The Mob |
+| Level | Type | Farmer | Emu |
+|-------|------|--------|-----|
+| 1 | ATK | Better Aim — The Riflemen | First Lesson — The Emu Pack |
 | 2 | DEF | Machine Gun Nest — Old Mick | Dark Awakening — Cassowary |
-| 3 | ATK | Call Canberra — The Riflemen | The Stampede — The Mob |
+| 3 | ATK | Call Canberra — The Riflemen | The Stampede — The Emu Pack |
 | 4 | NUKE | Unleash Keith | The Ancestors |
 
-Tier 1 & 3: ATK token hits target + 1 neighbour / target + 2 neighbours
-Tier 2: DEF patrol zone expands 3×3 → 5×5
-Tier 4: 3×3 area destruction anywhere on enemy territory. One use only.
+Level 1 & 3: ATK token hits target + 1 neighbour / target + 2 neighbours
+Level 2: DEF patrol zone expands 3×3 → 5×5
+Level 4: 3×3 area destruction anywhere on enemy territory. One use only.
 
 ## Win Conditions
 ### Instant wins
-- Farmer: Destroy the Nest → game ends immediately
-- Emu: Destroy the Homestead → game ends immediately
+- Farmer: Destroy the Bird Council → game ends immediately
+- Emu: Destroy the Grain Stash → game ends immediately
 
 ### Attrition wins
-- Farmer: Destroy enough Feeding Grounds — mob can't sustain
+- Farmer: Destroy enough Feeding Grounds — pack can't sustain
 - Emu: Raze enough Wheat Paddocks — farm can't fund riflemen or upgrades

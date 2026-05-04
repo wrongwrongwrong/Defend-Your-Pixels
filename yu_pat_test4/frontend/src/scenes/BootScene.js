@@ -23,10 +23,10 @@ export class BootScene extends Phaser.Scene {
     this.load.image("tok_emu_def",    "assets/images/atk-emu-cassowary.png");
     this.load.image("tok_emu_nuke",   "assets/images/nuke-emu-ancestors.png");
 
-    this.load.image("hq_mick",        "assets/images/hq-mick.png");
-    this.load.image("hq_mick_dead",   "assets/images/hq-mick-destroyed.png");
-    this.load.image("hq_emu",         "assets/images/hq-emu.png");
-    this.load.image("hq_emu_dead",    "assets/images/hq-emu-destroyed.png");
+    this.load.image("hq_grain_stash",      "assets/images/hq-mick.png");
+    this.load.image("hq_grain_stash_dead", "assets/images/hq-mick-destroyed.png");
+    this.load.image("hq_bird_council",     "assets/images/hq-emu.png");
+    this.load.image("hq_bird_council_dead","assets/images/hq-emu-destroyed.png");
 
     this.load.image("cell_mick",      "assets/images/cell-mick-wheat fields.png");
     this.load.image("cell_emu",       "assets/images/cell-emu-feeding grounds.png");
@@ -63,7 +63,7 @@ export class BootScene extends Phaser.Scene {
     const WHITE_BG_KEYS = [
       "tok_mick_atk_a", "tok_mick_atk_b", "tok_mick_def", "tok_mick_nuke",
       "tok_emu_atk_a",  "tok_emu_atk_b",  "tok_emu_def",  "tok_emu_nuke",
-      "hq_mick", "hq_mick_dead", "hq_emu", "hq_emu_dead",
+      "hq_grain_stash", "hq_grain_stash_dead", "hq_bird_council", "hq_bird_council_dead",
       "cell_mick", "cell_emu", "hard_mick", "hard_emu", "soft_mick", "soft_emu",
     ];
     for (const key of WHITE_BG_KEYS) this._removeWhiteBg(key);
