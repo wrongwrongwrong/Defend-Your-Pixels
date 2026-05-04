@@ -31,7 +31,6 @@ function Get-PythonCandidatePaths {
 
     foreach ($root in $candidateRoots) {
         Add-CandidatePath (Join-Path $root ".venv\Scripts\python.exe")
-        Add-CandidatePath (Join-Path $root "dyp\Scripts\python.exe")
     }
 
     return $paths

@@ -8,7 +8,7 @@ core loop before expanding into upgrades, hidden information, and Phaser-specifi
 
 - 2-player turn-based board game.
 - Farmers versus Emus.
-- No hidden HQ yet.
+- Hidden HQ setup is part of the live rules.
 - No economy system yet.
 - No upgrade system yet.
 - No map art or 2D/3D presentation decisions in this file.
@@ -52,16 +52,19 @@ This keeps the current engine stable while the team replaces the old rules in la
 ## Primary win condition
 
 - Destroy the enemy HQ to win immediately.
-- The match ends as soon as one HQ reaches 0 HP.
-- The current backend implementation now uses HQ destruction as the only active win
-  condition for this MVP.
+- Destroy all 24 enemy resource cells to win by attrition.
+- The match ends as soon as either win condition is met.
+
+Current live rules implementation:
+
+- HQ destruction is still an immediate win.
+- Attrition win now means full destruction of the enemy's resource grid, not a score threshold.
 
 ## Deferred systems
 
 These are intentionally out of MVP scope:
 
 - hidden HQ / hidden information
-- attrition win based on resource collapse
 - economy / resource generation
 - upgrades
 - special attacks / nukes
@@ -123,10 +126,25 @@ Theme mapping:
 
 Rules:
 
+- Each side has exactly 24 destructible resource cells.
 - Default HP = 1
 - If protected by DEF, HP = 2
 - They can be destroyed by ATK line attacks
-- They do not need to generate resources yet
+- 22 cells are worth 1 point.
+- 2 hidden cells are worth 2 points.
+- All resource cells share the same visible presentation.
+
+Reserved cells:
+
+- `A1`, `A2`, `B1`, `K12`, `L11`, and `L12` stay empty.
+- Those cells cannot hold HQs, terrain, or destructible resource cells.
+
+Tier progression:
+
+- Tier 1 after destroying 4 enemy resource cells.
+- Tier 2 after destroying 8 enemy resource cells.
+- Tier 3 after destroying 12 enemy resource cells.
+- Tier 4 after destroying 16 enemy resource cells.
 
 ## MVP interaction assumptions
 

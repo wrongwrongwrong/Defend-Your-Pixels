@@ -14,7 +14,7 @@ The system uses a camera to detect board markers and tokens, converts those dete
 3. Tracker maps marker positions to board/grid coordinates.
 4. Runtime game model updates authoritative state.
 5. Bridge sends live state over WebSocket.
-6. `yu_test2/frontend/index.html` receives messages and renders the game.
+6. `yu_test3/frontend/index.html` receives messages and renders the game.
 
 ## Current top-level folders
 
@@ -58,12 +58,7 @@ Includes:
 
 Use this when you need to change live gameplay rules or the shared terrain generator.
 
-### `yu_test1`
-Purpose: retired legacy frontend area.
-
-Use this only as historical context while the folder is being phased out.
-
-### `yu_test2`
+### `yu_test3`
 Purpose: the primary live browser frontend.
 
 Includes:
@@ -86,12 +81,10 @@ Purpose: project documentation and integration notes.
 
 Includes protocol documents and architecture references.
 
-### `archive` / `game-logic` / `dyp` (context)
+### `archive` (context)
 - `archive`: older or reference material
-- `game-logic`: legacy/experimental logic area
-- `dyp`: local environment package directory
 
-These are not primary runtime entrypoints for the current architecture.
+This is not a primary runtime entrypoint for the current architecture.
 
 ## Recommended "where to start" order
 
@@ -101,7 +94,7 @@ These are not primary runtime entrypoints for the current architecture.
 4. Read `python_tracker` basics
 5. Read `bridge` flow
 6. Read `model_backend` state/actions
-7. Read `yu_test2/frontend/src/`
+7. Read `yu_test3/frontend/src/`
 
 ## Quick glossary
 

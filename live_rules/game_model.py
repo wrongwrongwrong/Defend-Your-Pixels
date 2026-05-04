@@ -10,8 +10,7 @@ import random
 from dataclasses import dataclass, field
 
 GRID_COLS, GRID_ROWS = 12, 12
-ATTRITION_THRESHOLD = 40
-TIER_THRESHOLDS = (6, 14, 22, 32)
+TIER_THRESHOLDS = (4, 8, 12, 16)
 DEF_ZONE_RADIUS_T1 = 1
 DEF_ZONE_RADIUS_T2 = 2
 
@@ -114,9 +113,21 @@ class GameModel:
     def _destroyed_resource_score(self, side: str) -> int:
         return sum(self._resource_value(side, cell) for cell in self.destroyed if self._is_resource_cell(cell, side))
 
+    def _resource_cell_total(self, side: str) -> int:
+        return len(self.terrain.get(f"{side}_resources", []))
+
+    def _destroyed_resource_cells(self, side: str) -> int:
+        return self._enemy_destroyed_resource_count(side)
+
+    def _remaining_resource_cells(self, side: str) -> int:
+        return max(0, self._resource_cell_total(side) - self._destroyed_resource_cells(side))
+
+    def _attrition_threshold(self, side: str) -> int:
+        return self._resource_cell_total(side)
+
     def _progress_points(self, player: str) -> int:
         enemy_side = "p2" if player == "p1" else "p1"
-        return self._destroyed_resource_score(enemy_side)
+        return self._destroyed_resource_cells(enemy_side)
 
     def _tier_from_progress(self, progress: int) -> int:
         tier = 0
@@ -184,7 +195,7 @@ class GameModel:
                 events.append({"type": "hq_destroyed", "side": enemy_side})
             else:
                 self._sync_tiers_from_progress()
-                if self._destroyed_resource_score(enemy_side) >= ATTRITION_THRESHOLD:
+                if self._destroyed_resource_cells(enemy_side) >= self._attrition_threshold(enemy_side):
                     self.winner = attacker
                     self.win_reason = "attrition"
                     events.append({"type": "attrition_win", "side": enemy_side})
@@ -267,7 +278,7 @@ class GameModel:
                 })
 
         self._sync_tiers_from_progress()
-        if self._destroyed_resource_score(enemy_side) >= ATTRITION_THRESHOLD:
+        if self._destroyed_resource_cells(enemy_side) >= self._attrition_threshold(enemy_side):
             self.winner = attacker
             self.win_reason = "attrition"
             events.append({"type": "attrition_win", "side": enemy_side})
@@ -367,9 +378,14 @@ class GameModel:
             "score_p2_destroyed": self._enemy_destroyed_count("p2"),
             "score_p1_attrition": self._destroyed_resource_score("p1"),
             "score_p2_attrition": self._destroyed_resource_score("p2"),
+            "score_p1_destroyed_cells": self._destroyed_resource_cells("p1"),
+            "score_p2_destroyed_cells": self._destroyed_resource_cells("p2"),
+            "score_p1_remaining_cells": self._remaining_resource_cells("p1"),
+            "score_p2_remaining_cells": self._remaining_resource_cells("p2"),
             "progress_p1": progress_p1,
             "progress_p2": progress_p2,
-            "attrition_threshold": ATTRITION_THRESHOLD,
+            "attrition_threshold": self._attrition_threshold("p1"),
+            "resource_cell_total": self._resource_cell_total("p1"),
             "tier_thresholds": list(TIER_THRESHOLDS),
             "tier_p1": self.tier_p1,
             "tier_p2": self.tier_p2,

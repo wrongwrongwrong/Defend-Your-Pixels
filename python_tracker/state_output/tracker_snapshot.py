@@ -14,7 +14,7 @@ The snapshot includes:
 import cv2
 import numpy as np
 
-from python_tracker.tracked_markers import CONFIRM_MARKER_IDS, HQ_MARKER_IDS, TOKEN_IDS, TURN_MARKER_IDS, marker_label
+from python_tracker.tracked_markers import CONFIRM_MARKER_IDS, HELP_MARKER_IDS, HQ_MARKER_IDS, TOKEN_IDS, TURN_MARKER_IDS, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
@@ -27,7 +27,7 @@ from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
 
-ALL_TRACKED_IDS = TOKEN_IDS | TURN_MARKER_IDS | HQ_MARKER_IDS | CONFIRM_MARKER_IDS
+ALL_TRACKED_IDS = TOKEN_IDS | TURN_MARKER_IDS | HQ_MARKER_IDS | CONFIRM_MARKER_IDS | HELP_MARKER_IDS
 
 
 def build_tracker_snapshot(corners, ids):
@@ -44,6 +44,7 @@ def build_tracker_snapshot(corners, ids):
             "hq_markers": [],
             "turn_markers": [],
             "confirm_markers": [],
+            "help_markers": [],
             "board_corners": board_corners_out,
         }
 
@@ -68,6 +69,7 @@ def build_tracker_snapshot(corners, ids):
     turn_markers_out = []
     hq_markers_out = []
     confirm_markers_out = []
+    help_markers_out = []
 
     for i, mid in enumerate(ids.flatten()):
         if mid in TURN_MARKER_IDS:
@@ -84,6 +86,16 @@ def build_tracker_snapshot(corners, ids):
             center = corners[i][0].mean(axis=0)
             rotation_deg = compute_rotation_deg(corners[i][0])
             confirm_markers_out.append({
+                "id": int(mid),
+                "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
+                "rotation": round(rotation_deg, 1),
+            })
+            continue
+
+        if mid in HELP_MARKER_IDS:
+            center = corners[i][0].mean(axis=0)
+            rotation_deg = compute_rotation_deg(corners[i][0])
+            help_markers_out.append({
                 "id": int(mid),
                 "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
                 "rotation": round(rotation_deg, 1),
@@ -135,6 +147,7 @@ def build_tracker_snapshot(corners, ids):
         "hq_markers": hq_markers_out,
         "turn_markers": turn_markers_out,
         "confirm_markers": confirm_markers_out,
+        "help_markers": help_markers_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -250,7 +263,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
 
 
 def annotate_tracker_preview(frame, snapshot: dict) -> object:
-    if not snapshot.get("markers") and not snapshot.get("hq_markers") and not snapshot.get("turn_markers") and not snapshot.get("confirm_markers") and not snapshot.get("board_corners"):
+    if not snapshot.get("markers") and not snapshot.get("hq_markers") and not snapshot.get("turn_markers") and not snapshot.get("confirm_markers") and not snapshot.get("help_markers") and not snapshot.get("board_corners"):
         cv2.putText(frame, "No markers detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
         return frame
 
@@ -336,6 +349,23 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (255, 180, 80),
+                2,
+                cv2.LINE_AA,
+            )
+
+    for help_marker in snapshot.get("help_markers", []):
+        if not isinstance(help_marker, dict) or not isinstance(help_marker.get("raw_position"), dict):
+            continue
+        px = help_marker["raw_position"].get("x")
+        py = help_marker["raw_position"].get("y")
+        if isinstance(px, (int, float)) and isinstance(py, (int, float)):
+            cv2.putText(
+                frame,
+                token_label(int(help_marker.get("id", -1))),
+                (int(px) + 5, int(py) - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (180, 220, 255),
                 2,
                 cv2.LINE_AA,
             )

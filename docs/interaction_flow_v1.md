@@ -40,15 +40,16 @@ Confirmed hidden-information rule:
 
 Current live frontend behavior:
 
-- `yu_test2/frontend/index.html` now renders a setup placeholder for `scan`, `side_selection`, and `hq_placement`
-- the placeholder shows backend setup status and safe HQ progress only
+- `yu_test3/frontend/index.html` now renders setup state for `scan`, `side_selection`, and `hq_placement`
+- setup state is shown through the top bar, side panels, board overlays, and warning/help UI
 - the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
 - during `hq_placement`, the active side is chosen by `ID10` / `ID20`
 - during `hq_placement`, `ID11` / `ID21` drive the live HQ candidate cell for the active side
 - during `hq_placement`, the board may show a transient highlight ring for the active HQ marker cell without showing exact coordinates in the side panel
 - during `hq_placement`, scanning `ID4` confirms the currently active HQ candidate
+- scanning `ID5` shows an in-game help overlay while the marker stays visible
 - restart setup still exists as a browser-side fallback control
-- recoverable backend/tracker validation issues are surfaced through a temporary warning layover and a recent-warning line in the side panel
+- recoverable backend/tracker validation issues are surfaced through the warning bar and supporting board-side UI
 
 ## Core interaction model
 

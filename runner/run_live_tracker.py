@@ -28,7 +28,7 @@ from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, dr
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
-from python_tracker.tracked_markers import CONFIRM_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
+from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
 from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
 from live_rules import game_model, terrain_gen
 
@@ -38,7 +38,7 @@ SEND_FPS = 10
 HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
-FRONTEND_DIR = ROOT_DIR / "yu_test2" / "frontend"
+FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
 
 ROLE_BY_MARKER_ID = {
     12: ("p1", "atk_a"),
@@ -73,14 +73,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Old Mick live tracker")
     parser.add_argument("--camera-index", type=int, default=CAMERA_ID, help="Camera index for the live tracker.")
     parser.add_argument("--send-fps", type=int, default=SEND_FPS, help="Broadcast rate for frontend payloads.")
-    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the yu_test2 frontend.")
+    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the yu_test3 frontend.")
     parser.add_argument("--ws-port", type=int, default=WS_PORT, help="WebSocket port for frontend state sync.")
     parser.add_argument("--no-camera", action="store_true", help="Run the live frontend without opening a camera.")
     return parser.parse_args()
 
 
 def start_http_server(port: int, root: Path):
-    """Serve the yu_test2 frontend over plain HTTP for ES modules."""
+    """Serve the yu_test3 frontend over plain HTTP for ES modules."""
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
     socketserver.TCPServer.allow_reuse_address = True
     httpd = socketserver.TCPServer(("", port), handler)
@@ -98,7 +98,7 @@ def _opponent_side(side: str | None) -> str | None:
 
 
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
-    return bool(snapshot.get("markers")) or bool(snapshot.get("hq_markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers")) or bool(snapshot.get("confirm_markers"))
+    return bool(snapshot.get("markers")) or bool(snapshot.get("hq_markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers")) or bool(snapshot.get("confirm_markers")) or bool(snapshot.get("help_markers"))
 
 
 def _merge_marker_collection(cached_markers: list[dict], current_markers: list[dict]) -> list[dict]:
@@ -120,12 +120,14 @@ def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict
         merged_snapshot["hq_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("hq_markers", [])]
         merged_snapshot["turn_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("turn_markers", [])]
         merged_snapshot["confirm_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("confirm_markers", [])]
+        merged_snapshot["help_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("help_markers", [])]
         return merged_snapshot
 
     merged_markers = _merge_marker_collection(cached_snapshot.get("markers", []), current_snapshot.get("markers", []))
     merged_hq_markers = _merge_marker_collection(cached_snapshot.get("hq_markers", []), current_snapshot.get("hq_markers", []))
     merged_turn_markers = _merge_marker_collection(cached_snapshot.get("turn_markers", []), current_snapshot.get("turn_markers", []))
     merged_confirm_markers = _merge_marker_collection(cached_snapshot.get("confirm_markers", []), current_snapshot.get("confirm_markers", []))
+    merged_help_markers = _merge_marker_collection(cached_snapshot.get("help_markers", []), current_snapshot.get("help_markers", []))
 
     return {
         **cached_snapshot,
@@ -134,6 +136,7 @@ def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict
         "hq_markers": merged_hq_markers,
         "turn_markers": merged_turn_markers,
         "confirm_markers": merged_confirm_markers,
+        "help_markers": merged_help_markers,
         "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
         "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
         "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
@@ -205,7 +208,7 @@ class NoCameraSimulation:
     def _pulse(self, start_after: float, duration: float, elapsed: float) -> bool:
         return start_after <= elapsed < start_after + duration
 
-    def step(self) -> tuple[dict, dict, int | None, dict, bool]:
+    def step(self) -> tuple[dict, dict, int | None, dict, bool, bool]:
         if self.session.seed != self._terrain_seed:
             self._terrain_seed = self.session.seed
             self.hq_cells = self._build_hq_cells()
@@ -213,6 +216,7 @@ class NoCameraSimulation:
         hq_markers = _new_hq_marker_state()
         turn: int | None = None
         confirm_present = False
+        help_present = False
         now = time.monotonic()
 
         if self.session.setup.phase == PHASE_HQ_PLACEMENT:
@@ -226,7 +230,7 @@ class NoCameraSimulation:
                 hq_markers[active_side] = {"col": col, "row": row, "stale": False}
                 turn = 1 if active_side == "p1" else 2
                 confirm_present = self._pulse(0.9, 0.35, elapsed)
-            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
+            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present, help_present
 
         if self.session.setup.phase == PHASE_GAME:
             active_side = self.session.battle_active_side or self.session.battle_waiting_for_side or "p1"
@@ -237,9 +241,9 @@ class NoCameraSimulation:
             turn = 1 if active_side == "p1" else 2
             if self.session.battle_active_side in PLAYERS:
                 confirm_present = self._pulse(1.0, 0.35, elapsed)
-            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
+            return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present, help_present
 
-        return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present
+        return self.p1_tokens, self.p2_tokens, turn, hq_markers, confirm_present, help_present
 
 
 def _confirm_marker_present(snapshot: dict) -> bool:
@@ -249,6 +253,15 @@ def _confirm_marker_present(snapshot: dict) -> bool:
         if isinstance(marker, dict) and int(marker.get("id", -1)) == 4 and not marker.get("stale", False)
     ]
     return bool(confirm_markers)
+
+
+def _help_marker_present(snapshot: dict) -> bool:
+    help_markers = [
+        marker
+        for marker in snapshot.get("help_markers", [])
+        if isinstance(marker, dict) and int(marker.get("id", -1)) == 5 and not marker.get("stale", False)
+    ]
+    return bool(help_markers)
 
 
 def _turn_from_markers(snapshot: dict) -> int | None:
@@ -278,7 +291,7 @@ def _turn_angle(snapshot: dict) -> float | None:
     return None
 
 
-def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bool]:
+def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bool, bool]:
     p1 = new_side_state()
     p2 = new_side_state()
     hq_markers = _new_hq_marker_state()
@@ -315,7 +328,7 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bo
             "stale": bool(marker.get("stale", False)),
         }
 
-    return p1, p2, _turn_from_markers(snapshot), hq_markers, _confirm_marker_present(snapshot)
+    return p1, p2, _turn_from_markers(snapshot), hq_markers, _confirm_marker_present(snapshot), _help_marker_present(snapshot)
 
 
 class Session:
@@ -330,6 +343,7 @@ class Session:
         self.accepted_p2 = new_side_state()
         self.hq_markers = _new_hq_marker_state()
         self.turn: int | None = None
+        self.help_visible = False
         self.model: game_model.GameModel | None = None
         self.pending_events: list[dict] = []
         self._reset_setup_tracking()
@@ -473,8 +487,9 @@ class Session:
             self._reset_setup_tracking()
         self.setup.set_board_scan_ready(board_scan_ready)
 
-    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool) -> list[dict]:
+    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool, help_present: bool) -> list[dict]:
         self.hq_markers = hq_markers
+        self.help_visible = help_present
         active_side = None
         if self.setup.phase == PHASE_GAME:
             self._update_marker_driven_battle_flow(turn, confirm_present)
@@ -517,6 +532,7 @@ class Session:
             "events": events,
             "setup": self.setup.public_payload(),
             "battle": self._battle_payload(),
+            "help_visible": self.help_visible,
             "errors": dedupe_errors(errors),
         }
 
@@ -686,12 +702,12 @@ async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_
             turn_angle = _turn_angle(snapshot_for_ui)
 
             session.sync_scan_state(board_scan_ready)
-            raw_p1, raw_p2, turn, hq_markers, confirm_present = _build_token_state(snapshot_for_ui)
+            raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present = _build_token_state(snapshot_for_ui)
 
             frame_errors: list[dict] = []
             if not board_scan_ready and session.setup.phase != PHASE_GAME:
                 frame_errors.append(make_error("marker_map_scan_failed"))
-            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present))
+            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present))
 
             for command in await drain_actions():
                 frame_errors.extend(session.apply_command(command, board_scan_ready=board_scan_ready))
@@ -735,8 +751,8 @@ async def publish_no_camera(send_fps: int = SEND_FPS):
         for command in await drain_actions():
             frame_errors.extend(session.apply_command(command, board_scan_ready=True))
 
-        raw_p1, raw_p2, turn, hq_markers, confirm_present = simulation.step()
-        frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present))
+        raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present = simulation.step()
+        frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present))
 
         events = session.game_events()
         payload = session.payload(
@@ -777,13 +793,17 @@ async def async_main(args: argparse.Namespace):
     for marker in CONFIRM_MARKERS:
         print(f"    ID {marker.id}={marker.label}")
     print()
+    print("  Help markers:")
+    for marker in HELP_MARKERS:
+        print(f"    ID {marker.id}={marker.label}")
+    print()
     print("  Turn markers:")
     for marker in TURN_MARKERS:
         print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
     print("  Hidden HQ setup is marker-driven once board scan is ready.")
     print()
-    print("[Server] Open yu_test2/frontend via the HTTP URL above\n")
+    print("[Server] Open yu_test3/frontend via the HTTP URL above\n")
 
     if args.no_camera:
         publisher = functools.partial(publish_no_camera, args.send_fps)

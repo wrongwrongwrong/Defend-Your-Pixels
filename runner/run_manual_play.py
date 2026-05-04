@@ -39,7 +39,7 @@ from live_rules import game_model, terrain_gen
 
 SEND_FPS = 10
 HTTP_PORT = 8080
-FRONTEND_DIR = ROOT_DIR / "yu_test2" / "frontend"
+FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
 PLAYER_SET = set(PLAYERS)
 SLOT_SET = set(SLOTS)
 ATTACKER_SLOT_SET = set(ATTACKER_SLOTS)
@@ -58,7 +58,7 @@ ANGLE_BY_DIRECTION = {
 
 
 def start_http_server(port: int, root: Path):
-    """Serve the yu_test2 frontend over plain HTTP for manual play."""
+    """Serve the yu_test3 frontend over plain HTTP for manual play."""
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
     socketserver.TCPServer.allow_reuse_address = True
     httpd = socketserver.TCPServer(("", port), handler)
