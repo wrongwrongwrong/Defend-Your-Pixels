@@ -2,11 +2,11 @@
 
 ## Project overview
 
-AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to `yu_test1/index.html`.
+AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to the `yu_test2` live frontend.
 
-Data flow: `camera -> tracker -> bridge -> yu_test1/index.html`
+Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> yu_test2/frontend/index.html`
 
-Python is authoritative for game state. `yu_test1/game_model.py` owns the live rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app. `model_backend` remains in the repo for legacy/smoke-test paths.
+Python is authoritative for game state. `live_rules/game_model.py` owns the live rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app. `model_backend` remains in the repo for legacy/smoke-test paths.
 
 ## Setup
 
@@ -22,27 +22,27 @@ The venv is `.venv/` (not `venv`). The editable install packages `python_tracker
 
 **Python (always from repo root, with `.venv` active):**
 ```bash
-python3 runner/run_live_tracker.py            # live tracker + WS server + cv2 preview
+python3 runner/run_live_tracker.py            # live tracker + WS/HTTP server + cv2 preview
 python3 runner/run_old_mick_core_smoke.py     # backend rules smoke test
 ```
 
 **Frontend:**
 ```bash
-open yu_test1/index.html in a browser
+open http://localhost:8080 in a browser
 ```
 
 Windows notes:
 - Double-click `launch_live_demo.cmd` from the repo root for the simplest local launch.
-- `launch_live_demo.ps1` starts the tracker in a new PowerShell window and opens `yu_test1/index.html` automatically.
-- The frontend is a local HTML file, so no Node/Vite frontend server is required.
+- `launch_live_demo.ps1` starts the tracker in a new PowerShell window and opens `http://localhost:8080` automatically.
+- The frontend is served directly by `run_live_tracker.py`, so no Node/Vite frontend server is required.
 
 ## Architecture notes
 
-- `main.cpp` at root is a preserved C++ reference — do not use as runtime entry.
+- `archive/docs/Reference/main.cpp` is a preserved C++ reference — do not use it as a runtime entry.
 - `game-logic/` is legacy; use `model_backend/` for game rules.
 - `archive/` and `dyp/` are not primary runtime paths.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
-- The live frontend is `yu_test1/index.html`, which consumes the flat `yu_test1` runtime payload directly.
+- The live frontend is `yu_test2/frontend/index.html`, served by `run_live_tracker.py`, and it consumes the flat live runtime payload directly.
 
 ## Type checking
 
@@ -62,16 +62,15 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 
 | File | Purpose |
 |------|---------|
-| `runner/run_live_tracker.py` | Full live system: camera -> tracker -> yu_test1 rules -> WS |
+| `runner/run_live_tracker.py` | Full live system: camera -> tracker -> shared live rules -> WS/HTTP |
 | `python_tracker/state_output/tracker_snapshot.py` | Tracker snapshot, homography fallback, marker stability |
 | `bridge/transport/websocket_transport.py` | WebSocket server + inbound UI commands |
-| `yu_test1/game_model.py` | Live game rules used by the browser UI |
-| `yu_test1/index.html` | The only supported frontend |
+| `live_rules/game_model.py` | Live game rules used by the browser UI |
+| `yu_test2/frontend/index.html` | The primary live frontend |
 
 ## Existing instruction files
 
 - `CONTRIBUTING.md` — naming conventions, file responsibility, PR checklist
 - `docs/board_state_v1.md` — authoritative state contract (snake_case payload)
 - `docs/authoritative_actions_v1.md` — action types and their Python-side behavior
-- `MIGRATION_PLAN.md` — planned refactor toward `apps/` / `packages/` structure
 - `README_PROJECT_MAP.md` — high-level data flow and folder purposes
