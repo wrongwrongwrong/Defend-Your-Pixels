@@ -25,7 +25,7 @@ powershell -ExecutionPolicy Bypass -File .\launch_live_demo.ps1
 
 This starts:
 - the Python live tracker
-- the built-in HTTP server for `yu_test2/frontend`
+- `yu_test1/index.html` in your default browser
 
 ### Launch live demo (macOS)
 
@@ -49,13 +49,13 @@ powershell -ExecutionPolicy Bypass -File .\launch_live_demo.ps1
 
 This launcher:
 - checks `.venv\Scripts\python.exe`
-- starts the live camera + WebSocket + HTTP stack in a new PowerShell window
-- opens `http://localhost:8080` in your default browser
+- starts the live camera + WebSocket stack in a new PowerShell window
+- opens `yu_test1/index.html` automatically in your default browser
 
 Notes:
 - If PowerShell execution policy blocks scripts, use `launch_live_demo.cmd` instead of running the `.ps1` file directly.
 - Close the tracker by focusing the camera preview window and pressing `Q`, or by closing the spawned PowerShell window.
-- `yu_test2/frontend` is served directly by `run_live_tracker.py`. No `npm install`, Vite, or separate frontend dev server is required.
+- `yu_test1/index.html` is opened as a local file. No `npm install`, Vite, or frontend dev server is required.
 
 ### Backend rules smoke test
 
@@ -78,7 +78,7 @@ Run both commands from the repo root.
 Browser:
 
 ```bash
-start http://localhost:8080
+start yu_test1\index.html
 ```
 
 Terminal 2, from `D:\Defend-Your-Pixels`:
@@ -89,13 +89,12 @@ Terminal 2, from `D:\Defend-Your-Pixels`:
 
 Notes:
 - You can open the browser before or after starting Python. The page will retry the WebSocket connection automatically.
-- `start http://localhost:8080` is a Windows Command Prompt / PowerShell command.
+- `start yu_test1\index.html` is a Windows Command Prompt / PowerShell command.
+- If you are already inside the repo root in PowerShell, `ii .\yu_test1\index.html` also works.
 
 ## Supported runner entrypoints
 
-The primary runner entrypoints are:
+The project currently keeps only two runner entrypoints:
 
-- `runner.run_live_tracker`: full runtime for camera -> tracker -> shared live rules -> websocket -> HTTP -> `yu_test2/frontend/index.html`
+- `runner.run_live_tracker`: full runtime for camera -> tracker -> yu_test1 rules -> websocket -> `yu_test1/index.html`
 - `runner.run_old_mick_core_smoke`: fast rules-validation smoke test for the Old Mick MVP
-
-For a documented no-camera fallback, see `docs/manual_play.md` and `runner.run_manual_play`.

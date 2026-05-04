@@ -14,7 +14,7 @@ The system uses a camera to detect board markers and tokens, converts those dete
 3. Tracker maps marker positions to board/grid coordinates.
 4. Runtime game model updates authoritative state.
 5. Bridge sends live state over WebSocket.
-6. `yu_test2/frontend/index.html` receives messages and renders the game.
+6. `yu_test1/index.html` receives messages and renders the game.
 
 ## Current top-level folders
 
@@ -44,33 +44,20 @@ Purpose: connect tracker + runtime model + frontend.
 
 Includes:
 - WebSocket transport
-- Inbound browser action handling
-- Runtime broadcast helpers
+- Message schemas/contracts
+- Legacy adapters from the older bridge path
 
 Use this when you need to change real-time communication or message formats.
 
-### `live_rules`
-Purpose: authoritative live rules and terrain generation shared by the current runtimes.
-
-Includes:
-- `game_model.py` authoritative live rules
-- `terrain_gen.py` shared live map generation
-
-Use this when you need to change live gameplay rules or the shared terrain generator.
-
 ### `yu_test1`
-Purpose: retired legacy frontend area.
-
-Use this only as historical context while the folder is being phased out.
-
-### `yu_test2`
-Purpose: the primary live browser frontend.
+Purpose: the current game rules, terrain generation, and browser frontend.
 
 Includes:
-- `frontend/index.html` main browser entrypoint
-- `frontend/src/` modular Phaser scenes, HUD, audio, and WS client
+- `index.html` frontend
+- `game_model.py` authoritative live rules
+- `terrain_gen.py` map generation
 
-Use this when you need to change the shipped live UI or frontend flow.
+Use this when you need to change live gameplay or UI rendering.
 
 ### `runner`
 Purpose: clean startup scripts for runtime modes.
@@ -101,7 +88,7 @@ These are not primary runtime entrypoints for the current architecture.
 4. Read `python_tracker` basics
 5. Read `bridge` flow
 6. Read `model_backend` state/actions
-7. Read `yu_test2/frontend/src/`
+7. Read `yu_test1/index.html`
 
 ## Quick glossary
 
@@ -109,3 +96,4 @@ These are not primary runtime entrypoints for the current architecture.
 - **Tracker frame**: latest camera-derived board/token info.
 - **Board state**: serialized game state sent to frontend.
 - **Bridge**: transport and synchronization layer between modules.
+

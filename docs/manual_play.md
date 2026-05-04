@@ -7,9 +7,9 @@ This repository now includes an add-only manual play mode that lets you drive th
 The existing marker-based flow is unchanged.
 
 Manual mode:
-- uses the `yu_test2` mainline frontend served over HTTP
+- keeps using `yu_test1/index.html`
 - keeps using the same WebSocket host and port
-- keeps using `live_rules/game_model.py` and `live_rules/terrain_gen.py`
+- keeps using `yu_test1/game_model.py` and `yu_test1/terrain_gen.py`
 - replaces marker input with terminal commands
 
 ## Files
@@ -28,7 +28,7 @@ From the repository root, start the manual runner directly:
 This will:
 - start `runner.run_manual_play`
 
-Open `http://localhost:8080` separately in your browser.
+Open `yu_test1/index.html` separately in your browser.
 
 ## Terminal Commands
 
@@ -93,14 +93,14 @@ Typical flow:
 2. Choose the first setup side with `choose_side old_mick` or `choose_side mob`.
 3. Set and confirm both HQs with `set_hq` and `confirm_hq`.
 4. Place both sides with `set` commands.
-5. Open or watch `http://localhost:8080`.
+5. Open or watch `yu_test1/index.html`.
 6. Use `flip` or `turn 1` / `turn 2` to advance the battle and trigger attack resolution.
 7. Use `show` or `show_setup` whenever you want a terminal-side summary.
 
 ## Notes and Limitations
 
 - This mode is terminal-controlled, not browser-click controlled.
-- The browser page is now the `yu_test2` mainline frontend at `http://localhost:8080`.
+- The browser page is still `yu_test1/index.html`.
 - Do not run manual mode and marker mode at the same time. Both use `ws://localhost:8765`.
 - Manual mode is add-only and does not replace the existing marker-driven flow.
 - `corners_found` is reported as ready in manual mode so the existing UI can render normally without tracker input.

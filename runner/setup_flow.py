@@ -19,7 +19,6 @@ FIRST_PLAYER_SIDE_TO_PLAYER = {
     "old_mick": "p1",
     "mob": "p2",
 }
-PLAYER_TO_FIRST_PLAYER_SIDE = {player: side for side, player in FIRST_PLAYER_SIDE_TO_PLAYER.items()}
 
 SIDE_DISPLAY_NAME = {
     "p1": "Old Mick",
@@ -264,25 +263,23 @@ class SetupState:
             self.status_code = "waiting_for_board_scan"
             self.status_message = "Waiting for a valid board scan."
             return
+        if self.first_player_side is None:
+            self.phase = PHASE_SIDE_SELECTION
+            self.status_code = "waiting_for_side_selection"
+            self.status_message = "Board scan ready. Choose whether the first player is Old Mick or The Mob."
+            return
         if not all(self.hq_confirmed.values()):
             self.phase = PHASE_HQ_PLACEMENT
             self._set_waiting_for_hq_status()
 
     def choose_side(self, first_player_side: str) -> bool:
-        if first_player_side not in FIRST_PLAYER_SIDE_TO_PLAYER or not self.board_scan_ready or self.phase == PHASE_GAME:
+        if first_player_side not in FIRST_PLAYER_SIDE_TO_PLAYER or not self.board_scan_ready:
             return False
         self.first_player_side = first_player_side
+        self.hq_candidates = {"p1": None, "p2": None}
+        self.hq_confirmed = {"p1": False, "p2": False}
         self.active_setup_side = FIRST_PLAYER_SIDE_TO_PLAYER[first_player_side]
         self.phase = PHASE_HQ_PLACEMENT
-        self._set_waiting_for_hq_status()
-        return True
-
-    def activate_hq_setup_side(self, side: str) -> bool:
-        if self.phase != PHASE_HQ_PLACEMENT or side not in PLAYERS or self.hq_confirmed.get(side):
-            return False
-        if self.first_player_side is None:
-            self.first_player_side = PLAYER_TO_FIRST_PLAYER_SIDE[side]
-        self.active_setup_side = side
         self._set_waiting_for_hq_status()
         return True
 
@@ -298,26 +295,16 @@ class SetupState:
             return make_error("hq_wrong_side")
         self.hq_candidates[side] = (int(position["x"]), int(position["y"]))
         self.status_code = "waiting_for_hq_confirmation"
-        self.status_message = f"{SIDE_DISPLAY_NAME[side]} HQ marker is stable on a valid cell. Scan the confirm marker to lock this hidden HQ."
+        self.status_message = f"{SIDE_DISPLAY_NAME[side]} HQ candidate recorded. Confirm to lock it in."
         return None
 
-    def clear_hq_candidate(self, side: str) -> None:
-        if self.phase != PHASE_HQ_PLACEMENT or side not in PLAYERS:
-            return
-        self.hq_candidates[side] = None
-        if side == self.active_setup_side:
-            self._set_waiting_for_hq_status()
-
     def confirm_hq(self, side: str) -> tuple[bool, dict | None]:
-        return self.lock_hq(side)
-
-    def lock_hq(self, side: str) -> tuple[bool, dict | None]:
         if self.phase != PHASE_HQ_PLACEMENT or side != self.active_setup_side:
             self._set_waiting_for_hq_status()
             return False, None
         if self.hq_candidates.get(side) is None:
             self.status_code = "waiting_for_hq_candidate"
-            self.status_message = f"{SIDE_DISPLAY_NAME[side]} must place a valid HQ marker before scanning the confirm marker."
+            self.status_message = f"{SIDE_DISPLAY_NAME[side]} must choose an HQ location before confirming."
             return False, None
 
         self.hq_confirmed[side] = True
@@ -330,20 +317,24 @@ class SetupState:
 
         self.active_setup_side = "p2" if side == "p1" else "p1"
         self.status_code = "waiting_for_hq_candidate"
-        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must show that side's turn marker, then place the hidden HQ marker while the other player looks away."
+        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must choose an HQ location."
         return False, None
 
     def reset_hq_setup(self) -> None:
         self.hq_candidates = {"p1": None, "p2": None}
         self.hq_confirmed = {"p1": False, "p2": False}
-        self.first_player_side = None
-        self.active_setup_side = None
-        if not self.board_scan_ready:
-            self.phase = PHASE_SCAN
-            self.status_code = "waiting_for_board_scan"
-            self.status_message = "Waiting for a valid board scan."
+        if self.first_player_side is None:
+            self.phase = PHASE_SIDE_SELECTION if self.board_scan_ready else PHASE_SCAN
+            self.status_code = "waiting_for_side_selection" if self.board_scan_ready else "waiting_for_board_scan"
+            self.status_message = (
+                "Board scan ready. Choose whether the first player is Old Mick or The Mob."
+                if self.board_scan_ready
+                else "Waiting for a valid board scan."
+            )
+            self.active_setup_side = None
             return
         self.phase = PHASE_HQ_PLACEMENT
+        self.active_setup_side = FIRST_PLAYER_SIDE_TO_PLAYER[self.first_player_side]
         self._set_waiting_for_hq_status()
 
     def hidden_hq_positions(self) -> tuple[tuple[int, int], tuple[int, int]] | None:
@@ -369,17 +360,13 @@ class SetupState:
         }
 
     def _set_waiting_for_hq_status(self) -> None:
-        if self.phase != PHASE_HQ_PLACEMENT:
-            return
         if self.active_setup_side is None:
-            self.status_code = "waiting_for_turn_marker"
-            self.status_message = "Board scan ready. Show ID10 or ID20 to choose who places a hidden HQ first while the other player looks away."
+            self.status_code = "waiting_for_hq_candidate"
+            self.status_message = "Waiting for HQ placement."
             return
         if self.hq_candidates.get(self.active_setup_side) is None:
             self.status_code = "waiting_for_hq_candidate"
-            marker_id = 10 if self.active_setup_side == "p1" else 20
-            hq_marker_id = 11 if self.active_setup_side == "p1" else 21
-            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} is placing a hidden HQ. Keep ID{marker_id} visible and position ID{hq_marker_id} on a valid cell."
+            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must choose an HQ location."
             return
         self.status_code = "waiting_for_hq_confirmation"
-        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} HQ marker is stable on a valid cell. Scan ID4 to confirm and hide it."
+        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} HQ candidate recorded. Confirm to lock it in."

@@ -14,7 +14,7 @@ The snapshot includes:
 import cv2
 import numpy as np
 
-from python_tracker.tracked_markers import CONFIRM_MARKER_IDS, HQ_MARKER_IDS, TOKEN_IDS, TURN_MARKER_IDS, marker_label
+from python_tracker.tracked_markers import TOKEN_IDS, TURN_MARKER_ID, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
@@ -27,7 +27,7 @@ from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
 
-ALL_TRACKED_IDS = TOKEN_IDS | TURN_MARKER_IDS | HQ_MARKER_IDS | CONFIRM_MARKER_IDS
+ALL_TRACKED_IDS = TOKEN_IDS | {TURN_MARKER_ID}
 
 
 def build_tracker_snapshot(corners, ids):
@@ -41,9 +41,6 @@ def build_tracker_snapshot(corners, ids):
         return {
             "calibration_ready": False,
             "markers": markers_out,
-            "hq_markers": [],
-            "turn_markers": [],
-            "confirm_markers": [],
             "board_corners": board_corners_out,
         }
 
@@ -65,43 +62,17 @@ def build_tracker_snapshot(corners, ids):
     H = build_homography(board_corners_px)
     playable_corners = build_playable_corners(board_corners_px)
 
-    turn_markers_out = []
-    hq_markers_out = []
-    confirm_markers_out = []
+    turn_marker_out = None
 
     for i, mid in enumerate(ids.flatten()):
-        if mid in TURN_MARKER_IDS:
+        if mid == TURN_MARKER_ID:
             center = corners[i][0].mean(axis=0)
             rotation_deg = compute_rotation_deg(corners[i][0])
-            turn_markers_out.append({
+            turn_marker_out = {
                 "id": int(mid),
                 "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
                 "rotation": round(rotation_deg, 1),
-            })
-            continue
-
-        if mid in CONFIRM_MARKER_IDS:
-            center = corners[i][0].mean(axis=0)
-            rotation_deg = compute_rotation_deg(corners[i][0])
-            confirm_markers_out.append({
-                "id": int(mid),
-                "raw_position": {"x": round(float(center[0]), 1), "y": round(float(center[1]), 1)},
-                "rotation": round(rotation_deg, 1),
-            })
-            continue
-
-        if mid in HQ_MARKER_IDS:
-            center = corners[i][0].mean(axis=0)
-            px, py = float(center[0]), float(center[1])
-            rotation_deg = compute_rotation_deg(corners[i][0])
-            gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
-            hq_markers_out.append({
-                "id": int(mid),
-                "position": {"x": gx, "y": gy} if gx is not None and in_bounds else None,
-                "raw_position": {"x": round(px, 1), "y": round(py, 1)},
-                "in_bounds": in_bounds,
-                "rotation": round(rotation_deg, 1),
-            })
+            }
             continue
 
         if mid not in TOKEN_IDS:
@@ -132,9 +103,7 @@ def build_tracker_snapshot(corners, ids):
     return {
         "calibration_ready": H is not None,
         "markers": markers_out,
-        "hq_markers": hq_markers_out,
-        "turn_markers": turn_markers_out,
-        "confirm_markers": confirm_markers_out,
+        "turn_marker": turn_marker_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -153,23 +122,8 @@ def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -
     if fallback_h is None:
         return snapshot
 
-    remapped_markers = _remap_marker_positions(snapshot.get("markers", []), fallback_h)
-    remapped_hq_markers = _remap_marker_positions(snapshot.get("hq_markers", []), fallback_h)
-
-    return {
-        **snapshot,
-        "calibration_ready": True,
-        "markers": remapped_markers,
-        "hq_markers": remapped_hq_markers,
-        "board_corners": snapshot.get("board_corners") or fallback_snapshot.get("board_corners", []),
-        "playable_corners": fallback_snapshot.get("playable_corners", []),
-        "homography": fallback_h,
-    }
-
-
-def _remap_marker_positions(markers: list[dict], homography) -> list[dict]:
     remapped_markers = []
-    for marker in markers:
+    for marker in snapshot.get("markers", []):
         raw_position = marker.get("raw_position")
         if not isinstance(raw_position, dict):
             remapped_markers.append(marker)
@@ -181,7 +135,7 @@ def _remap_marker_positions(markers: list[dict], homography) -> list[dict]:
             remapped_markers.append(marker)
             continue
 
-        gx, gy, in_bounds = pixel_to_grid_with_bounds(float(raw_x), float(raw_y), homography)
+        gx, gy, in_bounds = pixel_to_grid_with_bounds(float(raw_x), float(raw_y), fallback_h)
         if gx is None or gy is None:
             remapped_markers.append(marker)
             continue
@@ -192,7 +146,14 @@ def _remap_marker_positions(markers: list[dict], homography) -> list[dict]:
             "in_bounds": in_bounds,
         })
 
-    return remapped_markers
+    return {
+        **snapshot,
+        "calibration_ready": True,
+        "markers": remapped_markers,
+        "board_corners": snapshot.get("board_corners") or fallback_snapshot.get("board_corners", []),
+        "playable_corners": fallback_snapshot.get("playable_corners", []),
+        "homography": fallback_h,
+    }
 
 
 def build_tracker_preview(frame, detector) -> tuple[dict, object]:
@@ -222,7 +183,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
         center = corners[i][0].mean(axis=0)
         px, py = float(center[0]), float(center[1])
 
-        if mid in TURN_MARKER_IDS:
+        if mid == TURN_MARKER_ID:
             label = token_label(int(mid))
             cv2.putText(frame, label, (int(px) + 5, int(py) - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 200, 255), 2, cv2.LINE_AA)
@@ -250,7 +211,7 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
 
 
 def annotate_tracker_preview(frame, snapshot: dict) -> object:
-    if not snapshot.get("markers") and not snapshot.get("hq_markers") and not snapshot.get("turn_markers") and not snapshot.get("confirm_markers") and not snapshot.get("board_corners"):
+    if not snapshot.get("markers") and not snapshot.get("board_corners"):
         cv2.putText(frame, "No markers detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
         return frame
 
@@ -285,30 +246,8 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
             cv2.LINE_AA,
         )
 
-    for marker in snapshot.get("hq_markers", []):
-        raw_position = marker.get("raw_position")
-        if not isinstance(raw_position, dict):
-            continue
-
-        px = raw_position.get("x")
-        py = raw_position.get("y")
-        if not isinstance(px, (int, float)) or not isinstance(py, (int, float)):
-            continue
-
-        cv2.putText(
-            frame,
-            token_label(int(marker.get("id", -1))),
-            (int(px) + 5, int(py) - 12),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 220, 120),
-            2,
-            cv2.LINE_AA,
-        )
-
-    for turn_marker in snapshot.get("turn_markers", []):
-        if not isinstance(turn_marker, dict) or not isinstance(turn_marker.get("raw_position"), dict):
-            continue
+    turn_marker = snapshot.get("turn_marker")
+    if isinstance(turn_marker, dict) and isinstance(turn_marker.get("raw_position"), dict):
         px = turn_marker["raw_position"].get("x")
         py = turn_marker["raw_position"].get("y")
         if isinstance(px, (int, float)) and isinstance(py, (int, float)):
@@ -319,23 +258,6 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (80, 200, 255),
-                2,
-                cv2.LINE_AA,
-            )
-
-    for confirm_marker in snapshot.get("confirm_markers", []):
-        if not isinstance(confirm_marker, dict) or not isinstance(confirm_marker.get("raw_position"), dict):
-            continue
-        px = confirm_marker["raw_position"].get("x")
-        py = confirm_marker["raw_position"].get("y")
-        if isinstance(px, (int, float)) and isinstance(py, (int, float)):
-            cv2.putText(
-                frame,
-                token_label(int(confirm_marker.get("id", -1))),
-                (int(px) + 5, int(py) - 12),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 180, 80),
                 2,
                 cv2.LINE_AA,
             )

@@ -3,6 +3,8 @@
 This folder contains the communication layer between Python tracking and the frontend.
 
 Current contents
+- `schema/`: tracker message structure
+- `adapters/`: tracker snapshot to outbound message conversion
 - `transport/`: websocket server and client broadcast handling
 
 Naming rules
@@ -10,12 +12,10 @@ Naming rules
 - `*_adapter.py`: conversion between tracker output and bridge messages
 - `*_transport.py`: network transport implementation
 
-Note: only `transport/` exists in the current bridge implementation. The naming rules are kept for future additions and for reading older docs.
-
 Runtime model
 - `python_tracker/` produces tracker observations
 - `bridge/` shapes and transports them
-- `yu_test2/frontend/index.html` consumes them through the live runtime HTTP/WS path
+- `yu_test1/index.html` consumes them
 - `runner/` assembles the live application
 
 Canonical runtime entrypoint

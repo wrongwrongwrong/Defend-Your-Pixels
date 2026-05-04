@@ -141,9 +141,14 @@ Once the above is implemented, the team should test:
 - Do resource tiles reduce pure HQ rushing?
 - Is the turn-to-turn decision space clear enough for first-time players?
 
-Current executable gameplay smoke coverage lives in:
+Core gameplay test cases are tracked in:
 
+- `docs/old_mick_core_test_cases.md`
 - `runner/run_old_mick_core_smoke.py`
+
+Gameplay checkpoint planning is tracked in:
+
+- `docs/old_mick_checkpoint_v1.md`
 
 ## Implementation note
 
@@ -161,11 +166,11 @@ Current integration state:
 - resource tiles are exposed as first-class `board_state.resource_tiles[]`
 - frontend validation can display tile ownership and protection state
 
-The browser frontend or any future presentation layer should consume these rules rather
+React or Phaser should consume these rules as presentation and interaction layers rather
 than reimplementing them.
 
 See also:
 
-- `docs/board_state_v1.md`
+- `docs/frontend_backend_contract_v1.md`
 - `docs/authoritative_actions_v1.md`
 - `docs/interaction_flow_v1.md`

@@ -1,21 +1,22 @@
-# Board State v1
+# board_state v1（最小 contract）
 
-This file is the current board-state payload reference for the live Python-to-browser flow.
+Note: the broader Old Mick frontend/backend contract is now documented in
+`docs/frontend_backend_contract_v1.md`. This file remains the narrower board-state payload reference.
 
-It defines the shared meaning used by Python as the authoritative source, `bridge` as the transport layer, and the browser frontend as the renderer. The live Old Mick runtime also includes `phase`, `setup`, and `errors` alongside the core board payload. Tracker calibration details still follow the current snapshot and camera-preview path.
+供 Python（權威）、bridge（傳輸）、React（顯示）共用語意。Live Old Mick runtime 現在會在既有 payload 上額外包含 `phase`、`setup`、`errors`。tracker 校準細節仍沿用目前 snapshot / camera preview 路徑。
 
-## WebSocket messages
+## WebSocket 訊息
 
-| `type` | Meaning |
-|--------|---------|
-| `board_state` | Authoritative game snapshot. The browser frontend updates its UI state from this full snapshot. |
-| `action` | Authoritative action from the browser frontend or tracker to Python. See [`authoritative_actions_v1.md`](authoritative_actions_v1.md). |
-| `tracker_frame` | Marker-derived position and facing updates only, used by the current tracker path. |
-| `game_state` | Legacy compatibility message with the same merge semantics as `tracker_frame`. |
+| `type` | 語意 |
+|--------|------|
+| `board_state` | 權威遊戲快照；React **整份替換** UI state（經 `adaptBoardStateToUi`）。 |
+| `action` | React / tracker 送往 Python 的 authoritative action。見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。 |
+| `tracker_frame` | 僅 marker → 合併 **位置 / 朝向**（現有 `applyTrackedTokens`）。 |
+| `game_state` | **Legacy**：與 `tracker_frame` 相同合併語意，保留舊 bridge 相容。 |
 
-## Authoritative JSON shape
+## Authoritative JSON（Python / bridge 輸出建議形狀）
 
-Field names use `snake_case` and stay aligned with `model_backend`. The frontend is responsible for mapping these fields into whatever UI-facing shape it needs. The authoritative payload keeps `units[]` as the source-of-truth board-unit list and does not emit frontend-specific derived shapes.
+欄位命名採 **snake_case**，與 `model_backend` 對齊；React 端 adapter 負責轉成現有 camelCase UI shape（見下節）。v1 authoritative payload 固定以 `units[]` 表示棋盤單位，不直接輸出 React 專用的 `players[].tokens[]` 形狀。
 
 ```json
 {
@@ -59,25 +60,24 @@ Field names use `snake_case` and stay aligned with `model_backend`. The frontend
 }
 ```
 
-- `winner`: `null` or `1` / `2`, aligned with `PlayerId`.
-- `last_action`: optional HUD or debug text.
-- `units[].id`: always a `string`, aligned with existing `model_backend` unit ids such as `A1` and `D2`.
-- `units[].rotation_deg`: optional. If absent, the frontend may map to its default facing representation.
-- `resource_tiles[]`: authoritative destructible objectives with owner, position, theme name, and protection layers.
-- Tower data stays folded into `players[]` through `command_tower_position`, `command_tower_hp`, and `command_tower_max_hp`. There is no separate `towers[]` array in v1.
-- `players[].hq_name` and `players[].resource_name` provide the themed display names.
-- `players[].income_per_turn` is currently a placeholder field reserved for future economy work.
+- `winner`：`null` 或 `1` / `2`（與 `PlayerId` 一致）。
+- `last_action`：optional；有值時供 HUD / debug 顯示，沒有時前端可忽略。
+- `units[].id`：固定使用 `string`，與 `model_backend` 既有 unit id（如 `A1`、`D2`）一致。
+- `units[].rotation_deg`：optional；若無，adapter 預設轉成 UI `rotation: "forward"`，或由 tracker 補。
+- `resource_tiles[]`：authoritative destructible objectives，提供 owner、position、theme name 與 protection layer。
+- **塔**：v1 固定摺進 `players[]` 的 `command_tower_position` / `command_tower_hp` / `command_tower_max_hp`；不另開 `towers` 陣列。
+- `players[].hq_name` / `players[].resource_name`：提供 `Old Mick` 主題名稱給 UI 顯示。
+- `players[].income_per_turn`：目前在 Old Mick MVP 中屬 placeholder 欄位，保留給後續 economy/resource work。
 
 ## Setup metadata
 
-The live payload may additionally include:
+Live payload 現在可額外包含：
 
 - `phase`
 - `setup`
-- `battle`
 - `errors`
 
-`setup` carries safe setup progress only. Confirmed HQ coordinates must not be exposed during normal play.
+`setup` 只攜帶安全的 setup 進度資訊，不得在一般遊戲中暴露已確認 HQ 座標。
 
 Example:
 
@@ -100,83 +100,78 @@ Example:
 }
 ```
 
-- `phase`: the live path primarily uses `scan`, `hq_placement`, and `game`. `side_selection` remains available for fallback or debug paths.
-- `errors[]`: stable `{ "code", "message" }` objects for recoverable validation or tracker issues.
-- `setup.hq.*`: exposes candidate and confirmed flags only, never hidden HQ coordinates.
-- `battle.active_side`: the side currently allowed to position and submit tokens. `null` means the runtime is waiting for the next `ID10` or `ID20`.
-- `battle.waiting_for_side`: if present, indicates which side's turn marker must be scanned next.
-- `game.hq_revealed`: the only public path for exposing an HQ coordinate after it has been destroyed.
+- `phase`：`scan` | `side_selection` | `hq_placement` | `game`
+- `errors[]`：stable `{ "code", "message" }` objects for recoverable validation / tracker issues
+- `setup.hq.*`：只公開 candidate/confirmed flags，不公開 hidden HQ coordinates
+- `game.hq_revealed`：仍是 HQ 被摧毀後才公開座標的唯一 public path
 
-## Current frontend usage
+目前 `yu_test1/index.html` 對這些欄位的 live consume 行為為：
 
-`yu_test2/frontend/index.html` currently consumes these fields as follows:
+- `phase !== "game"` 時顯示 pre-game setup placeholder card
+- `side_selection` / `hq_placement` 時在棋盤上疊加 territory/fence guide overlay
+- `setup.status_message` 與 safe HQ progress 會直接顯示給玩家
+- `setup.hq.*` 只用於顯示 `has_candidate` / `confirmed`，不顯示任何 HQ 座標
+- `side_selection` 會顯示 browser controls 並送出 `choose_side`
+- `hq_placement` 會接受棋盤點擊並送出 `set_hq_candidate`，再透過 confirm/reset controls 送出 `confirm_hq` / `reset_setup`
+- frontend 可在 active setup side 上顯示暫時性的 local candidate preview，但 confirm 後不再保留或暴露該座標
+- `errors[]` 會以單一優先 warning layover 顯示在棋盤上方，並在 side panel 保留 recent warning 文本
+- `inactive_side_token_changed` 在前端只作為 recoverable warning surfaced，說明 opponent movement was ignored，不代表 authoritative state 有被改寫
+- `hq_setup_complete` 會以 success-style alert 顯示，而不是 warning-style alert
 
-- When `phase !== "game"`, it shows a pre-game setup placeholder card.
-- During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.
-- It shows `setup.status_message` and safe HQ progress directly to players.
-- It uses `setup.hq.*` only for `has_candidate` and `confirmed` state, never for exact HQ coordinates.
-- `side_selection` remains a fallback or debug path. The live marker path chooses the active setup side through `ID10` and `ID20`.
-- During `hq_placement`, `ID11` and `ID21` provide the live HQ candidate, and `ID4` confirms it.
-- The frontend may highlight the active setup side's current HQ candidate cell, but the side panel does not show exact coordinates and confirmed HQs are hidden immediately after confirmation.
-- During `game`, the battle flow is primarily described by `battle.*`: `ID10` and `ID20` open positioning for one side, and `ID4` submits and resolves that side's attack.
-- `errors[]` are rendered as a prioritized warning overlay plus recent warning text in the side panel.
-- `inactive_side_token_changed` is treated as a recoverable warning that explains the opponent movement was ignored.
-- `hq_setup_complete` is rendered as a success-style alert instead of a warning.
+## UI consume 形狀（legacy bridge path）
 
-## Legacy UI reference
+下列欄位是舊版 `board_state` consume 形狀，保留給 legacy bridge 文件參考：
 
-The following shape is an older UI-facing reference that may still be useful when reading older frontend code:
-
-| UI field | Meaning |
-|----------|---------|
+| UI 欄位 | 說明 |
+|---------|------|
 | `turn` | number |
 | `activePlayer` | `1` \| `2` |
 | `gameOver` | boolean |
 | `players[]` | `id`, `color`, `zone`, `ether`, `incomePerTurn`, `hqName`, `resourceName`, `commandTowerPosition`, `commandTowerHp`, `commandTowerMaxHp`, `tokens[]` |
 | `resourceTiles[]` | `id`, `owner`, `themeName`, `position`, `protectionLayers` |
-| `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation` |
-| `units[]` | non-marker board units; often `[]` in older flows |
+| `players[].tokens[]` | `id`, `kind`, `hp`, `maxHp`, `position`, `rotation`（字串 facing 或相容格式） |
+| `units[]` | 棋盤上非 marker 單位（目前多為 `[]`） |
 
-- `color` and `zone` are UI-only fields derived by the frontend from `player.id`. They are not emitted by the authoritative Python payload.
+- `color`、`zone` 為 UI-only 欄位，由前端 adapter 依 `player.id` 補上；不由 Python authoritative payload 提供。
 
-## Legacy adapter concept: `units` -> `players[].tokens[]`
+## Adapter：`units` → `players[].tokens[]`（概念）
 
-| Authoritative | Legacy UI token field |
-|---------------|-----------------------|
-| `units[].id` | `id` |
-| `units[].owner` | determines which `player` owns the token |
-| `units[].kind` | `kind`: `attacker` or `defender` |
-| `units[].position` | `position`: `{ x, y }` |
-| `units[].rotation_deg` | `rotation`: mapped into a frontend-facing representation |
+| Authoritative | UI token 欄位 |
+|---------------|----------------|
+| `units[].id`（string） | `id`：UI 端沿用 string，不做 `Number(id)` 轉換 |
+| `units[].owner` | 決定 token 掛在哪個 `player` |
+| `units[].kind` | `kind`：`attacker` \| `defender` |
+| `units[].position` | `position`：`{ x, y }`（格座標） |
+| `units[].rotation_deg` | `rotation`：經 `degreesToFacing` 或對照表 → `forward` / `right` / … |
 | `units[].hp` / `max_hp` | `hp` / `maxHp` |
 
-The authoritative payload remains `units[]`. Older frontend code may still derive `players[].tokens[]` from it.
+定案：authoritative payload 維持 `units[]`；舊版前端 adapter 會再組裝 `players[].tokens[]`。
 
-## HP scale strategy
+## HP 尺度策略
 
-| Source | Example |
-|--------|---------|
-| `model_backend` `Unit` | default `hp` / `max_hp` values are small integers such as `3` |
-| older UI token display | values such as `30` or `40` used for presentation-only bars |
+| 來源 | 範例 |
+|------|------|
+| `model_backend` `Unit` | 預設 `hp` / `max_hp` 為小整數（如 3）。 |
+| 舊版 UI token | 如 30 / 40（展示用條較細緻）。 |
 
-Recommended approach for the MVP:
+**建議（擇一，團隊定案）：**
 
-1. Keep a single authoritative integer scale in Python and the contract.
-2. Let the frontend render bar proportions from `hp / max_hp`.
-3. Avoid introducing a second display-specific scale into the contract.
+1. **單一權威整數**：Python 與 contract 只用一套數字；前端僅顯示比例 `hp / max_hp`（推薦，簡單一致）。
+2. **Contract 加 `display_scale`**：後端傳倍率，前端乘上再畫條（兩套數字並存，易混亂）。
+3. **僅在 adapter 乘常數**：過渡期把 3 → 30 顯示；需在文件中寫死倍率並與機制稿同步。
 
-The current MVP uses this single-scale approach.
+第一版 MVP 定案採 **(1)**，條形圖用比例即可，無需與舊 30/40 一致。
 
-## Current integration alignment
+## 與目前整合狀態的對應
 
-- Older frontend mock rules such as `endTurn`, `trySpendEther`, and `phaseForTurn` are no longer part of the primary path.
-- The current authoritative actions are `end_turn`, `move_unit`, and `attack_in_direction`. See [`authoritative_actions_v1.md`](authoritative_actions_v1.md).
-- The tracker still uses `tracker_frame` and does not merge into `board_state` as a partial-position-only override path.
+- 舊的前端 `endTurn` / `trySpendEther` / `phaseForTurn` mock 規則已退出目前主線。
+- 目前 authoritative action 已有 `end_turn`、`move_unit`、`attack_in_direction`；見 [`authoritative_actions_v1.md`](authoritative_actions_v1.md)。
+- Tracker：仍走 `tracker_frame`，不與 `board_state` 混成同一條「全量又只改位置」的路徑。
 
-## Summary
+## Step 2 定案摘要
 
-- The live Old Mick runtime additionally emits `phase`, `setup`, and `errors`.
-- `units[].id` remains a `string`.
-- The authoritative payload stays centered on `units[]`, with any legacy `players[].tokens[]` shape derived later if needed.
-- `players[]` does not include UI-only fields such as `color` or `zone`.
-- Tower data stays folded into `players[]`.
+- live Old Mick runtime 會額外輸出 `phase`、`setup`、`errors`。
+- `units[].id` 固定為 `string`。
+- authoritative payload 固定輸出 `units[]`；legacy adapter 轉成 `players[].tokens[]`。
+- `players[]` 不放 `color` / `zone`；由前端補 UI-only 欄位。
+- 塔資料固定摺進 `players[]`。
