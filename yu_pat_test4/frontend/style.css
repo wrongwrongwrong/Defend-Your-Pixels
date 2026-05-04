@@ -41,8 +41,8 @@ body {
   color: #5a4020;
 }
 
-#header .turn-badge.p1 { color: #d4a030; }
-#header .turn-badge.p2 { color: #52c840; }
+#header .turn-badge.p1 { color: #52c840; }
+#header .turn-badge.p2 { color: #d4a030; }
 
 /* ════════════════════════════════════════
    MAIN  (3-column grid)
@@ -73,12 +73,12 @@ body {
 }
 
 .side-panel.active-p1 {
-  background: #1e1408;
-  border-right-color: #d4a030;
+  background: #0c1810;
+  border-right-color: #52c840;
 }
 .side-panel.active-p2 {
-  background: #0c1810;
-  border-left-color: #52c840;
+  background: #1e1408;
+  border-left-color: #d4a030;
 }
 
 /* Panel header */
@@ -95,8 +95,8 @@ body {
   letter-spacing: 2px;
 }
 
-.side-panel.active-p1 .panel-head h2 { color: #d4a030; }
-.side-panel.active-p2 .panel-head h2 { color: #52c840; }
+.side-panel.active-p1 .panel-head h2 { color: #52c840; }
+.side-panel.active-p2 .panel-head h2 { color: #d4a030; }
 
 .panel-head p {
   font-size: 10px;
@@ -141,8 +141,8 @@ body {
   transition: width 0.4s ease;
 }
 
-#panel-left  .score-bar { background: #d4a030; }
-#panel-right .score-bar { background: #52c840; }
+#panel-left  .score-bar { background: #52c840; }
+#panel-right .score-bar { background: #d4a030; }
 
 .score-val {
   font-family: 'Share Tech Mono', monospace;
@@ -172,8 +172,8 @@ body {
   flex: 1;
 }
 
-#panel-left.active-p1   .tier-pips { color: #d4a030; }
-#panel-right.active-p2  .tier-pips { color: #52c840; }
+#panel-left.active-p1   .tier-pips { color: #52c840; }
+#panel-right.active-p2  .tier-pips { color: #d4a030; }
 
 .tier-name {
   font-size: 10px;
@@ -239,8 +239,8 @@ body {
   flex-shrink: 0;
 }
 
-#panel-left .token-tier  { color: #6a4820; }
-#panel-right .token-tier { color: #1e4820; }
+#panel-left .token-tier  { color: #1e4820; }
+#panel-right .token-tier { color: #6a4820; }
 
 /* ── HQ section ── */
 .hq-row {
@@ -284,9 +284,9 @@ body {
 }
 
 .hq-status.revealed { color: #ff6030; }
-.hq-status.confirmed { color: #d4a030; }
+.hq-status.confirmed { color: #52c840; }
 
-#panel-right .hq-status.confirmed { color: #52c840; }
+#panel-right .hq-status.confirmed { color: #d4a030; }
 
 .hq-sub {
   font-family: 'Share Tech Mono', monospace;
@@ -342,11 +342,11 @@ body {
   flex-shrink: 0;
 }
 
-.upg-stage.unlocked .upg-dot  { background: #4a3010; border-color: #6a4820; }
-.upg-stage.current  .upg-dot  { background: #d4a030; border-color: #d4a030; }
+.upg-stage.unlocked .upg-dot  { background: #1a4020; border-color: #2a6030; }
+.upg-stage.current  .upg-dot  { background: #52c840; border-color: #52c840; }
 
-#panel-right .upg-stage.unlocked .upg-dot { background: #1a4020; border-color: #2a6030; }
-#panel-right .upg-stage.current  .upg-dot { background: #52c840; border-color: #52c840; }
+#panel-right .upg-stage.unlocked .upg-dot { background: #4a3010; border-color: #6a4820; }
+#panel-right .upg-stage.current  .upg-dot { background: #d4a030; border-color: #d4a030; }
 
 .upg-label {
   font-size: 10px;
@@ -356,11 +356,11 @@ body {
   text-overflow: ellipsis;
 }
 
-.upg-stage.unlocked .upg-label { color: #6a4820; }
-.upg-stage.current  .upg-label { color: #d4a030; font-weight: 700; }
+.upg-stage.unlocked .upg-label { color: #2a6030; }
+.upg-stage.current  .upg-label { color: #52c840; font-weight: 700; }
 
-#panel-right .upg-stage.unlocked .upg-label { color: #2a6030; }
-#panel-right .upg-stage.current  .upg-label { color: #52c840; font-weight: 700; }
+#panel-right .upg-stage.unlocked .upg-label { color: #6a4820; }
+#panel-right .upg-stage.current  .upg-label { color: #d4a030; font-weight: 700; }
 
 /* ════════════════════════════════════════
    CENTER COLUMN
@@ -392,8 +392,8 @@ body {
   text-align: center;
 }
 
-#notif-text.p1-turn  { color: #d4a030; }
-#notif-text.p2-turn  { color: #52c840; }
+#notif-text.p1-turn  { color: #52c840; }
+#notif-text.p2-turn  { color: #d4a030; }
 #notif-text.info     { color: #8a9870; font-weight: 400; font-family: 'Share Tech Mono', monospace; font-size: 12px; }
 
 /* Game board canvas area */
@@ -444,6 +444,6 @@ body {
 }
 
 .log-entry:nth-child(2) { color: #9a8060; }
-.log-entry.highlight    { color: #d4a030; }
+.log-entry.highlight    { color: #52c840; }
 .log-entry.danger       { color: #d06030; }
-.log-entry.success      { color: #52c840; }
+.log-entry.success      { color: #d4a030; }
