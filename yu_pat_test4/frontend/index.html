@@ -14,7 +14,10 @@
   <!-- ══ HEADER ══════════════════════════════════════════════ -->
   <div id="header">
     <h1>Old Mick Against the Mob</h1>
-    <span class="turn-badge" id="turn-badge"></span>
+    <div class="header-right">
+      <button class="help-btn" onclick="openHelp()" aria-label="Help">?</button>
+      <span class="turn-badge" id="turn-badge"></span>
+    </div>
   </div>
 
   <!-- ══ MAIN ════════════════════════════════════════════════ -->
@@ -228,6 +231,69 @@
     </aside>
 
   </div><!-- #main -->
+
+  <!-- ══ HELP POPUP ═══════════════════════════════════════════ -->
+  <div class="help-overlay" id="helpOverlay">
+    <iframe src="help-popup.html" class="help-iframe" id="helpFrame"></iframe>
+  </div>
+
+  <style>
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .help-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1.5px solid #d4a030;
+      background: transparent;
+      color: #d4a030;
+      font-family: 'Oswald', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .help-btn:hover { background: #d4a030; color: #0a0804; }
+    .help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10,8,4,0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9000;
+      padding: 16px;
+    }
+    .help-overlay.active { display: flex; }
+    .help-iframe {
+      width: 100%;
+      max-width: 680px;
+      height: 88vh;
+      border: none;
+      border-radius: 16px;
+      background: transparent;
+    }
+  </style>
+
+  <script>
+    function openHelp() {
+      document.getElementById('helpOverlay').classList.add('active');
+    }
+    function closeHelp() {
+      document.getElementById('helpOverlay').classList.remove('active');
+    }
+    document.getElementById('helpOverlay').addEventListener('click', function(e) {
+      if (e.target === this) closeHelp();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeHelp();
+    });
+    window.addEventListener('message', function(e) {
+      if (e.data === 'closeHelp') closeHelp();
+    });
+  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
   <script type="module" src="src/main.js"></script>

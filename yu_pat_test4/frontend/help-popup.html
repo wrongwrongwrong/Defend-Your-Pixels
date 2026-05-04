@@ -458,15 +458,58 @@ body {
     </div>
 
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="tokens" onclick="switchTab('tokens')">Tokens</button>
+      <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+      <button class="tab-btn" data-tab="tokens" onclick="switchTab('tokens')">Tokens</button>
       <button class="tab-btn" data-tab="upgrades" onclick="switchTab('upgrades')">Upgrades</button>
-      <button class="tab-btn" data-tab="winconditions" onclick="switchTab('winconditions')">Win Conditions</button>
+      <button class="tab-btn" data-tab="winconditions" onclick="switchTab('winconditions')">Win</button>
     </div>
 
     <div class="panel-body">
 
+      <!-- ── OVERVIEW TAB ── -->
+      <div class="tab-pane active" id="tab-overview">
+        <div class="sec-label">The two sides</div>
+        <div class="side-split">
+          <div class="side-card farmer">
+            <div class="side-tag">Farmer side</div>
+            <div class="side-name">Old Mick</div>
+            <div class="side-desc">Protect wheat paddocks. Find the Bird Council or destroy the feeding grounds. Two riflemen, one stubborn farmer.</div>
+          </div>
+          <div class="side-card emu">
+            <div class="side-tag">Emu side</div>
+            <div class="side-name">The Mob</div>
+            <div class="side-desc">Raid wheat, defend feeding grounds. Find the Grain Stash or destroy the wheat paddocks. Two emu packs, one cassowary.</div>
+          </div>
+        </div>
+
+        <div class="sec-label">How to play</div>
+        <div class="prose-block">
+          <strong>Movement:</strong> ATK Tokens destroy cells and DEF tokens increase HP of cells. Straight lines only — horizontal, vertical, or diagonal. ATK tokens hit the first enemy cell they reach across the fence and return. DEF tokens can reposition (spends their turn).
+        </div>
+        <div class="prose-block">
+          <strong>Upgrades:</strong> Destroy enemy cells to fund upgrades for your ATK and DEF tokens from Level 1 to 3. Level 4 is a one-time NUKE.
+        </div>
+        <div class="prose-block">
+          <strong>Win:</strong> Destroy the enemy HQ for instant win, or destroy all enemy cells for attrition victory.
+        </div>
+
+        <div class="sec-label">Terrain</div>
+        <div class="token-grid">
+          <div class="token-card">
+            <span class="token-badge badge-terrain">Hard</span>
+            <div class="token-name">Rocks</div>
+            <div class="token-desc">Permanently blocks attacks.</div>
+          </div>
+          <div class="token-card">
+            <span class="token-badge badge-terrain">Soft</span>
+            <div class="token-name">Termite Mounds</div>
+            <div class="token-desc">Blocks until destroyed (2 hits).</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── TOKENS TAB ── -->
-      <div class="tab-pane active" id="tab-tokens">
+      <div class="tab-pane" id="tab-tokens">
 
         <div class="sec-label">The two sides</div>
         <div class="side-split">
@@ -552,7 +595,7 @@ body {
         <div class="token-grid">
           <div class="token-card">
             <div class="token-img">
-              <img src="assets/images/hard-mick-v2.png" alt="Rocks">
+              <img src="assets/images/hard-final.png" alt="Rocks">
             </div>
             <span class="token-badge badge-terrain">Hard</span>
             <div class="token-name">Rocks</div>
@@ -561,7 +604,7 @@ body {
           </div>
           <div class="token-card">
             <div class="token-img">
-              <img src="assets/images/soft-mick-v1.png" alt="Termite Mounds">
+              <img src="assets/images/soft-final.png" alt="Termite Mounds">
             </div>
             <span class="token-badge badge-terrain">Soft</span>
             <div class="token-name">Termite Mounds</div>
@@ -746,6 +789,12 @@ function switchTab(tabId) {
 }
 
 function closeHelp() {
+  // If in iframe, tell parent to close
+  if (window.parent !== window) {
+    window.parent.postMessage('closeHelp', '*');
+    return;
+  }
+  // Standalone mode
   const overlay = document.getElementById('helpOverlay');
   overlay.style.transition = 'opacity 0.15s';
   overlay.style.opacity = '0';
