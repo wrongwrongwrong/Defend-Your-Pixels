@@ -298,7 +298,7 @@ class SetupState:
             return make_error("hq_wrong_side")
         self.hq_candidates[side] = (int(position["x"]), int(position["y"]))
         self.status_code = "waiting_for_hq_confirmation"
-        self.status_message = f"{SIDE_DISPLAY_NAME[side]} HQ marker is stable on a valid cell. Hand the turn marker to the other side to lock this HQ and continue."
+        self.status_message = f"{SIDE_DISPLAY_NAME[side]} HQ marker is stable on a valid cell. Scan the confirm marker to lock this hidden HQ."
         return None
 
     def clear_hq_candidate(self, side: str) -> None:
@@ -317,7 +317,7 @@ class SetupState:
             return False, None
         if self.hq_candidates.get(side) is None:
             self.status_code = "waiting_for_hq_candidate"
-            self.status_message = f"{SIDE_DISPLAY_NAME[side]} must place a valid HQ marker before handing over the turn marker."
+            self.status_message = f"{SIDE_DISPLAY_NAME[side]} must place a valid HQ marker before scanning the confirm marker."
             return False, None
 
         self.hq_confirmed[side] = True
@@ -330,7 +330,7 @@ class SetupState:
 
         self.active_setup_side = "p2" if side == "p1" else "p1"
         self.status_code = "waiting_for_hq_candidate"
-        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must place the hidden HQ marker while the other player looks away."
+        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must show that side's turn marker, then place the hidden HQ marker while the other player looks away."
         return False, None
 
     def reset_hq_setup(self) -> None:
@@ -373,11 +373,13 @@ class SetupState:
             return
         if self.active_setup_side is None:
             self.status_code = "waiting_for_turn_marker"
-            self.status_message = "Board scan ready. Place one turn marker to choose who places a hidden HQ first while the other player looks away."
+            self.status_message = "Board scan ready. Show ID10 or ID20 to choose who places a hidden HQ first while the other player looks away."
             return
         if self.hq_candidates.get(self.active_setup_side) is None:
             self.status_code = "waiting_for_hq_candidate"
-            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} is placing a hidden HQ. Keep the turn marker on this side and position that side's HQ marker on a valid cell."
+            marker_id = 10 if self.active_setup_side == "p1" else 20
+            hq_marker_id = 11 if self.active_setup_side == "p1" else 21
+            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} is placing a hidden HQ. Keep ID{marker_id} visible and position ID{hq_marker_id} on a valid cell."
             return
         self.status_code = "waiting_for_hq_confirmation"
-        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} HQ marker is stable on a valid cell. Hand the turn marker to the other side to lock this HQ and continue."
+        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} HQ marker is stable on a valid cell. Scan ID4 to confirm and hide it."

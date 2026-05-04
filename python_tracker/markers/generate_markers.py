@@ -9,6 +9,8 @@ Output:
     corner_1_TR.png   ← tape to top-right corner
     corner_2_BL.png   ← tape to bottom-left corner
     corner_3_BR.png   ← tape to bottom-right corner
+    marker_4_CONFIRM.png
+    marker_5_HELP.png
     marker_10_P1_TURN.png
     marker_11_P1_HQ.png
     marker_12_P1_ATK_A.png
@@ -24,6 +26,14 @@ Run:
     python python_tracker/markers/generate_markers.py
 Then print the PNGs at the size you want (e.g. 5cm × 5cm for tokens,
 3cm × 3cm for corner markers).
+
+Setup flow reference:
+    ID 10 = P1 turn marker during HQ setup
+    ID 11 = P1 HQ placement marker
+    ID 20 = P2 turn marker during HQ setup
+    ID 21 = P2 HQ placement marker
+    ID 4  = shared confirm marker for locking the active side's HQ
+    ID 5  = shared help marker for opening the in-game help overlay
 """
 
 import os
@@ -54,6 +64,10 @@ MARKERS = {
     22: "marker_22_P2_ATK_A",
     23: "marker_23_P2_ATK_B",
     24: "marker_24_P2_DEF",
+    # Confirm
+    4: "marker_4_CONFIRM",
+    # Help
+    5: "marker_5_HELP",
 }
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
