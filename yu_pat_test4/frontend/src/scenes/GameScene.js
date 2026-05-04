@@ -589,11 +589,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     const msgs = {
-      homestead_destroyed: ["THE MOB WINS",  "Old Mick's Homestead has fallen."],
-      nest_destroyed:      ["OLD MICK WINS", "The Nest has been destroyed."],
+      homestead_destroyed: ["THE MOB WINS",  "The Homestead falls. Old Mick has nowhere left to stand."],
+      nest_destroyed:      ["OLD MICK WINS", "The Nest is gone. Every future emu, unborn."],
       attrition: G.winner === "p1"
-        ? ["OLD MICK WINS", "Feeding grounds razed — The Mob starves."]
-        : ["THE MOB WINS",  "Paddocks trampled — Old Mick runs out."],
+        ? ["OLD MICK WINS", "The scrublands go quiet. The outback belongs to Old Mick."]
+        : ["THE MOB WINS",  "No grain, no operation. The mob eats well tonight."],
     };
     const [title, sub] = msgs[G.win_reason] ?? [`${G.winner?.toUpperCase()} WINS`, ""];
     this._winTitleTxt.setText(title);

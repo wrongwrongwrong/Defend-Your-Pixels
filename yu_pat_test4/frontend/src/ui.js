@@ -6,7 +6,8 @@
  * any of these elements.
  */
 
-const TIER_NAMES = ["Raw Determination", "Campaigners", "Veterans", "Legends", "★ Champions"];
+const TIER_NAMES_P1 = ["—", "Better Aim", "Machine Gun Nest", "Call Canberra", "Unleash Keith"];
+const TIER_NAMES_P2 = ["—", "First Lesson", "Dark Awakening", "The Stampede", "The Ancestors"];
 const ARROW_CHAR = { E:"→", SE:"↘", S:"↓", SW:"↙", W:"←", NW:"↖", N:"↑", NE:"↗" };
 
 function colLabel(col) { return String.fromCharCode(65 + col); }
@@ -78,8 +79,8 @@ function onState(s) {
   _setScore("p2", G.score_p2_attrition ?? 0, threshold);
 
   // Tier
-  _setTier("p1", tier1);
-  _setTier("p2", tier2);
+  _setTier("p1", tier1, TIER_NAMES_P1);
+  _setTier("p2", tier2, TIER_NAMES_P2);
 
   // Tokens
   _setToken("p1", "atk_a", p1.atk_a, tier1);
@@ -108,13 +109,13 @@ function _setScore(side, score, max) {
   if (val) val.textContent = `${score} / ${max}`;
 }
 
-function _setTier(side, tier) {
+function _setTier(side, tier, names) {
   const num  = document.getElementById(`${side}-tier-num`);
   const pips = document.getElementById(`${side}-tier-pips`);
   const name = document.getElementById(`${side}-tier-name`);
   if (num)  num.textContent  = `${tier}`;
   if (pips) pips.textContent = tierPips(tier);
-  if (name) name.textContent = TIER_NAMES[tier] ?? "";
+  if (name) name.textContent = names[tier] ?? "";
 }
 
 function _setToken(side, role, tok, tier) {
@@ -187,8 +188,8 @@ function _setNotif(s, G, battle) {
       if (tok?.col != null && tok.direction && !tok.stale) {
         const arrow = ARROW_CHAR[tok.direction] ?? "?";
         const name  = role === "atk_a"
-          ? (activeSide === "p1" ? "Keith A" : "Mob A")
-          : (activeSide === "p1" ? "Keith B" : "Mob B");
+          ? (activeSide === "p1" ? "Rifleman A" : "Mob A")
+          : (activeSide === "p1" ? "Rifleman B" : "Mob B");
         parts.push(`${name} ${arrow} ${posLabel(tok)}`);
       }
     }
@@ -227,8 +228,8 @@ function checkTransitions(s) {
   const tier1 = G.tier_p1 ?? 0;
   const tier2 = G.tier_p2 ?? 0;
 
-  if (tier1 > _prevTiers.p1) addLog(`▲ Old Mick reached Tier ${tier1} — ${TIER_NAMES[tier1]}`, "highlight");
-  if (tier2 > _prevTiers.p2) addLog(`▲ The Mob reached Tier ${tier2} — ${TIER_NAMES[tier2]}`, "success");
+  if (tier1 > _prevTiers.p1) addLog(`▲ The Riflemen: ${TIER_NAMES_P1[tier1] ?? `Tier ${tier1}`}`, "highlight");
+  if (tier2 > _prevTiers.p2) addLog(`▲ The Mob: ${TIER_NAMES_P2[tier2] ?? `Tier ${tier2}`}`, "success");
   _prevTiers.p1 = tier1;
   _prevTiers.p2 = tier2;
 
@@ -237,7 +238,7 @@ function checkTransitions(s) {
     if (_prevHqRevealed[side] !== posKey) {
       _prevHqRevealed[side] = posKey;
       const label = `${colLabel(pos[0])}${pos[1] + 1}`;
-      const name  = side === "p1" ? "Old Mick's Homestead" : "The Nest";
+      const name  = side === "p1" ? "The Homestead" : "The Nest";
       addLog(`🎯 ${name} revealed at ${label}!`, "danger");
     }
   }
