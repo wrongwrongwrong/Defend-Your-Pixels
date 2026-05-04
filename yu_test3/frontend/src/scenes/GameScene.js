@@ -585,8 +585,8 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // HQ placement preview ring
-    if (s.phase === "hq_placement") this._drawHqPlacementRing(s);
+    // HQ marker ring — show whenever a physical HQ token is on the board
+    this._drawHqPlacementRing(s);
 
     // ── Tokens ─────────────────────────────────────────────────────────────────
     this._renderTokens(s.p1, s.p2, inBattle);
@@ -756,24 +756,27 @@ export class GameScene extends Phaser.Scene {
   // ─── HQ placement preview ring ────────────────────────────────────────────
 
   _drawHqPlacementRing(s) {
-    const side   = s.setup?.active_setup_side;
-    const marker = s.hq_markers?.[side];
-    if (!side || !marker || marker.col == null || marker.stale) return;
+    // Draw a pulsing ring at every visible HQ marker position (both sides).
+    // Works during any game phase — the server now always sends hq_markers.
+    for (const side of ["p1", "p2"]) {
+      const marker = s.hq_markers?.[side];
+      if (!marker || marker.col == null || marker.stale) continue;
 
-    const { col, row } = marker;
-    const cellW = GRID_DRAW_W / GRID_SIZE;
-    const cellH = GRID_DRAW_H / GRID_SIZE;
-    const bx = BOARD_OFF_X + GRID_INSET_X + col * cellW + 2;
-    const by = BOARD_OFF_Y + GRID_INSET_Y + row * cellH + 2;
-    const pulse = 0.55 + 0.22 * Math.sin(this.time.now / 180);
-    const color = side === "p1" ? 0xffd060 : 0x70ef50;
+      const { col, row } = marker;
+      const cellW = GRID_DRAW_W / GRID_SIZE;
+      const cellH = GRID_DRAW_H / GRID_SIZE;
+      const bx = BOARD_OFF_X + GRID_INSET_X + col * cellW + 2;
+      const by = BOARD_OFF_Y + GRID_INSET_Y + row * cellH + 2;
+      const pulse = 0.55 + 0.22 * Math.sin(this.time.now / 180);
+      const color = side === "p1" ? 0xffd060 : 0x70ef50;
 
-    this.dynGfx.lineStyle(3, color, pulse);
-    this.dynGfx.strokeRoundedRect(bx, by, cellW - 4, cellH - 4, 5);
-    this.dynGfx.lineStyle(1, 0xffffff, 0.7);
-    const cx = bx + (cellW - 4) / 2;
-    const cy = by + (cellH - 4) / 2;
-    this.dynGfx.strokeCircle(cx, cy, cellW * 0.18);
+      this.dynGfx.lineStyle(3, color, pulse);
+      this.dynGfx.strokeRoundedRect(bx, by, cellW - 4, cellH - 4, 5);
+      this.dynGfx.lineStyle(1, 0xffffff, 0.7);
+      const cx = bx + (cellW - 4) / 2;
+      const cy = by + (cellH - 4) / 2;
+      this.dynGfx.strokeCircle(cx, cy, cellW * 0.18);
+    }
   }
 
   // ─── Token sprites ────────────────────────────────────────────────────────
@@ -913,19 +916,17 @@ export class GameScene extends Phaser.Scene {
     const hqDestroyed = G.winner &&
       (G.win_reason === "homestead_destroyed" || G.win_reason === "nest_destroyed");
 
-    // During HQ placement — show ghost HQ at marker position
-    if (s.phase === "hq_placement") {
-      for (const [side, key] of [["p1", "p1"], ["p2", "p2"]]) {
-        const m = s.hq_markers?.[side];
-        if (m?.col != null && !m.stale) {
-          showAt(key, m.col, m.row);
-          this.hqSprites[key]?.setAlpha(0.55);
-        }
+    // Show ghost HQ sprite wherever the physical HQ token is visible on the board.
+    // This works in any phase — the server now always populates hq_markers.
+    for (const side of ["p1", "p2"]) {
+      const m = s.hq_markers?.[side];
+      if (m?.col != null && !m.stale) {
+        showAt(side, m.col, m.row);
+        this.hqSprites[side]?.setAlpha(0.55);
       }
-      return;
     }
 
-    // In battle — show revealed HQs (and destroyed variants)
+    // Also show fully-revealed HQs (confirmed / destroyed) at their locked position
     for (const [side, pos] of Object.entries(G.hq_revealed || {})) {
       const [col, row] = pos;
       const deadKey    = `${side}_dead`;

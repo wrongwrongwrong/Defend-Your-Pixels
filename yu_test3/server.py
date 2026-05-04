@@ -127,6 +127,7 @@ async def camera_loop(session: Session, camera_index: int, show_window: bool):
     detector, aruco_dict, params, api_mode = tracker.build_detector()
     print(f"[OK] ArUco detector ready ({api_mode} API)\n")
     token_cache = tracker.TokenCache()
+    hq_cache    = tracker.HqCache()
 
     try:
         while True:
@@ -135,17 +136,34 @@ async def camera_loop(session: Session, camera_index: int, show_window: bool):
                 print("[ERROR] Failed to read frame — check camera.")
                 break
 
-            cc, p1_live, p2_live, turn_angle, raw = tracker.detect_frame(
+            cc, p1_live, p2_live, turn_angle, hq_raw, raw = tracker.detect_frame(
                 frame, detector, aruco_dict, params, api_mode
             )
             H = tracker.compute_homography(cc)
 
             p1 = token_cache.resolve_side("p1", p1_live, H)
             p2 = token_cache.resolve_side("p2", p2_live, H)
+
+            # Resolve HQ marker positions (with stale cache)
+            hq_markers = {
+                "p1": hq_cache.resolve("p1", hq_raw, H),
+                "p2": hq_cache.resolve("p2", hq_raw, H),
+            }
+
+            # If a fresh HQ marker is visible, update the game model's HQ position
+            # so the server's shot-resolution uses the physically placed HQ.
+            for side, info in hq_markers.items():
+                if not info["stale"] and info["col"] is not None:
+                    if side == "p1":
+                        session.model.hq_p1 = (info["col"], info["row"])
+                    else:
+                        session.model.hq_p2 = (info["col"], info["row"])
+
             turn = tracker.turn_from_angle(turn_angle)
             events = session.model.on_turn_change(turn, p1, p2) if turn else []
 
-            await broadcast(_build_state(session, cc, p1, p2, turn, turn_angle, events))
+            await broadcast(_build_state(session, cc, p1, p2, turn, turn_angle,
+                                         hq_markers, events))
 
             if show_window:
                 # Draw bounding boxes + labels around every detected marker
@@ -193,12 +211,14 @@ async def idle_loop(session: Session):
     empty_token = {"col": None, "row": None, "angle": None,
                    "direction": None, "stale": True}
     p_empty = {role: empty_token.copy() for role in ("atk_a", "atk_b", "def")}
+    hq_empty = {"p1": {"col": None, "row": None, "stale": True},
+                "p2": {"col": None, "row": None, "stale": True}}
     while True:
-        await broadcast(_build_state(session, {}, p_empty, p_empty, None, None, []))
+        await broadcast(_build_state(session, {}, p_empty, p_empty, None, None, hq_empty, []))
         await asyncio.sleep(0.1)  # 10 fps is plenty for static UI
 
 
-def _build_state(session, cc, p1, p2, turn, turn_angle, events):
+def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
     return {
         "phase":         "game",
         "corners_found": len(cc),
@@ -206,6 +226,7 @@ def _build_state(session, cc, p1, p2, turn, turn_angle, events):
         "turn_angle":    round(turn_angle, 1) if turn_angle is not None else None,
         "p1":            p1,
         "p2":            p2,
+        "hq_markers":    hq_markers,   # physical HQ token positions
         "terrain":       session.terrain,
         "map_seed":      session.seed,
         "game":          session.model.snapshot(),

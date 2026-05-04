@@ -101,8 +101,9 @@ def to_grid_cell(H, point):
 # ─── Frame detection ──────────────────────────────────────────────────────────
 
 def detect_frame(frame, detector, aruco_dict, params, api_mode):
-    """Returns (corner_centers, p1_raw, p2_raw, turn_angle, raw)
+    """Returns (corner_centers, p1_raw, p2_raw, turn_angle, hq_raw, raw)
     where `raw` = {"corners": ..., "ids": ...} for optional preview overlay.
+    `hq_raw` = {"p1": {"center": (px, py)}, "p2": {...}} for detected HQ markers.
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     if api_mode == "modern":
@@ -110,10 +111,10 @@ def detect_frame(frame, detector, aruco_dict, params, api_mode):
     else:
         corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=params)
 
-    cc, p1, p2, turn_angle = {}, {}, {}, None
+    cc, p1, p2, turn_angle, hq_raw = {}, {}, {}, None, {}
     raw = {"corners": corners, "ids": ids}
     if ids is None:
-        return cc, p1, p2, turn_angle, raw
+        return cc, p1, p2, turn_angle, hq_raw, raw
 
     for i, mid in enumerate(ids.flatten()):
         mid = int(mid)
@@ -132,9 +133,15 @@ def detect_frame(frame, detector, aruco_dict, params, api_mode):
         elif mid in (P1_TURN_ID, P2_TURN_ID):
             # Turn markers — record angle so server can tell which side is acting
             turn_angle = angle
-        # P1_HQ_ID, P2_HQ_ID, CONFIRM_ID are handled by the server/game_model directly
+        elif mid == P1_HQ_ID:
+            # P1 HQ placement marker — record pixel centre for homography later
+            hq_raw["p1"] = {"center": centre}
+        elif mid == P2_HQ_ID:
+            # P2 HQ placement marker
+            hq_raw["p2"] = {"center": centre}
+        # CONFIRM_ID (4) is intentionally ignored in this simplified server
 
-    return cc, p1, p2, turn_angle, raw
+    return cc, p1, p2, turn_angle, hq_raw, raw
 
 
 # ─── Preview overlay ──────────────────────────────────────────────────────────
@@ -206,3 +213,29 @@ class TokenCache:
                              else {"col": None, "row": None, "angle": None,
                                    "direction": None, "stale": True})
         return out
+
+
+# ─── HQ marker cache ──────────────────────────────────────────────────────────
+
+class HqCache:
+    """Remembers last-seen HQ marker positions with the same TTL as TokenCache."""
+
+    def __init__(self, ttl: float = CACHE_TTL_SEC):
+        self.ttl   = ttl
+        self.store = {}   # side → (col, row, timestamp)
+
+    def resolve(self, side: str, hq_raw: dict, H) -> dict:
+        """Return {"col", "row", "stale"} for `side` ("p1" or "p2")."""
+        info = hq_raw.get(side)
+        if info is not None and H is not None:
+            col, row = to_grid_cell(H, info["center"])
+            self.store[side] = (col, row, time.time())
+            return {"col": col, "row": row, "stale": False}
+
+        entry = self.store.get(side)
+        if entry:
+            col, row, ts = entry
+            if time.time() - ts <= self.ttl:
+                return {"col": col, "row": row, "stale": True}
+
+        return {"col": None, "row": None, "stale": True}
