@@ -161,6 +161,7 @@ export class GameScene extends Phaser.Scene {
     this._buildTokenSprites();
     this._buildHqSprites();
     this._buildWinOverlay();
+    this._buildTutorialOverlay();
     this._buildHelpOverlay();
     this._buildMuteButton();
     this._bindWS();
@@ -532,6 +533,119 @@ export class GameScene extends Phaser.Scene {
     this.winContainer.add([bg, this._winTitleTxt, this._winSubTxt]);
   }
 
+  _buildTutorialOverlay() {
+    const cx = BOARD_OFF_X + BOARD_PX / 2;
+    const topY = BOARD_OFF_Y + 92;
+
+    this.tutorialContainer = this.add.container(cx, topY)
+      .setDepth(50)
+      .setVisible(false);
+
+    const panelW = 550;
+    const panelH = 150;
+    const bg = this.add.rectangle(0, 0, panelW, panelH, 0x1a1008, 0.95)
+      .setStrokeStyle(2, 0xffd060);
+
+    this._tutStepTxt = this.add.text(panelW / 2 - 12, -panelH / 2 + 12, "", {
+      fontFamily: FONT_MONO, fontSize: "11px", color: "#8a7060",
+    }).setOrigin(1, 0);
+
+    this._tutTitleTxt = this.add.text(0, -panelH / 2 + 28, "", {
+      fontFamily: FONT_TITLE, fontSize: "20px", fontStyle: "bold", color: "#ffd060",
+    }).setOrigin(0.5, 0);
+
+    this._tutTextTxt = this.add.text(0, -panelH / 2 + 62, "", {
+      fontFamily: FONT_LABEL, fontSize: "14px", color: "#d0c0a0",
+      align: "center", wordWrap: { width: panelW - 40 }, lineSpacing: 4,
+    }).setOrigin(0.5, 0);
+
+    this._tutHintTxt = this.add.text(0, panelH / 2 - 18, "Press SPACE or click to continue", {
+      fontFamily: FONT_MONO, fontSize: "11px", color: "#7a6a50",
+    }).setOrigin(0.5).setVisible(false);
+
+    this.tutorialContainer.add([bg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt]);
+
+    this.tutHighlightGfx = this.add.graphics().setDepth(45);
+
+    this.input.keyboard?.addCapture?.([32, "SPACE"]);
+    this.input.keyboard.on("keydown", (event) => {
+      const isSpace = event?.code === "Space" || event?.key === " " || event?.keyCode === 32;
+      if (!isSpace) return;
+      event?.preventDefault?.();
+      if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
+    });
+
+    this.tutorialContainer.setSize(panelW, panelH);
+    this.tutorialContainer.setInteractive(
+      new Phaser.Geom.Rectangle(-panelW / 2, -panelH / 2, panelW, panelH),
+      Phaser.Geom.Rectangle.Contains,
+    );
+    this.tutorialContainer.on("pointerdown", (pointer, _x, _y, event) => {
+      event?.stopPropagation();
+      if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
+    });
+  }
+
+  _tutorialNeedsDismiss() {
+    const tut = this.gameState?.tutorial;
+    return !!(tut?.active && tut?.needs_dismiss);
+  }
+
+  _sendTutorialDismiss() {
+    if (!this.ws || !this._tutorialNeedsDismiss()) return;
+    this.ws.send("tutorial_dismiss", {});
+    playSfx(this, "sfx_select");
+  }
+
+  _renderTutorial(tut) {
+    this.tutHighlightGfx?.clear();
+
+    if (!tut?.active) {
+      this.tutorialContainer?.setVisible(false);
+      if (this._tutCellLabel) this._tutCellLabel.setVisible(false);
+      return;
+    }
+
+    this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
+    this._tutTitleTxt.setText(tut.title || "");
+    this._tutTextTxt.setText(tut.text || "");
+    this._tutHintTxt
+      .setText(tut.completed
+        ? "Tutorial Complete! Press SPACE or click to continue into the live game."
+        : "Press SPACE or click to continue")
+      .setVisible(!!tut.needs_dismiss);
+
+    this.tutorialContainer.setVisible(true);
+
+    if (!tut.highlight) {
+      if (this._tutCellLabel) this._tutCellLabel.setVisible(false);
+      return;
+    }
+
+    const { col, row } = tut.highlight;
+    const cellW = GRID_DRAW_W / GRID_SIZE;
+    const cellH = GRID_DRAW_H / GRID_SIZE;
+    const bx = BOARD_OFF_X + GRID_INSET_X + col * cellW;
+    const by = BOARD_OFF_Y + GRID_INSET_Y + row * cellH;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 200);
+
+    this.tutHighlightGfx.fillStyle(0xffd060, 0.15 + 0.15 * pulse);
+    this.tutHighlightGfx.fillRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+    this.tutHighlightGfx.lineStyle(3, 0xffd060, 0.6 + 0.4 * pulse);
+    this.tutHighlightGfx.strokeRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+
+    if (!this._tutCellLabel) {
+      this._tutCellLabel = this.add.text(0, 0, "", {
+        fontFamily: FONT_MONO, fontSize: "12px", fontStyle: "bold",
+        color: "#ffd060", stroke: "#000000", strokeThickness: 3,
+      }).setOrigin(0.5).setDepth(46);
+    }
+    this._tutCellLabel
+      .setText(`${colLabel(col)}${row + 1}`)
+      .setPosition(bx + cellW / 2, by + cellH + 8)
+      .setVisible(true);
+  }
+
   _buildHelpOverlay() {
     const overlay = this.add.container(CANVAS_W / 2, CANVAS_H / 2).setDepth(45).setVisible(false);
     const bg = this.add.rectangle(0, 0, CANVAS_W - 120, CANVAS_H - 140, 0x0b0704, 0.93)
@@ -647,6 +761,7 @@ export class GameScene extends Phaser.Scene {
     this._renderBottomBar(s);
 
     // ── Overlay / action UI ───────────────────────────────────────────────────
+    this._renderTutorial(s.tutorial);
     this._renderHelpUi(s);
     this._updateNukeUi(s);
 
@@ -1110,6 +1225,7 @@ export class GameScene extends Phaser.Scene {
       side_selection: "Choose First HQ Side",
       hq_placement:   "Hidden HQ Placement",
       game:           "Battle",
+      mode_select:    "Choose Mode",
     }[phase] ?? "Setup";
   }
 
@@ -1233,6 +1349,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   _handleBoardClick(pointer) {
+    if (this._tutorialNeedsDismiss()) {
+      this._sendTutorialDismiss();
+      return;
+    }
     if (this.gameState?.phase !== "game" || !this._nukeArmingSide) return;
     const cellW = GRID_DRAW_W / GRID_SIZE;
     const cellH = GRID_DRAW_H / GRID_SIZE;

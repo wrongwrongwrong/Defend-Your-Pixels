@@ -30,7 +30,7 @@ from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
 from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
-from live_rules import game_model, terrain_gen
+from live_rules import game_model, terrain_gen, tutorial
 
 
 CAMERA_ID = 1
@@ -39,6 +39,9 @@ HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
 FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
+PHASE_MODE_SELECT = "mode_select"
+MODE_NORMAL = "normal"
+MODE_TUTORIAL = "tutorial"
 
 ROLE_BY_MARKER_ID = {
     12: ("p1", "atk_a"),
@@ -334,10 +337,21 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bo
 class Session:
     def __init__(self):
         self.setup = SetupState()
+        self.selected_mode: str | None = None
+        self.tutorial_ctrl: tutorial.TutorialController | None = None
+        self.tutorial_state: dict | None = None
+        self.board_scan_ready = False
         self.reset(board_scan_ready=False)
 
     def reset(self, *, board_scan_ready: bool) -> None:
-        self.seed = int(time.time() * 1000) % (2**31)
+        self.board_scan_ready = bool(board_scan_ready)
+        if self.selected_mode == MODE_TUTORIAL:
+            self.seed = tutorial.TUTORIAL_SEED
+            self.tutorial_ctrl = tutorial.new_tutorial()
+        else:
+            self.seed = int(time.time() * 1000) % (2**31)
+            self.tutorial_ctrl = None
+        self.tutorial_state = None
         self.terrain = terrain_gen.generate(seed=self.seed)
         self.accepted_p1 = new_side_state()
         self.accepted_p2 = new_side_state()
@@ -348,8 +362,25 @@ class Session:
         self.pending_events: list[dict] = []
         self._reset_setup_tracking()
         self._reset_battle_tracking()
-        self.setup.reset(board_scan_ready=board_scan_ready)
-        print(f"[MAP] New game (seed={self.seed})")
+        self.setup.reset(board_scan_ready=self.board_scan_ready)
+        mode_tag = f" mode={self.selected_mode}" if self.selected_mode else ""
+        print(f"[MAP] New game (seed={self.seed}{mode_tag})")
+
+    def select_mode(self, mode: str, *, board_scan_ready: bool) -> bool:
+        if self.selected_mode is not None or mode not in {MODE_NORMAL, MODE_TUTORIAL}:
+            return False
+        self.selected_mode = mode
+        self.reset(board_scan_ready=board_scan_ready)
+        print(f"[MODE] Selected {mode}")
+        return True
+
+    def _finish_tutorial_mode(self) -> None:
+        if self.selected_mode != MODE_TUTORIAL:
+            return
+        self.selected_mode = MODE_NORMAL
+        self.tutorial_ctrl = None
+        self.tutorial_state = None
+        print("[MODE] Tutorial complete. Continuing in normal game mode.")
 
     def _reset_setup_tracking(self) -> None:
         self._observed_setup_turn_side: str | None = None
@@ -434,9 +465,24 @@ class Session:
             return errors
 
         if action_name == "choose_side":
+            if self.selected_mode is None:
+                return errors
             first_player_side = command.get("first_player_side")
             if isinstance(first_player_side, str):
                 self.setup.choose_side(first_player_side)
+            return errors
+
+        if action_name == "select_mode":
+            mode = command.get("mode")
+            if isinstance(mode, str):
+                self.select_mode(mode, board_scan_ready=board_scan_ready)
+            return errors
+
+        if action_name == "tutorial_dismiss":
+            if self.tutorial_ctrl is not None:
+                self.tutorial_ctrl.dismiss()
+                if self.tutorial_ctrl.finished:
+                    self._finish_tutorial_mode()
             return errors
 
         if action_name == "set_hq_candidate":
@@ -483,6 +529,7 @@ class Session:
         return errors
 
     def sync_scan_state(self, board_scan_ready: bool) -> None:
+        self.board_scan_ready = bool(board_scan_ready)
         if not board_scan_ready and self.setup.phase != PHASE_GAME:
             self._reset_setup_tracking()
         self.setup.set_board_scan_ready(board_scan_ready)
@@ -510,6 +557,10 @@ class Session:
         if self.setup.phase == PHASE_HQ_PLACEMENT:
             self._update_marker_driven_hq_setup(turn, hq_markers, confirm_present)
         self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
+        if self.tutorial_ctrl is not None:
+            self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers)
+            if self.tutorial_ctrl.finished:
+                self._finish_tutorial_mode()
         return errors
 
     def game_events(self) -> list[dict]:
@@ -518,8 +569,9 @@ class Session:
         return events
 
     def payload(self, *, corners_found: int, turn_angle: float | None, errors: list[dict], events: list[dict]) -> dict:
-        return {
-            "phase": self.setup.phase,
+        payload = {
+            "phase": PHASE_MODE_SELECT if self.selected_mode is None else self.setup.phase,
+            "mode": self.selected_mode,
             "corners_found": corners_found,
             "turn": self.turn,
             "turn_angle": turn_angle,
@@ -535,6 +587,9 @@ class Session:
             "help_visible": self.help_visible,
             "errors": dedupe_errors(errors),
         }
+        if self.tutorial_state is not None and self.selected_mode == MODE_TUTORIAL:
+            payload["tutorial"] = self.tutorial_state
+        return payload
 
     def _stable_turn_side(self, turn: int | None) -> str | None:
         side = "p1" if turn == 1 else "p2" if turn == 2 else None
