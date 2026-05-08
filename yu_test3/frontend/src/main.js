@@ -9,6 +9,7 @@ const config = {
   height: CANVAS_H,
   backgroundColor: "#0f0c08",
   parent: "game-container",
+  dom: { createContainer: true },
   scene: [BootScene, IntroScene, GameScene],
   scale: {
     mode: Phaser.Scale.FIT,

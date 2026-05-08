@@ -38,6 +38,14 @@ function cellXY(col, row) {
   };
 }
 
+/** Matches live_rules/setup_flow.side_of_cell: p1 bottom-left, p2 top-right, fence when col+row===11. */
+function sideOfTutorialCell(col, row) {
+  const sum = col + row;
+  if (sum < 11) return "p1";
+  if (sum > 11) return "p2";
+  return null;
+}
+
 // Territory: anti-diagonal at col+row=11 (L1 → A12) is the fence.
 // Matches game_model.py: _side_of() returns "p1" / "p2" / None.
 function isP1Cell(col, row)  { return col + row < 11; }
@@ -541,29 +549,71 @@ export class GameScene extends Phaser.Scene {
       .setDepth(50)
       .setVisible(false);
 
-    const panelW = 550;
-    const panelH = 150;
-    const bg = this.add.rectangle(0, 0, panelW, panelH, 0x1a1008, 0.95)
+    this._tutLayoutTextOnly = {
+      panelW: 640,
+      panelH: 210,
+      pad: 20,
+      titleSize: 30,
+      bodySize: 20,
+      stepSize: 16,
+      hintSize: 16,
+      lineSpacing: 6,
+      titleY: 18,
+      bodyY: 62,
+      hintY: 24,
+    };
+    this._tutLayoutWithGif = {
+      panelW: 820,
+      panelH: 230,
+      pad: 20,
+      gifW: 260,
+      gifH: 190,
+      titleSize: 30,
+      bodySize: 20,
+      stepSize: 16,
+      hintSize: 16,
+      lineSpacing: 6,
+      titleY: 18,
+      bodyY: 62,
+      hintY: 24,
+    };
+
+    this._tutBg = this.add.rectangle(0, 0, this._tutLayoutTextOnly.panelW, this._tutLayoutTextOnly.panelH, 0x1a1008, 0.95)
       .setStrokeStyle(2, 0xffd060);
 
-    this._tutStepTxt = this.add.text(panelW / 2 - 12, -panelH / 2 + 12, "", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#8a7060",
+    this._tutStepTxt = this.add.text(0, 0, "", {
+      fontFamily: FONT_MONO, fontSize: `${this._tutLayoutTextOnly.stepSize}px`, color: "#8a7060",
     }).setOrigin(1, 0);
 
-    this._tutTitleTxt = this.add.text(0, -panelH / 2 + 28, "", {
-      fontFamily: FONT_TITLE, fontSize: "20px", fontStyle: "bold", color: "#ffd060",
+    this._tutTitleTxt = this.add.text(0, 0, "", {
+      fontFamily: FONT_TITLE, fontSize: `${this._tutLayoutTextOnly.titleSize}px`, fontStyle: "bold", color: "#ffd060",
     }).setOrigin(0.5, 0);
 
-    this._tutTextTxt = this.add.text(0, -panelH / 2 + 62, "", {
-      fontFamily: FONT_LABEL, fontSize: "14px", color: "#d0c0a0",
-      align: "center", wordWrap: { width: panelW - 40 }, lineSpacing: 4,
+    this._tutTextTxt = this.add.text(0, 0, "", {
+      fontFamily: FONT_LABEL, fontSize: `${this._tutLayoutTextOnly.bodySize}px`, color: "#d0c0a0",
+      align: "center", wordWrap: { width: 500 }, lineSpacing: this._tutLayoutTextOnly.lineSpacing,
     }).setOrigin(0.5, 0);
 
-    this._tutHintTxt = this.add.text(0, panelH / 2 - 18, "Press SPACE or click to continue", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#7a6a50",
+    this._tutHintTxt = this.add.text(0, 0, "Press SPACE or click to continue", {
+      fontFamily: FONT_MONO, fontSize: `${this._tutLayoutTextOnly.hintSize}px`, color: "#7a6a50",
     }).setOrigin(0.5).setVisible(false);
 
-    this.tutorialContainer.add([bg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt]);
+    const gifX = 0;
+    this._tutGifDom = this.add.dom(gifX, 0).createFromHTML(
+      `<div style="display:inline-block;line-height:0;"><img class="tut-gif-img" alt=""
+         src="assets/gif/Tutorial_HQsetup_Placeholder.gif"
+         style="
+           width:${this._tutLayoutWithGif.gifW}px;
+           height:${this._tutLayoutWithGif.gifH}px;
+           object-fit:contain;
+           border:2px solid rgba(255,208,96,0.8);
+           border-radius:6px;
+           background:rgba(10,6,2,0.35);
+         "
+       /></div>`,
+    ).setOrigin(0.5).setVisible(false);
+
+    this.tutorialContainer.add([this._tutBg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt, this._tutGifDom]);
 
     this.tutHighlightGfx = this.add.graphics().setDepth(45);
 
@@ -575,15 +625,128 @@ export class GameScene extends Phaser.Scene {
       if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
     });
 
+    const { panelW, panelH } = this._tutLayoutTextOnly;
     this.tutorialContainer.setSize(panelW, panelH);
+    this._tutHitArea = new Phaser.Geom.Rectangle(-panelW / 2, -panelH / 2, panelW, panelH);
     this.tutorialContainer.setInteractive(
-      new Phaser.Geom.Rectangle(-panelW / 2, -panelH / 2, panelW, panelH),
+      this._tutHitArea,
       Phaser.Geom.Rectangle.Contains,
     );
     this.tutorialContainer.on("pointerdown", (pointer, _x, _y, event) => {
       event?.stopPropagation();
       if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
     });
+
+    this._applyTutorialLayout(false);
+  }
+
+  _applyTutorialLayout(showGif) {
+    if (!this._tutBg) return;
+    const L = showGif ? this._tutLayoutWithGif : this._tutLayoutTextOnly;
+    const panelW = L.panelW;
+    const panelH = L.panelH;
+
+    this._tutBg.setSize(panelW, panelH);
+    this._tutBg.setDisplaySize(panelW, panelH);
+
+    const pad = L.pad;
+    const fullMinX = -panelW / 2 + pad;
+    const fullMaxX = panelW / 2 - pad;
+    const fullW = fullMaxX - fullMinX;
+    const fullCx = (fullMinX + fullMaxX) / 2;
+
+    let textMinX = fullMinX;
+    let textMaxX = fullMaxX;
+    let textCx = fullCx;
+    let textW = fullW;
+
+    if (showGif) {
+      const gifW = L.gifW;
+      textMaxX = panelW / 2 - gifW - pad * 2;
+      textCx = (textMinX + textMaxX) / 2;
+      textW = textMaxX - textMinX;
+      const gifX = panelW / 2 - pad - gifW / 2;
+      this._tutGifDom?.setPosition(gifX, 0);
+    }
+
+    this._tutStepTxt
+      .setFontSize(`${L.stepSize}px`)
+      .setPosition(textMaxX, -panelH / 2 + 12);
+
+    this._tutTitleTxt
+      .setFontSize(`${L.titleSize}px`)
+      .setPosition(textCx, -panelH / 2 + L.titleY);
+
+    this._tutTextTxt
+      .setFontSize(`${L.bodySize}px`)
+      .setLineSpacing(L.lineSpacing)
+      .setWordWrapWidth(textW)
+      .setPosition(textCx, -panelH / 2 + L.bodyY);
+
+    this._tutHintTxt
+      .setFontSize(`${L.hintSize}px`)
+      .setPosition(textCx, panelH / 2 - L.hintY);
+
+    this.tutorialContainer.setSize(panelW, panelH);
+    if (this._tutHitArea) {
+      this._tutHitArea.setTo(-panelW / 2, -panelH / 2, panelW, panelH);
+    }
+  }
+
+  _tutorialGifSteps() {
+    return new Set([
+      "place_hq_p1",
+      "set_turn_p1",
+      "place_atk_a",
+      "aim_atk_a",
+      "place_atk_b",
+      "aim_atk_b",
+      "place_def",
+      "end_turn",
+    ]);
+  }
+
+  _tutorialDefaultInteractionGif() {
+    return "assets/gif/Tutorial_HQsetup_Placeholder.gif";
+  }
+
+  _setTutorialGifSrc(url) {
+    if (!this._tutGifDom?.node) return;
+    const img = this._tutGifDom.node.querySelector("img.tut-gif-img");
+    if (!img || !url) return;
+    if (img.dataset.tutSrc === url) return;
+    img.src = url;
+    img.dataset.tutSrc = url;
+  }
+
+  _drawTutorialAlternateSides() {
+    const cellW = GRID_DRAW_W / GRID_SIZE;
+    const cellH = GRID_DRAW_H / GRID_SIZE;
+    const t = this.time.now / 520;
+    const wave = 0.5 + 0.5 * Math.sin(t);
+    const p1Boost = wave;
+    const p2Boost = 1 - wave;
+    const baseP1 = 0.06;
+    const baseP2 = 0.06;
+    const pulse = 0.22;
+
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const side = sideOfTutorialCell(col, row);
+        if (!side) continue;
+        const bx = BOARD_OFF_X + GRID_INSET_X + col * cellW;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + row * cellH;
+        if (side === "p1") {
+          const a = baseP1 + pulse * p1Boost;
+          this.tutHighlightGfx.fillStyle(0xff8830, a);
+          this.tutHighlightGfx.fillRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+        } else {
+          const a = baseP2 + pulse * p2Boost;
+          this.tutHighlightGfx.fillStyle(0x44cc66, a);
+          this.tutHighlightGfx.fillRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+        }
+      }
+    }
   }
 
   _tutorialNeedsDismiss() {
@@ -602,6 +765,7 @@ export class GameScene extends Phaser.Scene {
 
     if (!tut?.active) {
       this.tutorialContainer?.setVisible(false);
+      this._tutGifDom?.setVisible(false);
       if (this._tutCellLabel) this._tutCellLabel.setVisible(false);
       return;
     }
@@ -616,6 +780,20 @@ export class GameScene extends Phaser.Scene {
       .setVisible(!!tut.needs_dismiss);
 
     this.tutorialContainer.setVisible(true);
+
+    const gifSteps = this._tutorialGifSteps();
+    const gifSrc = tut.tutorial_gif
+      || (gifSteps.has(tut.step_id) ? this._tutorialDefaultInteractionGif() : null);
+    const showGif = Boolean(gifSrc);
+    if (showGif) this._setTutorialGifSrc(gifSrc);
+    this._tutGifDom?.setVisible(showGif);
+    this._applyTutorialLayout(showGif);
+
+    if (tut.highlight_alternate_sides) {
+      if (this._tutCellLabel) this._tutCellLabel.setVisible(false);
+      this._drawTutorialAlternateSides();
+      return;
+    }
 
     if (!tut.highlight) {
       if (this._tutCellLabel) this._tutCellLabel.setVisible(false);
