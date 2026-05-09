@@ -45,11 +45,11 @@ export class BootScene extends Phaser.Scene {
     this.load.image("cell_mick",      "assets/images/cell-mick-wheat fields.png");
     this.load.image("cell_emu",       "assets/images/cell-emu-feeding grounds.png");
     // Hard terrain (impassable)
-    this.load.image("hard_mick",      "assets/images/hard-mick-v2.png");
-    this.load.image("hard_emu",       "assets/images/hard-emu-v1.png");
+    this.load.image("hard_mick",      "assets/images/hard-final.png");
+    this.load.image("hard_emu",       "assets/images/hard-final.png");
     // Soft terrain (destructible blocker)
-    this.load.image("soft_mick",      "assets/images/soft-mick-v1.png");
-    this.load.image("soft_emu",       "assets/images/soft-emu-v1.png");
+    this.load.image("soft_mick",      "assets/images/soft-final1.png");
+    this.load.image("soft_emu",       "assets/images/soft-final1.png");
 
     // Gracefully skip any missing image
     this.load.on("loaderror", (file) => {

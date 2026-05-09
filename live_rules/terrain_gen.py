@@ -17,16 +17,21 @@ import random
 GRID_COLS = 12
 GRID_ROWS = 12
 
-N_HARD_PER_SIDE = 2
-N_SOFT_PER_SIDE = 2
+N_HARD_PER_SIDE = 3
+N_SOFT_PER_SIDE = 3
 FENCE_BUFFER = 2
 DEF_CENTRE_EXCL = True
-RESOURCE_COVERAGE = 0.80
+RESOURCE_COVERAGE = 0.37   # floor(66 * 0.37) = 24 resource cells per side
 RESOURCE_TWO_POINT_COUNT = 4
 RESOURCE_THREE_POINT_COUNT = 2
 
 P1_FIVE_POINT_ZONE = tuple((c, r) for c in range(2, 5) for r in range(1, 4))
 P2_FIVE_POINT_ZONE = tuple((c, r) for c in range(7, 10) for r in range(8, 11))
+
+# Spawn corners — no resources or terrain allowed here so players have
+# a clear starting area.  P2 corners are the mirror of P1 corners.
+P1_CORNER_EXCL = {(0, 0), (0, 1), (1, 0)}
+P2_CORNER_EXCL = {(11, 11), (11, 10), (10, 11)}
 
 
 def _weighted_sample(rng: random.Random, items: list[tuple[int, int]], weights: list[int], count: int) -> list[tuple[int, int]]:
@@ -91,6 +96,8 @@ def generate(seed: int | None = None) -> dict:
                 continue
             if DEF_CENTRE_EXCL and 3 <= c <= 5 and 8 <= r <= 10:
                 continue
+            if (c, r) in P1_CORNER_EXCL:   # keep spawn corners clear
+                continue
             candidates.append((c, r))
 
     rng.shuffle(candidates)
@@ -107,7 +114,9 @@ def generate(seed: int | None = None) -> dict:
         (c, r)
         for r in range(GRID_ROWS)
         for c in range(GRID_COLS)
-        if c + r < 11 and (c, r) not in terrain_set
+        if c + r < 11
+        and (c, r) not in terrain_set
+        and (c, r) not in P1_CORNER_EXCL   # keep spawn corners clear
     ]
     resource_count = math.floor(((GRID_COLS * GRID_ROWS) - GRID_COLS) / 2 * RESOURCE_COVERAGE)
     if len(p1_eligible) < resource_count:
