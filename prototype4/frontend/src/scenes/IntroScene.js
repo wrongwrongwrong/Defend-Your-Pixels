@@ -448,6 +448,7 @@ export class IntroScene extends Phaser.Scene {
   _chooseSide(side) {
     if (!this._inSelection) return;
     this._inSelection = false;
+    this._advancing   = true;  // block the scene-level pointerdown → _advance() race
 
     // Send to server
     this.ws?.send("choose_side", { side });
@@ -476,11 +477,10 @@ export class IntroScene extends Phaser.Scene {
         }).setOrigin(0.5).setAlpha(0);
       this.tweens.add({ targets: sub, alpha: 1, delay: 600, duration: 600 });
 
-      // Wait for server's board_state confirming phase change, or timeout
+      // Wait for server's board_state confirming phase change.
+      // Fallback after 2.2 s in case the server is slow or not running.
       this.time.delayedCall(2200, () => {
-        if (!this.ws) {
-          this._goToScene("Tutorial", null);
-        }
+        if (this.scene.isActive("Intro")) this._goToScene("Tutorial", null);
       });
     });
   }

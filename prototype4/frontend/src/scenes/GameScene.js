@@ -1232,9 +1232,10 @@ export class GameScene extends Phaser.Scene {
         const by = BOARD_OFF_Y + row * CELL;
 
         if (hasTex) {
-          // Full texture scaled to exactly one cell
+          // Full texture scaled to exactly one cell — semi-transparent so board.png shows through
           const img = this.add.image(bx + CELL / 2, by + CELL / 2, texKey)
             .setDisplaySize(CELL, CELL)
+            .setAlpha(0.72)
             .setDepth(10);
           this._activeCellImgs.push(img);
         } else {
