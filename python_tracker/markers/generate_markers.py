@@ -10,7 +10,6 @@ Output:
     corner_2_BL.png   ← tape to bottom-left corner
     corner_3_BR.png   ← tape to bottom-right corner
     marker_4_CONFIRM.png
-    marker_5_HELP.png
     marker_10_P1_TURN.png
     marker_11_P1_HQ.png
     marker_12_P1_ATK_A.png
@@ -33,7 +32,6 @@ Setup flow reference:
     ID 20 = P2 turn marker during HQ setup
     ID 21 = P2 HQ placement marker
     ID 4  = shared confirm marker for locking the active side's HQ
-    ID 5  = shared help marker for opening the in-game help overlay
 """
 
 import os
@@ -65,9 +63,7 @@ MARKERS = {
     23: "marker_23_P2_ATK_B",
     24: "marker_24_P2_DEF",
     # Confirm
-    4: "marker_4_CONFIRM",
-    # Help
-    5: "marker_5_HELP",
+    4: "marker_4_CONFIRM", 
 }
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)

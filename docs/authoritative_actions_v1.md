@@ -40,7 +40,7 @@ Python behavior:
 - Stores `first_player_side`.
 - Records the first player and maintains or enters `hq_placement`.
 
-The `yu_test2` mainline frontend can send this action from its side-selection flow.
+The `yu_test3` mainline frontend can send this action from its side-selection flow.
 
 ### `set_hq_candidate`
 

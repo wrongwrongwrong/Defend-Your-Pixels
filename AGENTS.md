@@ -2,9 +2,9 @@
 
 ## Project overview
 
-AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to the `yu_test2` live frontend.
+AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to the `yu_test3` live frontend.
 
-Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> yu_test2/frontend/index.html`
+Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> yu_test3/frontend/index.html`
 
 Python is authoritative for game state. `live_rules/game_model.py` owns the live rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app. `model_backend` remains in the repo for legacy/smoke-test paths.
 
@@ -39,10 +39,9 @@ Windows notes:
 ## Architecture notes
 
 - `archive/docs/Reference/main.cpp` is a preserved C++ reference — do not use it as a runtime entry.
-- `game-logic/` is legacy; use `model_backend/` for game rules.
-- `archive/` and `dyp/` are not primary runtime paths.
+- `archive/` is preserved reference material and not a primary runtime path.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
-- The live frontend is `yu_test2/frontend/index.html`, served by `run_live_tracker.py`, and it consumes the flat live runtime payload directly.
+- The live frontend is `yu_test3/frontend/index.html`, served by `run_live_tracker.py`, and it consumes the flat live runtime payload directly.
 
 ## Type checking
 
@@ -66,7 +65,7 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 | `python_tracker/state_output/tracker_snapshot.py` | Tracker snapshot, homography fallback, marker stability |
 | `bridge/transport/websocket_transport.py` | WebSocket server + inbound UI commands |
 | `live_rules/game_model.py` | Live game rules used by the browser UI |
-| `yu_test2/frontend/index.html` | The primary live frontend |
+| `yu_test3/frontend/index.html` | The primary live frontend |
 
 ## Existing instruction files
 

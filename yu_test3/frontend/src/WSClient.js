@@ -1,7 +1,7 @@
 /**
- * WebSocket client for yu_test2.
+ * WebSocket client for the yu_test3 frontend.
  *
- * The server (yu_test2 dev server, or FW2 backend) broadcasts a raw state
+ * The live runtime broadcasts a raw state
  * object — no { event, data } envelope. We translate the latest state into
  * synthetic events:
  *

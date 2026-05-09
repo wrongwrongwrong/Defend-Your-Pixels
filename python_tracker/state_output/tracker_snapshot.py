@@ -241,12 +241,6 @@ def build_tracker_preview(frame, detector) -> tuple[dict, object]:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 200, 255), 2, cv2.LINE_AA)
             continue
 
-        if mid in HELP_MARKER_IDS:
-            label = token_label(int(mid))
-            cv2.putText(frame, label, (int(px) + 5, int(py) - 12),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (190, 160, 255), 2, cv2.LINE_AA)
-            continue
-
         rotation_deg = compute_rotation_deg(corners[i][0])
         gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
 
@@ -371,7 +365,7 @@ def annotate_tracker_preview(frame, snapshot: dict) -> object:
                 (int(px) + 5, int(py) - 12),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (190, 160, 255),
+                (180, 220, 255),
                 2,
                 cv2.LINE_AA,
             )

@@ -85,8 +85,10 @@ export class IntroScene extends Phaser.Scene {
     this._slideIndex  = 0;
     this._slideObjs   = [];
     this._advancing   = false;
+    this._inModeSelection = false;
     this._inSelection = false;
     this._latestState = null;
+    this._modeStatus  = null;
     this._selectionStatus = null;
   }
 
@@ -103,16 +105,33 @@ export class IntroScene extends Phaser.Scene {
       playBgm(this, "bgm_outback");
     };
 
-    this.input.on("pointerdown", () => { startAudio(); this._advance(); });
-    this.input.keyboard.on("keydown", () => { startAudio(); this._advance(); });
+    this._pointerAdvanceHandler = () => {
+      startAudio();
+      if (this._canAdvanceSlides()) this._advance();
+    };
+    this._keyAdvanceHandler = () => {
+      startAudio();
+      if (this._canAdvanceSlides()) this._advance();
+    };
+    this.input.on("pointerdown", this._pointerAdvanceHandler);
+    this.input.keyboard.on("keydown", this._keyAdvanceHandler);
 
     // If server is mid-game already, skip the intro on first state arrival
     if (this.ws) {
       this._stateHandler = (s) => {
         this._latestState = s;
         const setup = s?.setup || {};
+        const phase = s?.phase;
         if (s?.phase === "game" || setup.side_selection_complete) {
           this._goToGame(s);
+          return;
+        }
+        if (phase === "mode_select") {
+          this._refreshModeStatus();
+          return;
+        }
+        if ((s?.mode === "normal" || s?.mode === "tutorial") && !this._inSelection) {
+          this._showSideSelection();
           return;
         }
         this._refreshSelectionStatus();
@@ -121,6 +140,10 @@ export class IntroScene extends Phaser.Scene {
     }
 
     this._showSlide(0);
+  }
+
+  _canAdvanceSlides() {
+    return !this._inModeSelection && !this._inSelection;
   }
 
   _drawAtmosphere() {
@@ -140,7 +163,7 @@ export class IntroScene extends Phaser.Scene {
 
   _showSlide(index) {
     if (index >= SLIDES.length) {
-      this._showSideSelection();
+      this._showModeSelection();
       return;
     }
 
@@ -219,7 +242,7 @@ export class IntroScene extends Phaser.Scene {
   }
 
   _advance() {
-    if (this._advancing || this._inSelection) return;
+    if (this._advancing || this._inModeSelection || this._inSelection) return;
     if (this._currentBodyObj && this._currentBodyObj.text !== this._currentBodyObj._fullText) {
       this._activeTimer?.remove();
       this._currentBodyObj.setText(this._currentBodyObj._fullText);
@@ -250,9 +273,111 @@ export class IntroScene extends Phaser.Scene {
     });
   }
 
+  // ─── Mode selection ─────────────────────────────────────────────────────
+
+  _showModeSelection() {
+    this._inModeSelection = true;
+    this._inSelection = false;
+    this._clearSlide();
+    const objs = [];
+
+    objs.push(this.add.text(CX, 52, "THE GREAT EMU WAR", {
+      fontFamily: "monospace", fontSize: "11px",
+      color: "#5a3a10", letterSpacing: 4,
+    }).setOrigin(0.5).setAlpha(0));
+
+    objs.push(this.add.text(CX, 82, "CHOOSE YOUR MODE", {
+      fontFamily: "serif", fontSize: "22px", fontStyle: "bold",
+      color: "#d4a030",
+    }).setOrigin(0.5).setAlpha(0));
+
+    objs.push(this.add.text(CX, 110,
+      "Tutorial runs once, then continues directly into the same live game.", {
+        fontFamily: "monospace", fontSize: "11px",
+        color: "#8a7060", align: "center",
+      }).setOrigin(0.5).setAlpha(0));
+
+    const sep = this.add.graphics().setAlpha(0);
+    sep.lineStyle(1, 0x3a2010, 0.8);
+    sep.strokeLineShape(new Phaser.Geom.Line(40, 128, W - 40, 128));
+    objs.push(sep);
+
+    const gameCard = this._makeCard(
+      W * 0.25, H / 2 + 20,
+      "GAME MODE", "LIVE",
+      "#d4a030", 0x4a2208, 0xb03030,
+      [
+        "Start the normal live match.",
+        "",
+        "No guided prompts.",
+        "Use the existing marker flow.",
+        "",
+        "Best for regular play.",
+      ]);
+    gameCard.hitArea.on("pointerdown", () => this._chooseMode("normal"));
+    objs.push(gameCard);
+
+    const tutorialCard = this._makeCard(
+      W * 0.75, H / 2 + 20,
+      "TUTORIAL MODE", "GUIDED",
+      "#6aaa50", 0x0a2a14, 0x30a060,
+      [
+        "Play through guided setup.",
+        "Learn HQ, turn, and token rules.",
+        "",
+        "Highlights teach each move.",
+        "",
+        "Ends by continuing this same match.",
+      ]);
+    tutorialCard.hitArea.on("pointerdown", () => this._chooseMode("tutorial"));
+    objs.push(tutorialCard);
+
+    this._modeStatus = this.add.text(CX, H - 52,
+      "Choose a mode to begin.", {
+        fontFamily: "monospace", fontSize: "10px",
+        color: "#8a7060", align: "center",
+        wordWrap: { width: W - 80 },
+      }).setOrigin(0.5).setAlpha(0);
+    objs.push(this._modeStatus);
+
+    this.tweens.add({
+      targets: objs, alpha: 1, duration: 700,
+      delay: this.tweens.stagger(80),
+    });
+
+    this._slideObjs = objs;
+    this._refreshModeStatus();
+  }
+
+  _refreshModeStatus() {
+    if (!this._modeStatus) return;
+    const phase = this._latestState?.phase;
+    const mode = this._latestState?.mode;
+    if (phase !== "mode_select") {
+      this._modeStatus.setText("Mode locked. Preparing setup...").setColor("#d4a030");
+      return;
+    }
+    if (mode === "normal" || mode === "tutorial") {
+      this._modeStatus.setText("Mode locked. Preparing setup...").setColor("#d4a030");
+      return;
+    }
+    this._modeStatus.setText("Choose a mode to begin.").setColor("#8a7060");
+  }
+
+  _chooseMode(mode) {
+    if (!this._inModeSelection) return;
+    this._modeStatus?.setText(mode === "tutorial"
+      ? "Tutorial mode selected. Preparing guided setup..."
+      : "Game mode selected. Preparing live setup...")
+      .setColor("#d4a030");
+    playSfx(this, "sfx_select");
+    this.ws?.send("select_mode", { mode });
+  }
+
   // ─── Side selection ─────────────────────────────────────────────────────
 
   _showSideSelection() {
+    this._inModeSelection = false;
     this._inSelection = true;
     this._clearSlide();
     const objs = [];
@@ -291,7 +416,7 @@ export class IntroScene extends Phaser.Scene {
         "One stubborn farmer.",
         "Forty years of dirt.",
       ]);
-    farmerCard.on("pointerdown", () => this._chooseSide("old_mick"));
+    farmerCard.hitArea.on("pointerdown", () => this._chooseSide("old_mick"));
     objs.push(farmerCard);
 
     const emuCard = this._makeCard(
@@ -307,7 +432,7 @@ export class IntroScene extends Phaser.Scene {
         "One Cassowary.",
         "Twenty thousand strong.",
       ]);
-    emuCard.on("pointerdown", () => this._chooseSide("mob"));
+    emuCard.hitArea.on("pointerdown", () => this._chooseSide("mob"));
     objs.push(emuCard);
 
     objs.push(this.add.text(CX, H - 52,
@@ -411,7 +536,8 @@ export class IntroScene extends Phaser.Scene {
       bg.strokeRoundedRect(-cardW/2, -cardH/2, cardW, cardH, r);
     });
 
-    return hitArea;
+    container.hitArea = hitArea;
+    return container;
   }
 
   _goToGame(initialState) {

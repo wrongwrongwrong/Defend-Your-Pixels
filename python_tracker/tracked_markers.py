@@ -56,7 +56,9 @@ def marker_label(marker_id: int) -> str:
     marker = MARKER_BY_ID.get(marker_id)
     if marker is None:
         return f"ID:{marker_id}"
-    if marker.is_confirm or marker.is_help:
+    if marker.is_confirm:
+        return marker.label
+    if marker.is_help:
         return marker.label
     if marker.is_turn and marker.player is not None:
         return f"P{int(marker.player)} {marker.label}"

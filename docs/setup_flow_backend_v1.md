@@ -147,7 +147,7 @@ The runtime payload includes safe setup metadata only:
 
 ## Frontend placeholder rendering
 
-`yu_test2/frontend/index.html` now renders a marker-guided setup placeholder whenever `phase` is not `game`.
+`yu_test3/frontend/index.html` now renders marker-guided setup feedback whenever `phase` is not `game`.
 
 - `scan`: shows a setup status card and scan-waiting messaging
 - `side_selection`: fallback/debug state only
@@ -194,6 +194,7 @@ The live frontend also surfaces `errors[]` as a temporary warning layover:
 - Reserved corner cells are invalid HQ cells:
   - `p1`: `A1`, `A2`, `B1`
   - `p2`: `L12`, `L11`, `K12`
+- Terrain generation also keeps those reserved corner cells empty.
 - Old Mick tokens must stay on the Old Mick side and cannot be placed on the fence.
 - Mob tokens must stay on the Mob side and cannot be placed on the fence.
 - Old Mick attack directions: `E`, `SE`, `S`, `SW`
@@ -209,6 +210,7 @@ During `hq_placement`:
 - if a valid HQ candidate exists for the active side, scanning `ID4` locks it
 - the same visible `ID4` must not lock both sides back-to-back without being removed first
 - once both HQs are locked, the runtime enters `game`
+- scanning `ID5` shows the frontend help overlay only while that marker remains visible
 
 ## Active-turn token protection
 
