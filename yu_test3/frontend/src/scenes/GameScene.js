@@ -1378,6 +1378,12 @@ export class GameScene extends Phaser.Scene {
   // ─── Top bar ──────────────────────────────────────────────────────────────
 
   _renderTopBar(s, G, battle) {
+    // Tutorial overlay uses the top area heavily; keep the static title unobstructed.
+    if (s.tutorial?.active) {
+      this.topTurnTxt.setVisible(false);
+      return;
+    }
+
     const inBattle = s.phase === "game" || s.phase == null;
     const phase    = s.phase;
 
