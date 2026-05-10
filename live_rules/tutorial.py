@@ -14,16 +14,24 @@ STEPS = [
         "condition": "dismiss",
     },
     {
-        "id": "explain_board",
-        "title": "The Battlefield",
-        "text": "The board is split diagonally. Old Mick (orange) owns the bottom-left, The Mob (green) owns the top-right.",
+        "id": "scan_board_corners",
+        "title": "Scan the Board Corners",
+        "text": "Before play, the camera must see all four board corner markers \nWhen the board outline appears in the preview, you are ready to continue.",
         "condition": "dismiss",
+        "tutorial_gif": "assets/gif/scan_board_corners.gif",
     },
     {
         "id": "explain_tokens",
         "title": "Your Units",
-        "text": "You have 2 Attack tokens (Keith A & B), 1 Defense token (Old Mick himself), and 1 HQ token.\nAttackers shoot rays. The Defender protects nearby cells. The HQ is your base to protect!",
+        "text": "You have 2 Attack tokens (Keith A & B), 1 Defense token (Old Mick yourself), and 1 HQ token.\nAttackers shoot rays. The Defender protects nearby cells. The HQ is your base to protect!",
         "condition": "dismiss",
+    },
+    {
+        "id": "explain_sides_alternate",
+        "title": "Who Owns Which Side?",
+        "text": "The board is split by a diagonal fence through cells where column index + row index = 11 (0-based grid).\nOld Mick (Player 1) controls the bottom-left territory (orange highlight).\nThe Mob (Player 2) controls the top-right territory (green highlight).\nWatch the highlights alternate—you must keep your tokens on your side.",
+        "condition": "dismiss",
+        "highlight_alternate_sides": True,
     },
     {
         "id": "explain_hq",
@@ -63,6 +71,7 @@ STEPS = [
         "text": "Rotate Keith A to face EAST (right) toward enemy territory.\nThe attack ray will fire in this direction.",
         "highlight": {"col": 3, "row": 3},
         "condition": "dismiss",
+        "tutorial_gif": "assets/gif/aim_atk_a.gif",
     },
     {
         "id": "explain_ray",
@@ -221,6 +230,8 @@ class TutorialController:
             "title": step.get("title", ""),
             "text": step.get("text", ""),
             "highlight": step.get("highlight"),
+            "highlight_alternate_sides": bool(step.get("highlight_alternate_sides")),
+            "tutorial_gif": step.get("tutorial_gif"),
             "needs_dismiss": step.get("condition") == "dismiss",
             "completed": self.completed,
         }

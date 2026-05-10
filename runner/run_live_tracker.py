@@ -31,7 +31,7 @@ from live_rules import game_model, terrain_gen, tutorial
 from runner.frontend_static_server import start_frontend_http_server
 
 
-CAMERA_ID = 1
+DEFAULT_CAMERA_ID = 0 if sys.platform == "darwin" else 1
 SEND_FPS = 10
 HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
@@ -72,7 +72,12 @@ COMPASS_8 = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Old Mick live tracker")
-    parser.add_argument("--camera-index", type=int, default=CAMERA_ID, help="Camera index for the live tracker.")
+    parser.add_argument(
+        "--camera-index",
+        type=int,
+        default=DEFAULT_CAMERA_ID,
+        help="Camera index for the live tracker. (macOS default: 0, others: 1)",
+    )
     parser.add_argument("--send-fps", type=int, default=SEND_FPS, help="Broadcast rate for frontend payloads.")
     parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the yu_test3 frontend.")
     parser.add_argument("--ws-port", type=int, default=WS_PORT, help="WebSocket port for frontend state sync.")
@@ -704,7 +709,7 @@ class Session:
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
 
 
-async def publish_live_tracker(camera_id: int = CAMERA_ID, send_fps: int = SEND_FPS):
+async def publish_live_tracker(camera_id: int = DEFAULT_CAMERA_ID, send_fps: int = SEND_FPS):
     session = Session()
     interval = 1.0 / send_fps
     cap = open_camera(camera_id)
