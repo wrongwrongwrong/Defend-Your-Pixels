@@ -28,7 +28,10 @@ export class BootScene extends Phaser.Scene {
     this.load.image("tok_mick_def",   "assets/images/def-mick.png");         // Old Mick (defense)
     this.load.image("tok_mick_nuke",  "assets/images/nuke-mick-keith.png");
 
-    // ── Emu tokens ─────────────────────────────────────────────────────────────
+    // ── Emu tokens (P2) ───────────────────────────────────────────────────────
+    // Only these paths are loaded — e.g. atk-emu.png is NOT used. After editing art,
+    // hard-refresh; with run_live_tracker, images are served with Cache-Control: no-store.
+    // Sanity-check in browser: http://localhost:8080/assets/images/atk-emu-a.png
     this.load.image("tok_emu_atk_a",  "assets/images/atk-emu-a.png");        // Mob A
     this.load.image("tok_emu_atk_b",  "assets/images/atk-emu-b.png");        // Mob B
     this.load.image("tok_emu_def",    "assets/images/atk-emu-cassowary.png"); // Cassowary (defense)
@@ -45,11 +48,11 @@ export class BootScene extends Phaser.Scene {
     this.load.image("cell_mick",      "assets/images/cell-mick-wheat fields.png");
     this.load.image("cell_emu",       "assets/images/cell-emu-feeding grounds.png");
     // Hard terrain (impassable)
-    this.load.image("hard_mick",      "assets/images/hard-mick-v2.png");
-    this.load.image("hard_emu",       "assets/images/hard-emu-v1.png");
+    this.load.image("hard_mick",      "assets/images/hard-final.png");
+    this.load.image("hard_emu",       "assets/images/hard-final.png");
     // Soft terrain (destructible blocker)
-    this.load.image("soft_mick",      "assets/images/soft-mick-v1.png");
-    this.load.image("soft_emu",       "assets/images/soft-emu-v1.png");
+    this.load.image("soft_mick",      "assets/images/soft-final1.png");
+    this.load.image("soft_emu",       "assets/images/soft-final1.png");
 
     // Gracefully skip any missing image
     this.load.on("loaderror", (file) => {

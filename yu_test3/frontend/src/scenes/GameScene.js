@@ -25,6 +25,7 @@ import {
   FONT_TITLE, FONT_LABEL, FONT_MONO,
 } from "../constants.js";
 import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
+import { HELP_POPUP_TITLE, getHelpPopupBodyText } from "../help/helpPopupTemplate.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -650,30 +651,11 @@ export class GameScene extends Phaser.Scene {
     const overlay = this.add.container(CANVAS_W / 2, CANVAS_H / 2).setDepth(45).setVisible(false);
     const bg = this.add.rectangle(0, 0, CANVAS_W - 120, CANVAS_H - 140, 0x0b0704, 0.93)
       .setStrokeStyle(3, 0xc89a44, 0.95);
-    const title = this.add.text(0, -CANVAS_H * 0.28, "Field Help", {
+    const title = this.add.text(0, -CANVAS_H * 0.28, HELP_POPUP_TITLE, {
       fontFamily: FONT_TITLE, fontSize: "28px", fontStyle: "bold", color: "#fff0b0",
       stroke: "#2a1408", strokeThickness: 4,
     }).setOrigin(0.5);
-    const body = this.add.text(0, -CANVAS_H * 0.22,
-      [
-        "Show ID5 to keep this help open.",
-        "Remove ID5 to return to the normal board view.",
-        "",
-        "ID10 / ID20  Choose the setup side or start that side's turn.",
-        "ID11 / ID21  Place the active side's hidden HQ candidate.",
-        "ID4          Confirm HQ placement or submit the active side's attack.",
-        "",
-        "HQ rules:",
-        "- HQ must stay on its own side and never on the fence.",
-        "- HQ cannot be on hard terrain or soft terrain.",
-        "- Reserved cells are blocked: A1, A2, B1, K12, L11, L12.",
-        "",
-        "Battle rules:",
-        "- Attack tokens must stay on their own side.",
-        "- Old Mick attackers fire E / SE / S / SW.",
-        "- Mob attackers fire W / NW / N / NE.",
-        "- Tier 4 unlocks the nuke button for the active side.",
-      ].join("\n"), {
+    const body = this.add.text(0, -CANVAS_H * 0.22, getHelpPopupBodyText(), {
         fontFamily: FONT_MONO, fontSize: "13px", color: "#f2d8a0", align: "left", lineSpacing: 7,
         wordWrap: { width: CANVAS_W - 220 },
       }).setOrigin(0.5, 0);
@@ -943,14 +925,7 @@ export class GameScene extends Phaser.Scene {
 
   // ─── Token sprites ────────────────────────────────────────────────────────
 
-  // Direction → rotation angle in degrees.
-  // Assumes the token image faces EAST (right) at 0°.
-  // If the image faces a different direction, add/subtract an offset below.
-  static _dirAngle(dir) {
-    return { E: 0, SE: 45, S: 90, SW: 135, W: 180, NW: -135, N: -90, NE: -45 }[dir] ?? 0;
-  }
-
-  // Only ATK tokens rotate with direction; DEF tokens always stay upright.
+  // Token PNGs keep their art-facing (no rotation); aim is shown by arrow text + board ray.
   static _isAtkKey(key) { return key.includes("atk"); }
 
   _renderTokens(p1, p2, inBattle) {
@@ -981,14 +956,8 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0x000000, 0.28 * alpha);
       g.fillEllipse(x, y + cellH * 0.30, cellW * 0.55, cellH * 0.15);
 
-      // Rotate ATK tokens to face their attack direction.
-      // DEF tokens stay at 0° (upright) since they don't have a direction.
-      const angle = (GameScene._isAtkKey(key) && tok.direction)
-        ? GameScene._dirAngle(tok.direction)
-        : 0;
-
       sprite.setPosition(x, y - 1)
-            .setAngle(angle)
+            .setAngle(0)
             .setAlpha(alpha)
             .setVisible(true);
 
