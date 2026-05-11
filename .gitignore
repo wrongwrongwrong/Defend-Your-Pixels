@@ -25,3 +25,4 @@ node_modules/
 
 #photoshop
 *.psd
+.DS_Store
