@@ -9,13 +9,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import functools
-import http.server
 import json
 import os
 from pathlib import Path
-import socketserver
 import sys
-import threading
 import time
 
 import cv2
@@ -31,6 +28,7 @@ from python_tracker.state_output.tracker_snapshot import annotate_tracker_previe
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
 from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
 from live_rules import game_model, terrain_gen, tutorial
+from runner.frontend_static_server import start_frontend_http_server
 
 
 DEFAULT_CAMERA_ID = 0 if sys.platform == "darwin" else 1
@@ -85,16 +83,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ws-port", type=int, default=WS_PORT, help="WebSocket port for frontend state sync.")
     parser.add_argument("--no-camera", action="store_true", help="Run the live frontend without opening a camera.")
     return parser.parse_args()
-
-
-def start_http_server(port: int, root: Path):
-    """Serve the yu_test3 frontend over plain HTTP for ES modules."""
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
-    socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("", port), handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    print(f"[HTTP] Serving {root} at http://localhost:{port}")
-    return httpd
 
 
 def _opponent_side(side: str | None) -> str | None:
@@ -840,7 +828,7 @@ async def async_main(args: argparse.Namespace):
     if not FRONTEND_DIR.is_dir():
         raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
 
-    start_http_server(args.http_port, FRONTEND_DIR)
+    start_frontend_http_server(args.http_port, FRONTEND_DIR)
 
     print("=" * 55)
     print("  Old Mick Live Tracker")

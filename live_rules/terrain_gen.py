@@ -18,6 +18,7 @@ FENCE_BUFFER = 2
 DEF_CENTRE_EXCL = True
 RESOURCE_COUNT = 24
 RESOURCE_TWO_POINT_COUNT = 2
+# Spawn corners — no resources or terrain allowed here so players have
 RESERVED_CELLS = frozenset({(0, 0), (0, 1), (1, 0), (11, 11), (11, 10), (10, 11)})
 
 

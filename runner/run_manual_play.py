@@ -8,14 +8,10 @@ actions instead of ArUco markers.
 from __future__ import annotations
 
 import asyncio
-import functools
-import http.server
 import json
 from pathlib import Path
 import queue
-import socketserver
 import sys
-import threading
 import time
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -35,6 +31,7 @@ from runner.setup_flow import (
     sanitize_token_states,
 )
 from live_rules import game_model, terrain_gen
+from runner.frontend_static_server import start_frontend_http_server
 
 
 SEND_FPS = 10
@@ -55,16 +52,6 @@ ANGLE_BY_DIRECTION = {
     "N": 270.0,
     "NE": 315.0,
 }
-
-
-def start_http_server(port: int, root: Path):
-    """Serve the yu_test3 frontend over plain HTTP for manual play."""
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
-    socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("", port), handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    print(f"[HTTP] Serving {root} at http://localhost:{port}")
-    return httpd
 
 
 def _manual_empty_token() -> dict:
@@ -583,7 +570,7 @@ async def async_main() -> None:
     if not FRONTEND_DIR.is_dir():
         raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
 
-    start_http_server(HTTP_PORT, FRONTEND_DIR)
+    start_frontend_http_server(HTTP_PORT, FRONTEND_DIR)
 
     print("=" * 55)
     print("  Old Mick Manual Play")
