@@ -490,6 +490,11 @@ class Session:
                     self._finish_tutorial_mode()
             return errors
 
+        if action_name == "tutorial_undo":
+            if self.tutorial_ctrl is not None:
+                self.tutorial_ctrl.undo()
+            return errors
+
         if action_name == "set_hq_candidate":
             side = command.get("side")
             position = command.get("position") if isinstance(command.get("position"), dict) else None
@@ -563,7 +568,13 @@ class Session:
             self._update_marker_driven_hq_setup(turn, hq_markers, confirm_present)
         self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
         if self.tutorial_ctrl is not None:
-            self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers)
+            self.tutorial_state = self.tutorial_ctrl.tick(
+                self.accepted_p1,
+                self.accepted_p2,
+                self.turn,
+                self.hq_markers,
+                confirm_present,
+            )
             if self.tutorial_ctrl.finished:
                 self._finish_tutorial_mode()
         return errors

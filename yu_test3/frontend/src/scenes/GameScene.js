@@ -617,12 +617,19 @@ export class GameScene extends Phaser.Scene {
 
     this.tutHighlightGfx = this.add.graphics().setDepth(45);
 
-    this.input.keyboard?.addCapture?.([32, "SPACE"]);
+    this.input.keyboard?.addCapture?.([32, "SPACE", 87, "KeyW"]);
     this.input.keyboard.on("keydown", (event) => {
+      const isW = event?.code === "KeyW" || event?.key === "w" || event?.key === "W";
+      if (isW) {
+        event?.preventDefault?.();
+        if (this.gameState?.tutorial?.active && this.ws && this.gameState.tutorial.can_undo)
+          this.ws.send("tutorial_undo", {});
+        return;
+      }
       const isSpace = event?.code === "Space" || event?.key === " " || event?.keyCode === 32;
       if (!isSpace) return;
       event?.preventDefault?.();
-      if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
+      if (this._tutorialCanSpaceContinue()) this._sendTutorialDismiss();
     });
 
     const { panelW, panelH } = this._tutLayoutTextOnly;
@@ -634,7 +641,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.tutorialContainer.on("pointerdown", (pointer, _x, _y, event) => {
       event?.stopPropagation();
-      if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
+      if (this._tutorialCanSpaceContinue()) this._sendTutorialDismiss();
     });
 
     this._applyTutorialLayout(false);
@@ -749,13 +756,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  _tutorialNeedsDismiss() {
+  /** Space / panel click advance: dismiss-only steps, or skip gated (confirm / turn) steps. */
+  _tutorialCanSpaceContinue() {
     const tut = this.gameState?.tutorial;
-    return !!(tut?.active && tut?.needs_dismiss);
+    return !!(tut?.active && (tut.needs_dismiss || tut.allow_skip));
   }
 
   _sendTutorialDismiss() {
-    if (!this.ws || !this._tutorialNeedsDismiss()) return;
+    if (!this.ws || !this._tutorialCanSpaceContinue()) return;
     this.ws.send("tutorial_dismiss", {});
     playSfx(this, "sfx_select");
   }
@@ -773,11 +781,18 @@ export class GameScene extends Phaser.Scene {
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
     this._tutTextTxt.setText(tut.text || "");
+    const undoHint = tut.can_undo ? "  •  Press W to undo" : "";
+    let hintMain;
+    if (tut.completed) {
+      hintMain = "Tutorial Complete! Press SPACE or click to continue into the live game.";
+    } else if (tut.allow_skip) {
+      hintMain = "Press SPACE or click to skip this step.";
+    } else {
+      hintMain = "Press SPACE or click to continue";
+    }
     this._tutHintTxt
-      .setText(tut.completed
-        ? "Tutorial Complete! Press SPACE or click to continue into the live game."
-        : "Press SPACE or click to continue")
-      .setVisible(!!tut.needs_dismiss);
+      .setText(`${hintMain}${undoHint}`)
+      .setVisible(!!(tut.needs_dismiss || tut.allow_skip));
 
     this.tutorialContainer.setVisible(true);
 
@@ -1533,7 +1548,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   _handleBoardClick(pointer) {
-    if (this._tutorialNeedsDismiss()) {
+    if (this._tutorialCanSpaceContinue()) {
       this._sendTutorialDismiss();
       return;
     }
