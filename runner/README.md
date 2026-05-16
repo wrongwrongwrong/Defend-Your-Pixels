@@ -7,11 +7,11 @@ Purpose
 Naming convention
 - `run_<mode>.py`
 - `live_tracker` means the integrated runtime used by the bridge/frontend flow
-- `old_mick_core_smoke` means a fast rules-validation smoke test for the MVP
+- `manual_play` means the no-camera runtime for local frontend and rules testing
 
 Entry points
 - `run_live_tracker.py`: full live runtime for `camera -> python_tracker -> shared live rules -> websocket -> HTTP -> frontend/index.html`
-- `run_old_mick_core_smoke.py`: authoritative backend smoke test for the Old Mick MVP ruleset
+- `run_manual_play.py`: no-camera manual runtime for local frontend and rules testing
 
 Notes
 - `run_live_tracker.py` is the supported live entrypoint for the current game flow.

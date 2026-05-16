@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, IntEnum
 
-from model_backend.game import PlayerId
-from model_backend.game.entities import UnitKind
+
+class MarkerPlayer(IntEnum):
+    P1 = 1
+    P2 = 2
+
+
+class MarkerUnitKind(Enum):
+    ATTACKER = "attacker"
+    DEFENDER = "defender"
 
 
 @dataclass(frozen=True, slots=True)
 class TrackedMarker:
     id: int
-    player: PlayerId | None
+    player: MarkerPlayer | None
     label: str
-    unit_kind: UnitKind | None = None
+    unit_kind: MarkerUnitKind | None = None
     slot_index: int = 0
     is_turn: bool = False
     is_hq: bool = False
@@ -27,18 +35,18 @@ class TrackedMarker:
 TRACKED_MARKERS: tuple[TrackedMarker, ...] = (
     TrackedMarker(id=4, player=None, label="CONFIRM", is_confirm=True),
     TrackedMarker(id=5, player=None, label="HELP", is_help=True),
-    TrackedMarker(id=10, player=PlayerId.P1, label="TURN", is_turn=True),
-    TrackedMarker(id=11, player=PlayerId.P1, label="HQ", is_hq=True),
-    TrackedMarker(id=12, player=PlayerId.P1, unit_kind=UnitKind.ATTACKER, slot_index=0, label="ATK A"),
-    TrackedMarker(id=13, player=PlayerId.P1, unit_kind=UnitKind.ATTACKER, slot_index=1, label="ATK B"),
-    TrackedMarker(id=14, player=PlayerId.P1, unit_kind=UnitKind.DEFENDER, slot_index=0, label="DEF"),
-    TrackedMarker(id=19, player=PlayerId.P1, label="NUKE", is_nuke=True),
-    TrackedMarker(id=20, player=PlayerId.P2, label="TURN", is_turn=True),
-    TrackedMarker(id=21, player=PlayerId.P2, label="HQ", is_hq=True),
-    TrackedMarker(id=22, player=PlayerId.P2, unit_kind=UnitKind.ATTACKER, slot_index=0, label="ATK A"),
-    TrackedMarker(id=23, player=PlayerId.P2, unit_kind=UnitKind.ATTACKER, slot_index=1, label="ATK B"),
-    TrackedMarker(id=24, player=PlayerId.P2, unit_kind=UnitKind.DEFENDER, slot_index=0, label="DEF"),
-    TrackedMarker(id=29, player=PlayerId.P2, label="NUKE", is_nuke=True),
+    TrackedMarker(id=10, player=MarkerPlayer.P1, label="TURN", is_turn=True),
+    TrackedMarker(id=11, player=MarkerPlayer.P1, label="HQ", is_hq=True),
+    TrackedMarker(id=12, player=MarkerPlayer.P1, unit_kind=MarkerUnitKind.ATTACKER, slot_index=0, label="ATK A"),
+    TrackedMarker(id=13, player=MarkerPlayer.P1, unit_kind=MarkerUnitKind.ATTACKER, slot_index=1, label="ATK B"),
+    TrackedMarker(id=14, player=MarkerPlayer.P1, unit_kind=MarkerUnitKind.DEFENDER, slot_index=0, label="DEF"),
+    TrackedMarker(id=19, player=MarkerPlayer.P1, label="NUKE", is_nuke=True),
+    TrackedMarker(id=20, player=MarkerPlayer.P2, label="TURN", is_turn=True),
+    TrackedMarker(id=21, player=MarkerPlayer.P2, label="HQ", is_hq=True),
+    TrackedMarker(id=22, player=MarkerPlayer.P2, unit_kind=MarkerUnitKind.ATTACKER, slot_index=0, label="ATK A"),
+    TrackedMarker(id=23, player=MarkerPlayer.P2, unit_kind=MarkerUnitKind.ATTACKER, slot_index=1, label="ATK B"),
+    TrackedMarker(id=24, player=MarkerPlayer.P2, unit_kind=MarkerUnitKind.DEFENDER, slot_index=0, label="DEF"),
+    TrackedMarker(id=29, player=MarkerPlayer.P2, label="NUKE", is_nuke=True),
 )
 
 

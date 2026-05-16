@@ -29,16 +29,6 @@ Includes:
 
 Use this when you need to work on camera input, marker detection, or coordinate mapping.
 
-### `backend/model_backend`
-Purpose: legacy and smoke-test rules code.
-
-Includes:
-- Board state model
-- Rule handling and actions
-- Serialization of game state for transport
-
-Use this when you need to change the older backend prototype or smoke tests.
-
 ### `backend/bridge`
 Purpose: connect tracker + runtime model + frontend.
 
@@ -82,7 +72,7 @@ Purpose: clean startup scripts for runtime modes.
 
 Important scripts:
 - `run_live_tracker.py`: integrated runtime path
-- `run_old_mick_core_smoke.py`: fast backend rules smoke test
+- `run_manual_play.py`: no-camera manual runtime for local frontend and rules testing
 
 Use this folder first when running demos and checks.
 
@@ -95,10 +85,10 @@ Includes protocol documents and architecture references.
 
 1. Root `README.md`
 2. `runner/README.md`
-3. Run `runner/run_live_tracker.py` or `runner/run_old_mick_core_smoke.py`
+3. Run `runner/run_live_tracker.py` or `runner/run_manual_play.py`
 4. Read `backend/python_tracker` basics
 5. Read `backend/bridge` flow
-6. Read `backend/model_backend` state/actions
+6. Read `backend/live_rules` rules code
 7. Read `frontend/src/`
 
 ## Quick glossary

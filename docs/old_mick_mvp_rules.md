@@ -187,11 +187,11 @@ Once the above is implemented, the team should test:
 
 Current executable gameplay smoke coverage lives in:
 
-- `runner/run_old_mick_core_smoke.py`
+- `runner/run_manual_play.py`
 
 ## Implementation note
 
-The first implementation should happen in `model_backend`.
+The live implementation lives in `backend/live_rules`.
 
 Recommended early focus:
 

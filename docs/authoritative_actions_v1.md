@@ -141,7 +141,7 @@ Current status:
 Python behavior:
 
 - Validates `unit_id` and `position`.
-- Calls `GameState.move_unit_to(...)`.
+- Applies the movement through the authoritative live rules.
 - Broadcasts an updated `board_state` on success.
 - Updates `last_action` on failure.
 
@@ -160,7 +160,7 @@ Purpose: perform a straight-line attack in one of eight directions, letting Pyth
 Python behavior:
 
 - Validates `unit_id` and `direction`.
-- Calls `GameState.attack_in_direction(...)`.
+- Applies the attack through the authoritative live rules.
 - Searches for the first valid enemy target along the chosen direction.
 - Stops if terrain blocks the line first. Soft terrain is destroyed after 2 hits; hard terrain is destroyed after 5 hits.
 - Updates HQ or resource-tile state and `last_action` on success.

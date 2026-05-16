@@ -6,7 +6,7 @@ AR board game: camera detects ArUco markers, Python tracker/model computes game 
 
 Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> frontend/index.html`
 
-Python is authoritative for game state. `backend/live_rules/game_model.py` owns the live rules. `backend/bridge` owns transport. `backend/python_tracker` owns vision. `runner/` assembles the live app. `backend/model_backend` remains in the repo for legacy/smoke-test paths.
+Python is authoritative for game state. `backend/live_rules/game_model.py` owns the live rules. `backend/bridge` owns transport. `backend/python_tracker` owns vision. `runner/` assembles the live app.
 
 ## Setup
 
@@ -16,14 +16,14 @@ source .venv/bin/activate
 pip install -e .                         # editable install — required so backend packages import from anywhere
 ```
 
-The venv is `.venv/` (not `venv`). The editable install packages backend modules such as `python_tracker`, `bridge`, `live_rules`, and `model_backend`.
+The venv is `.venv/` (not `venv`). The editable install packages backend modules such as `python_tracker`, `bridge`, and `live_rules`.
 
 ## Running
 
 **Python (always from repo root, with `.venv` active):**
 ```bash
 python3 runner/run_live_tracker.py            # live tracker + WS/HTTP server + cv2 preview
-python3 runner/run_old_mick_core_smoke.py     # backend rules smoke test
+python3 runner/run_manual_play.py             # no-camera manual runtime
 ```
 
 **Frontend:**

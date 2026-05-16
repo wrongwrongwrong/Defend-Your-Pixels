@@ -15,5 +15,5 @@ requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
 where = ["backend", "."]
-include = ["bridge*", "live_rules*", "python_tracker*", "model_backend*", "runner*"]
+include = ["bridge*", "live_rules*", "python_tracker*", "runner*"]
 namespaces = true
