@@ -13,9 +13,9 @@ Naming rules
 Note: only `transport/` exists in the current bridge implementation. The naming rules are kept for future additions and for reading older docs.
 
 Runtime model
-- `python_tracker/` produces tracker observations
-- `bridge/` shapes and transports them
-- `yu_test3/frontend/index.html` consumes them through the live runtime HTTP/WS path
+- `backend/python_tracker/` produces tracker observations
+- `backend/bridge/` shapes and transports them
+- `frontend/index.html` consumes them through the live runtime HTTP/WS path
 - `runner/` assembles the live application
 
 Canonical runtime entrypoint

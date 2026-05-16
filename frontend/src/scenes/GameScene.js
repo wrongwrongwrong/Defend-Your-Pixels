@@ -1,5 +1,5 @@
 /**
- * GameScene — yu_test3
+ * GameScene - live frontend
  *
  * Visual layout:
  *   ┌──────────────────────────────────────────────────────────────────┐
@@ -25,7 +25,7 @@ import {
   FONT_TITLE, FONT_LABEL, FONT_MONO,
 } from "../constants.js";
 import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
-import { HELP_POPUP_TITLE, getHelpPopupBodyText } from "../help/helpPopupTemplate.js";
+import { buildHelpPopupTemplate, HELP_POPUP_SELECTORS } from "../help/helpPopupTemplate.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -151,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     this.ws            = data.ws;
     this._initialState = data.initialState ?? null;
     this.gameState     = null;
-    this._lastSeed     = null;
+    this._lastTerrainRenderKey = null;
     this._nukeArmingSide = null;
   }
 
@@ -281,8 +281,8 @@ export class GameScene extends Phaser.Scene {
 
     p1Div(TOP_BAR_H + 130);
 
-    // Tier section
-    this.add.text(lx, TOP_BAR_H + 140, "TIER", {
+    // DEF zone section
+    this.add.text(lx, TOP_BAR_H + 140, "DEF", {
       fontFamily: FONT_LABEL, fontSize: "11px", color: "#8a7060",
     }).setDepth(6);
     this.p1TierNumTxt = this.add.text(lx + 46, TOP_BAR_H + 140, "0", {
@@ -302,10 +302,10 @@ export class GameScene extends Phaser.Scene {
     const tokStyle = { fontFamily: FONT_LABEL, fontSize: "12px", color: "#b89868" };
     const posStyle = { fontFamily: FONT_MONO,  fontSize: "12px", color: "#d4b880" };
     // Keith A
-    this.add.text(lx, TOP_BAR_H + 200, "⚔ Keith A", tokStyle).setDepth(6);
+    this.p1AtkALabelTxt = this.add.text(lx, TOP_BAR_H + 200, "⚔ Keith A T0", tokStyle).setDepth(6);
     this.p1AtkAPosTxt = this.add.text(PANEL_W - lx, TOP_BAR_H + 200, "—", posStyle).setOrigin(1, 0).setDepth(6);
     // Keith B
-    this.add.text(lx, TOP_BAR_H + 222, "⚔ Keith B", tokStyle).setDepth(6);
+    this.p1AtkBLabelTxt = this.add.text(lx, TOP_BAR_H + 222, "⚔ Keith B T0", tokStyle).setDepth(6);
     this.p1AtkBPosTxt = this.add.text(PANEL_W - lx, TOP_BAR_H + 222, "—", posStyle).setOrigin(1, 0).setDepth(6);
     // Old Mick (def)
     this.add.text(lx, TOP_BAR_H + 244, "🛡 Old Mick", tokStyle).setDepth(6);
@@ -360,7 +360,7 @@ export class GameScene extends Phaser.Scene {
 
     p2Div(TOP_BAR_H + 130);
 
-    this.add.text(rlx, TOP_BAR_H + 140, "TIER", {
+    this.add.text(rlx, TOP_BAR_H + 140, "DEF", {
       fontFamily: FONT_LABEL, fontSize: "11px", color: "#50785a",
     }).setDepth(6);
     this.p2TierNumTxt = this.add.text(rlx + 46, TOP_BAR_H + 140, "0", {
@@ -378,9 +378,9 @@ export class GameScene extends Phaser.Scene {
 
     const tok2Style = { fontFamily: FONT_LABEL, fontSize: "12px", color: "#58a868" };
     const pos2Style = { fontFamily: FONT_MONO,  fontSize: "12px", color: "#70d870" };
-    this.add.text(rlx, TOP_BAR_H + 200, "⚔ Mob A",    tok2Style).setDepth(6);
+    this.p2AtkALabelTxt = this.add.text(rlx, TOP_BAR_H + 200, "⚔ Mob A T0",    tok2Style).setDepth(6);
     this.p2AtkAPosTxt = this.add.text(rrx, TOP_BAR_H + 200, "—", pos2Style).setOrigin(1, 0).setDepth(6);
-    this.add.text(rlx, TOP_BAR_H + 222, "⚔ Mob B",    tok2Style).setDepth(6);
+    this.p2AtkBLabelTxt = this.add.text(rlx, TOP_BAR_H + 222, "⚔ Mob B T0",    tok2Style).setDepth(6);
     this.p2AtkBPosTxt = this.add.text(rrx, TOP_BAR_H + 222, "—", pos2Style).setOrigin(1, 0).setDepth(6);
     this.add.text(rlx, TOP_BAR_H + 244, "🛡 Cassowary", tok2Style).setDepth(6);
     this.p2DefPosTxt  = this.add.text(rrx, TOP_BAR_H + 244, "—", pos2Style).setOrigin(1, 0).setDepth(6);
@@ -412,11 +412,10 @@ export class GameScene extends Phaser.Scene {
       color: "#f0d060",
     }).setOrigin(0.5).setDepth(9).setVisible(false);
 
-    this.nukeBtn = this.add.text(CANVAS_W - 64, TOP_BAR_H / 2, "Arm Nuke", {
+    this.nukeBtn = this.add.text(CANVAS_W - 64, TOP_BAR_H / 2, "Nuke Locked", {
       fontFamily: FONT_LABEL, fontSize: "12px", fontStyle: "bold",
       color: "#8a7a68", backgroundColor: "#241812", padding: { x: 8, y: 4 },
-    }).setOrigin(1, 0.5).setDepth(10).setInteractive({ useHandCursor: true }).setVisible(false);
-    this.nukeBtn.on("pointerdown", () => this._toggleNukeArming());
+    }).setOrigin(1, 0.5).setDepth(10).setVisible(false);
   }
 
   /** Bottom warning / status bar. */
@@ -618,8 +617,15 @@ export class GameScene extends Phaser.Scene {
 
     this.tutHighlightGfx = this.add.graphics().setDepth(45);
 
-    this.input.keyboard?.addCapture?.([32, "SPACE"]);
+    this.input.keyboard?.addCapture?.([32, "SPACE", 87, "KeyW"]);
     this.input.keyboard.on("keydown", (event) => {
+      const isW = event?.code === "KeyW" || event?.key === "w" || event?.key === "W";
+      if (isW) {
+        event?.preventDefault?.();
+        if (this.gameState?.tutorial?.active && this.ws && this.gameState.tutorial.can_undo)
+          this.ws.send("tutorial_undo", {});
+        return;
+      }
       const isSpace = event?.code === "Space" || event?.key === " " || event?.keyCode === 32;
       if (!isSpace) return;
       event?.preventDefault?.();
@@ -635,7 +641,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.tutorialContainer.on("pointerdown", (pointer, _x, _y, event) => {
       event?.stopPropagation();
-      if (this._tutorialNeedsDismiss()) this._sendTutorialDismiss();
+      if (this._tutorialCanSpaceContinue()) this._sendTutorialDismiss();
     });
 
     this._applyTutorialLayout(false);
@@ -750,13 +756,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  _tutorialNeedsDismiss() {
+  /** Space / panel click advance: dismiss-only steps, or skip gated (confirm / turn) steps. */
+  _tutorialCanSpaceContinue() {
     const tut = this.gameState?.tutorial;
-    return !!(tut?.active && tut?.needs_dismiss);
+    return !!(tut?.active && (tut.needs_dismiss || tut.allow_skip));
   }
 
   _sendTutorialDismiss() {
-    if (!this.ws || !this._tutorialNeedsDismiss()) return;
+    if (!this.ws || !this._tutorialCanSpaceContinue()) return;
     this.ws.send("tutorial_dismiss", {});
     playSfx(this, "sfx_select");
   }
@@ -774,12 +781,18 @@ export class GameScene extends Phaser.Scene {
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
     this._tutTextTxt.setText(tut.text || "");
+    const undoHint = tut.can_undo ? "  •  Press W to undo" : "";
+    let hintMain;
+    if (tut.completed) {
+      hintMain = "Tutorial Complete! Press SPACE or click to continue into the live game.";
+    } else if (tut.allow_skip) {
+      hintMain = "Press SPACE or click to skip this step.";
+    } else {
+      hintMain = "Press SPACE or click to continue";
+    }
     this._tutHintTxt
-      .setText(tut.completed
-        ? "Tutorial Complete! Press SPACE or click to continue into the live game."
-        : "Press SPACE or click to continue")
-      .setVisible(!!tut.needs_dismiss);
-
+      .setText(`${hintMain}${undoHint}`)
+      .setVisible(!!(tut.needs_dismiss || tut.allow_skip));
     this.tutorialContainer.setVisible(true);
 
     const gifSteps = this._tutorialGifSteps();
@@ -826,19 +839,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   _buildHelpOverlay() {
-    const overlay = this.add.container(CANVAS_W / 2, CANVAS_H / 2).setDepth(45).setVisible(false);
-    const bg = this.add.rectangle(0, 0, CANVAS_W - 120, CANVAS_H - 140, 0x0b0704, 0.93)
-      .setStrokeStyle(3, 0xc89a44, 0.95);
-    const title = this.add.text(0, -CANVAS_H * 0.28, HELP_POPUP_TITLE, {
-      fontFamily: FONT_TITLE, fontSize: "28px", fontStyle: "bold", color: "#fff0b0",
-      stroke: "#2a1408", strokeThickness: 4,
-    }).setOrigin(0.5);
-    const body = this.add.text(0, -CANVAS_H * 0.22, getHelpPopupBodyText(), {
-        fontFamily: FONT_MONO, fontSize: "13px", color: "#f2d8a0", align: "left", lineSpacing: 7,
-        wordWrap: { width: CANVAS_W - 220 },
-      }).setOrigin(0.5, 0);
-    overlay.add([bg, title, body]);
+    const overlay = this.add.dom(0, 0)
+      .setOrigin(0, 0)
+      .setDepth(45)
+      .setVisible(false);
+    overlay.createFromHTML(buildHelpPopupTemplate({ width: CANVAS_W, height: CANVAS_H }));
+
+    const root = overlay.node;
+    const closeButtons = root.querySelectorAll(HELP_POPUP_SELECTORS.close);
+    const tabButtons = root.querySelectorAll(HELP_POPUP_SELECTORS.tabButton);
+    const tabPanes = root.querySelectorAll(HELP_POPUP_SELECTORS.tabPane);
+
+    closeButtons.forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._helpDismissedLocally = true;
+        overlay.setVisible(false);
+      });
+    });
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const tab = button.dataset.tabBtn;
+        tabButtons.forEach((btn) => btn.classList.toggle("is-active", btn === button));
+        tabPanes.forEach((pane) => {
+          pane.classList.toggle("is-active", pane.dataset.tabPane === tab);
+        });
+      });
+    });
+
     this.helpOverlay = overlay;
+    this._helpDismissedLocally = false;
+    this._lastHelpVisible = false;
   }
 
   // ─── Mute button ──────────────────────────────────────────────────────────
@@ -870,10 +903,11 @@ export class GameScene extends Phaser.Scene {
     const setup   = s.setup   || {};
     const inBattle = s.phase === "game" || s.phase == null;
 
-    // ── Resource / terrain overlay — only redrawn when map seed changes ───────
-    if (s.terrain && s.map_seed !== this._lastSeed) {
-      this._renderResources(s.terrain);
-      this._lastSeed = s.map_seed;
+    // ── Resource / terrain overlay — redrawn when map or terrain blockers change
+    const terrainRenderKey = `${s.map_seed}|${JSON.stringify(s.game?.hard_gone || [])}|${JSON.stringify(s.game?.soft_gone || [])}`;
+    if (s.terrain && terrainRenderKey !== this._lastTerrainRenderKey) {
+      this._renderResources(s);
+      this._lastTerrainRenderKey = terrainRenderKey;
     }
 
     // ── Damage overlay ─────────────────────────────────────────────────────────
@@ -886,9 +920,9 @@ export class GameScene extends Phaser.Scene {
 
     if (inBattle) {
       if (s.p1?.def?.col != null)
-        this._drawDefZone(s.p1.def.col, s.p1.def.row, G.tier_p1 ?? 0, 0xe8d060);
+        this._drawDefZone(s.p1.def.col, s.p1.def.row, G.def_tier_p1 ?? 0, 0xe8d060);
       if (s.p2?.def?.col != null)
-        this._drawDefZone(s.p2.def.col, s.p2.def.row, G.tier_p2 ?? 0, 0x60e8a0);
+        this._drawDefZone(s.p2.def.col, s.p2.def.row, G.def_tier_p2 ?? 0, 0x60e8a0);
 
       for (const role of ["atk_a", "atk_b"]) {
         if (s.p1?.[role]?.col != null && s.p1[role].direction)
@@ -935,12 +969,16 @@ export class GameScene extends Phaser.Scene {
    * Place PNG tile images at every resource / terrain cell.
    * Called once per map seed change — destroys old sprites and creates new ones.
    */
-  _renderResources(terrain) {
+  _renderResources(s) {
+    const terrain = s?.terrain;
     // Destroy sprites from the previous map
     for (const sp of (this._terrainSprites || [])) sp.destroy();
     this._terrainSprites = [];
     this.resourceGfx.clear();
     if (!terrain) return;
+
+    const hardGoneKeys = new Set((s.game?.hard_gone || []).map(([c, r]) => `${c},${r}`));
+    const softGoneKeys = new Set((s.game?.soft_gone || []).map(([c, r]) => `${c},${r}`));
 
     const cellW = GRID_DRAW_W / GRID_SIZE;
     const cellH = GRID_DRAW_H / GRID_SIZE;
@@ -963,13 +1001,21 @@ export class GameScene extends Phaser.Scene {
     for (const r of terrain.p2_resources || [])
       placeImg(r.col, r.row, "cell_emu");
 
-    // Hard terrain — impassable blockers
-    for (const t of terrain.p1_hard || []) placeImg(t.col, t.row, "hard_mick");
-    for (const t of terrain.p2_hard || []) placeImg(t.col, t.row, "hard_emu");
+    // Hard terrain — destructible heavy blockers
+    for (const t of terrain.p1_hard || []) {
+      if (!hardGoneKeys.has(`${t.col},${t.row}`)) placeImg(t.col, t.row, "hard_mick");
+    }
+    for (const t of terrain.p2_hard || []) {
+      if (!hardGoneKeys.has(`${t.col},${t.row}`)) placeImg(t.col, t.row, "hard_emu");
+    }
 
     // Soft terrain — destructible obstacles
-    for (const t of terrain.p1_soft || []) placeImg(t.col, t.row, "soft_mick");
-    for (const t of terrain.p2_soft || []) placeImg(t.col, t.row, "soft_emu");
+    for (const t of terrain.p1_soft || []) {
+      if (!softGoneKeys.has(`${t.col},${t.row}`)) placeImg(t.col, t.row, "soft_mick");
+    }
+    for (const t of terrain.p2_soft || []) {
+      if (!softGoneKeys.has(`${t.col},${t.row}`)) placeImg(t.col, t.row, "soft_emu");
+    }
 
     // Stronghold marker — extra white ring to highlight high-value cells
     const g = this.resourceGfx;
@@ -1000,6 +1046,25 @@ export class GameScene extends Phaser.Scene {
       g.lineStyle(1.5, 0xff5000, 0.65);
       g.strokeLineShape(new Phaser.Geom.Line(bx + 8, by + 9, bx + cellW - 8, by + cellH - 9));
       g.strokeLineShape(new Phaser.Geom.Line(bx + cellW - 9, by + 8, bx + 10, by + cellH - 8));
+    }
+
+    // Damaged terrain blockers — amber chip overlay until they are cleared.
+    const hardGoneKeys = new Set((G.hard_gone || []).map(([c, r]) => `${c},${r}`));
+    const softGoneKeys = new Set((G.soft_gone || []).map(([c, r]) => `${c},${r}`));
+    for (const [damageMap, goneKeys, color] of [
+      [G.hard_damage || {}, hardGoneKeys, 0xffa020],
+      [G.soft_damage || {}, softGoneKeys, 0xff6000],
+    ]) {
+      for (const key of Object.keys(damageMap)) {
+        if (goneKeys.has(key)) continue;
+        const [c, r] = key.split(",").map(Number);
+        const bx = BOARD_OFF_X + GRID_INSET_X + c * cellW;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + r * cellH;
+        g.fillStyle(color, 0.22);
+        g.fillRect(bx + 2, by + 2, cellW - 4, cellH - 4);
+        g.lineStyle(2, color, 0.8);
+        g.strokeLineShape(new Phaser.Geom.Line(bx + 10, by + cellH - 10, bx + cellW - 10, by + 10));
+      }
     }
 
     // Destroyed cells — scorch + ✕
@@ -1263,8 +1328,9 @@ export class GameScene extends Phaser.Scene {
     const totalCells  = G.resource_cell_total ?? 24;
     const p1Remaining = G.score_p1_remaining_cells ?? totalCells;
     const p2Remaining = G.score_p2_remaining_cells ?? totalCells;
-    const tier1       = G.tier_p1 ?? 0;
-    const tier2       = G.tier_p2 ?? 0;
+    const defTier1    = G.def_tier_p1 ?? 0;
+    const defTier2    = G.def_tier_p2 ?? 0;
+    const atkTiers    = G.atk_tiers || {};
 
     const p1Active = activeSide === "p1";
     const p2Active = activeSide === "p2";
@@ -1303,15 +1369,19 @@ export class GameScene extends Phaser.Scene {
       p2Remaining, totalCells, COLORS.scoreBarFill2);
     this.p2ScoreValTxt.setText(`${p2Remaining} / ${totalCells}`);
 
-    // ── Tier pips ─────────────────────────────────────────────────────────────
-    this.p1TierNumTxt.setText(`${tier1}`);
-    this.p1TierPipTxt.setText(tierPips(tier1))
+    // ── DEF zone status ───────────────────────────────────────────────────────
+    this.p1TierNumTxt.setText(`${defTier1}`);
+    this.p1TierPipTxt.setText(defTier1 >= 1 ? "5x5" : "3x3")
       .setColor(p1Active ? "#d4a030" : "#5a4020");
-    this.p2TierNumTxt.setText(`${tier2}`);
-    this.p2TierPipTxt.setText(tierPips(tier2))
+    this.p2TierNumTxt.setText(`${defTier2}`);
+    this.p2TierPipTxt.setText(defTier2 >= 1 ? "5x5" : "3x3")
       .setColor(p2Active ? "#50cc40" : "#204820");
 
     // ── Token positions ───────────────────────────────────────────────────────
+    this.p1AtkALabelTxt.setText(`⚔ Keith A T${atkTiers.p1?.atk_a ?? 0}`);
+    this.p1AtkBLabelTxt.setText(`⚔ Keith B T${atkTiers.p1?.atk_b ?? 0}`);
+    this.p2AtkALabelTxt.setText(`⚔ Mob A T${atkTiers.p2?.atk_a ?? 0}`);
+    this.p2AtkBLabelTxt.setText(`⚔ Mob B T${atkTiers.p2?.atk_b ?? 0}`);
     this.p1AtkAPosTxt.setText(posLabel(s.p1?.atk_a));
     this.p1AtkBPosTxt.setText(posLabel(s.p1?.atk_b));
     this.p1DefPosTxt .setText(posLabel(s.p1?.def));
@@ -1437,7 +1507,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   _renderHelpUi(state) {
-    this.helpOverlay?.setVisible(!!state?.help_visible);
+    const visibleFromState = !!state?.help_visible;
+
+    if (!visibleFromState) {
+      this._helpDismissedLocally = false;
+      this.helpOverlay?.setVisible(false);
+      this._lastHelpVisible = false;
+      return;
+    }
+
+    if (!this._lastHelpVisible) {
+      this._helpDismissedLocally = false;
+    }
+
+    this.helpOverlay?.setVisible(!this._helpDismissedLocally);
+    this._lastHelpVisible = true;
   }
 
   // ─── Map building helpers ─────────────────────────────────────────────────
@@ -1445,10 +1529,12 @@ export class GameScene extends Phaser.Scene {
   _buildMaps(s) {
     const hardMap      = {};
     const softMap      = {};
+    const hardGoneKeys = new Set((s.game?.hard_gone || []).map(([c, r]) => `${c},${r}`));
     const softGoneKeys = new Set((s.game?.soft_gone || []).map(([c, r]) => `${c},${r}`));
 
-    for (const t of [...(s.terrain?.p1_hard || []), ...(s.terrain?.p2_hard || [])])
-      hardMap[`${t.col},${t.row}`] = t;
+    for (const t of [...(s.terrain?.p1_hard || []), ...(s.terrain?.p2_hard || [])]) {
+      if (!hardGoneKeys.has(`${t.col},${t.row}`)) hardMap[`${t.col},${t.row}`] = t;
+    }
     for (const t of [...(s.terrain?.p1_soft || []), ...(s.terrain?.p2_soft || [])]) {
       if (!softGoneKeys.has(`${t.col},${t.row}`)) softMap[`${t.col},${t.row}`] = t;
     }
@@ -1464,62 +1550,38 @@ export class GameScene extends Phaser.Scene {
   // ─── Nuke handling ────────────────────────────────────────────────────────
 
   _toggleNukeArming() {
-    const battle = this.gameState?.battle || {};
-    const game = this.gameState?.game || {};
-    const activeSide = battle.active_side || null;
-    if (!activeSide) return;
-
-    const activeTier = activeSide === "p1" ? (game.tier_p1 ?? 0) : (game.tier_p2 ?? 0);
-    const nukeUsed = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
-    if (activeTier < 4 || nukeUsed) return;
-
-    this._nukeArmingSide = this._nukeArmingSide === activeSide ? null : activeSide;
-    playSfx(this, "sfx_select");
+    // Live nuke targeting is marker-driven: scan ID19 (P1) or ID29 (P2).
+    this._nukeArmingSide = null;
   }
 
   _updateNukeUi(s) {
     const battle = s?.battle || {};
     const game = s?.game || {};
     const activeSide = battle.active_side || null;
-    if (this._nukeArmingSide && activeSide !== this._nukeArmingSide) this._nukeArmingSide = null;
+    this._nukeArmingSide = null;
 
     if (!activeSide) {
       this.nukeBtn?.setVisible(false);
       return;
     }
 
-    const activeTier = activeSide === "p1" ? (game.tier_p1 ?? 0) : (game.tier_p2 ?? 0);
     const nukeUsed = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
-    const isArming = this._nukeArmingSide === activeSide;
-    const canArm = activeTier >= 4 && !nukeUsed;
+    const nukeAvailable = activeSide === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
+    const markerId = activeSide === "p1" ? 19 : 29;
 
     this.nukeBtn
       .setVisible(true)
-      .setText(isArming ? "Pick Target" : (nukeUsed ? "Nuke Spent" : "Arm Nuke"))
-      .setColor(canArm || isArming ? "#ffd070" : "#8a7a68")
-      .setBackgroundColor(canArm || isArming ? "#2a120c" : "#241812")
-      .setAlpha(canArm || isArming ? 1 : 0.45);
+      .setText(nukeUsed ? "Nuke Spent" : (nukeAvailable ? `Scan ID${markerId}` : "Nuke Locked"))
+      .setColor(nukeAvailable ? "#ffd070" : "#8a7a68")
+      .setBackgroundColor(nukeAvailable ? "#2a120c" : "#241812")
+      .setAlpha(nukeAvailable || nukeUsed ? 1 : 0.45);
   }
 
   _handleBoardClick(pointer) {
-    if (this._tutorialNeedsDismiss()) {
+    if (this._tutorialCanSpaceContinue()) {
       this._sendTutorialDismiss();
       return;
     }
-    if (this.gameState?.phase !== "game" || !this._nukeArmingSide) return;
-    const cellW = GRID_DRAW_W / GRID_SIZE;
-    const cellH = GRID_DRAW_H / GRID_SIZE;
-    const col   = Math.floor((pointer.x - BOARD_OFF_X - GRID_INSET_X) / cellW);
-    const row   = Math.floor((pointer.y - BOARD_OFF_Y - GRID_INSET_Y) / cellH);
-    if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) return;
-
-    const enemySide = this._nukeArmingSide === "p1" ? "p2" : "p1";
-    const onEnemy   = this._nukeArmingSide === "p1" ? isP2Cell(col, row) : isP1Cell(col, row);
-    if (onEnemy) {
-      this.ws?.send("trigger_nuke", { side: this._nukeArmingSide, position: { x: col, y: row } });
-      playSfx(this, "sfx_select");
-    }
-    this._nukeArmingSide = null;
   }
 
   // ─── WebSocket binding ────────────────────────────────────────────────────
@@ -1540,6 +1602,8 @@ export class GameScene extends Phaser.Scene {
             else                            playSfx(this, "sfx_p1_attack");
             break;
           case "cell_destroyed":   playSfx(this, "sfx_destroy");    break;
+          case "hard_destroyed":   playSfx(this, "sfx_destroy");    break;
+          case "hard_hit":         playSfx(this, "sfx_block");      break;
           case "soft_destroyed":
           case "blocked_hard":     playSfx(this, "sfx_block");      break;
           case "hq_destroyed":     playSfx(this, "sfx_explosion");  break;
@@ -1551,14 +1615,23 @@ export class GameScene extends Phaser.Scene {
     this.ws.on("events", this._eventsHandler);
 
     // Tier-up and winner detection (state-diff)
-    this._prevTiers  = { p1: 0, p2: 0 };
+    this._prevAtkTiers = { p1: { atk_a: 0, atk_b: 0 }, p2: { atk_a: 0, atk_b: 0 } };
+    this._prevDefTiers = { p1: 0, p2: 0 };
     this._prevWinner = null;
     this._tierWinHandler = (s) => {
       const G = s.game || {};
-      if ((G.tier_p1 ?? 0) > this._prevTiers.p1) playSfx(this, "sfx_tier_up");
-      if ((G.tier_p2 ?? 0) > this._prevTiers.p2) playSfx(this, "sfx_tier_up");
-      this._prevTiers.p1 = G.tier_p1 ?? 0;
-      this._prevTiers.p2 = G.tier_p2 ?? 0;
+      const atkTiers = G.atk_tiers || {};
+      for (const side of ["p1", "p2"]) {
+        for (const role of ["atk_a", "atk_b"]) {
+          const nextTier = atkTiers[side]?.[role] ?? 0;
+          if (nextTier > this._prevAtkTiers[side][role]) playSfx(this, "sfx_tier_up");
+          this._prevAtkTiers[side][role] = nextTier;
+        }
+      }
+      if ((G.def_tier_p1 ?? 0) > this._prevDefTiers.p1) playSfx(this, "sfx_tier_up");
+      if ((G.def_tier_p2 ?? 0) > this._prevDefTiers.p2) playSfx(this, "sfx_tier_up");
+      this._prevDefTiers.p1 = G.def_tier_p1 ?? 0;
+      this._prevDefTiers.p2 = G.def_tier_p2 ?? 0;
       if (G.winner && !this._prevWinner) playSfx(this, "sfx_victory");
       this._prevWinner = G.winner ?? null;
     };

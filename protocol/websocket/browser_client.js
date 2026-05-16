@@ -1,21 +1,18 @@
 /**
- * WebSocket client for the yu_test3 frontend.
+ * Browser WebSocket client for the Defend Your Pixels live runtime.
  *
- * The live runtime broadcasts a raw state
- * object — no { event, data } envelope. We translate the latest state into
- * synthetic events:
+ * The Python runtime broadcasts a raw state object, without a
+ * `{ type, data }` envelope. This client translates incoming messages into
+ * browser-side events:
  *
- *   "connected"     → fired once when the WS opens
- *   "state"         → fired each time a new state arrives  (full payload)
- *   "events"        → fired with the events[] array if non-empty
- *   "disconnected"  → on close
+ *   "connected"     -> fired once when the WS opens
+ *   "state"         -> fired each time a new state arrives (full payload)
+ *   "events"        -> fired with the events[] array if non-empty
+ *   "disconnected"  -> fired when the socket closes
  *
- * Listeners can also `send(type, data)` for client → server messages.
- *
- * Transport rules:
- * - `new_map` / `tier` stay as top-level transport commands
- * - everything else is wrapped in the FW2 action envelope:
- *   `{type:"action", data:{action:type, ...payload}}`
+ * Outbound messages follow the current runtime protocol:
+ * - `new_map` / `tier` stay as top-level transport commands.
+ * - everything else is wrapped as `{type:"action", data:{action:type, ...payload}}`.
  */
 export class WSClient {
   constructor(url = "ws://localhost:8765") {
@@ -43,7 +40,7 @@ export class WSClient {
       }
     };
     this._ws.onclose = () => {
-      console.warn(`[WS] Disconnected — retry in ${this._reconnectDelay}ms`);
+      console.warn(`[WS] Disconnected - retry in ${this._reconnectDelay}ms`);
       this._emit("disconnected", {});
       setTimeout(() => this._connect(), this._reconnectDelay);
     };

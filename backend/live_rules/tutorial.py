@@ -29,7 +29,7 @@ STEPS = [
     {
         "id": "explain_sides_alternate",
         "title": "Who Owns Which Side?",
-        "text": "The board is split by a diagonal fence through cells where column index + row index = 11 (0-based grid).\nOld Mick (Player 1) controls the bottom-left territory (orange highlight).\nThe Mob (Player 2) controls the top-right territory (green highlight).\nWatch the highlights alternate—you must keep your tokens on your side.",
+        "text": "The board is split by a diagonal fence.\nOld Mick (Player 1) controls the bottom-left territory (orange highlight).\nThe Mob (Player 2) controls the top-right territory (green highlight).\nWatch the highlights alternate—you must keep your tokens on your side.",
         "condition": "dismiss",
         "highlight_alternate_sides": True,
     },
@@ -49,14 +49,15 @@ STEPS = [
     {
         "id": "explain_turn_marker",
         "title": "The Turn Marker",
-        "text": "The turn marker is a cube. The camera detects the top face and its rotation angle.\nP1's turn: marker #10 face up, rotated so the marker reads upright.\nP2's turn: same face, rotated 180 degrees.",
+        "text": "Turn is driven by which markers the camera sees:\n• Marker #10 scanned → Player 1's turn (Old Mick).\n• Marker #20 scanned → Player 2's turn (The Mob).\n• Marker #4 scanned → the active player ends their turn.",
         "condition": "dismiss",
     },
     {
         "id": "set_turn_p1",
         "title": "Set Turn to Old Mick",
-        "text": "Place the cube with marker #10 face up, rotated so the marker appears upright to the camera.\nThe system will detect it as Old Mick's turn.",
-        "condition": "dismiss",
+        "text": "Scan turn marker #10 so the camera detects Old Mick's turn before you place attackers.",
+        "condition": "turn_change",
+        "wait_turn": 1,
     },
     {
         "id": "place_atk_a",
@@ -109,25 +110,26 @@ STEPS = [
     {
         "id": "end_turn",
         "title": "End Your Turn",
-        "text": "Rotate the turn marker cube 180 degrees (so marker #10 appears upside-down).\nYour attacks will resolve and it becomes The Mob's turn.",
-        "condition": "dismiss",
+        "text": "Scan marker #4 to end your turn.",
+        "condition": "confirm_present",
     },
     {
         "id": "wait_opponent",
         "title": "Opponent's Turn",
-        "text": "The Mob is now playing. In a real game, your opponent would place their tokens.\nRotate the turn marker 180 degrees again to return to Old Mick's turn.",
-        "condition": "dismiss",
+        "text": "Simulate the opponent taking their turn: scan turn marker #20 so the camera detects The Mob's turn.",
+        "condition": "turn_change",
+        "wait_turn": 2,
     },
     {
         "id": "explain_tiers",
         "title": "Tier System",
-        "text": "Destroying enemy resources earns points. At 6/14/22/32 points, you gain Tier upgrades:\n- Tier 1+: Splash damage\n- Tier 2+: Larger defense zone\n- Tier 4: Unlocks Nuke!",
+        "text": "Each side starts with 24 resource cells and the scoreboard counts down. Each ATK token upgrades separately: 4 kills unlocks 1 random extra resource in a 3x3 area, and 8 kills unlocks 2 extras. At 12 remaining cells your DEF zone expands; at 8 remaining cells your one-use NUKE unlocks.",
         "condition": "dismiss",
     },
     {
         "id": "explain_win",
         "title": "How to Win",
-        "text": "Win by destroying the enemy's hidden HQ, or reaching 40 attrition points.\nProtect your own HQ at all costs!",
+        "text": "Win by destroying the enemy's hidden HQ, or by destroying all 24 enemy resource cells.\nProtect your own HQ at all costs!",
         "condition": "dismiss",
     },
     {
@@ -146,13 +148,27 @@ class TutorialController:
     last_turn: int | None = None
     completed: bool = False
     finished: bool = False
+    _prev_turn_signal: int | None = None
+    _confirm_prev: bool = False
 
     def dismiss(self) -> None:
         if self.finished:
             return
         step = STEPS[self.step_index]
-        if step.get("condition") == "dismiss":
+        cond = step.get("condition")
+         # Dismiss-only steps, or skip past gated steps (confirm / turn) via Space / UI.
+        if cond == "dismiss" or cond in ("confirm_present", "turn_change"):
             self._advance()
+            
+    def undo(self) -> None:
+        if self.finished or self.step_index <= 0:
+            return
+        self.step_index -= 1
+        self._prev_turn_signal = None
+        self._confirm_prev = False
+        step = STEPS[self.step_index]
+        self.completed = bool(step.get("final"))
+        print(f"[TUTORIAL] Undo -> step {self.step_index}:{step['id']}")
 
     def tick(
         self,
@@ -160,22 +176,29 @@ class TutorialController:
         p2_tokens: dict,
         current_turn: int | None,
         hq_markers: dict | None = None,
+        confirm_present: bool = False,
     ) -> dict:
         if self.finished:
             return self.snapshot()
 
         step = STEPS[self.step_index]
         condition = step.get("condition")
+        
+        if condition == "confirm_present":
+            edge = confirm_present and not self._confirm_prev
+            self._confirm_prev = confirm_present
+            if edge:
+                self._advance()
+                return self.snapshot()
 
         if condition == "turn_change":
             wait_turn = step.get("wait_turn")
-            if self.last_turn is None:
-                self.last_turn = current_turn
-            elif current_turn is not None and current_turn != self.last_turn:
-                if wait_turn is None or current_turn == wait_turn:
-                    self._advance()
-                self.last_turn = current_turn
-        elif isinstance(condition, dict):
+            if isinstance(wait_turn, int) and current_turn == wait_turn and self._prev_turn_signal != wait_turn:
+                self._advance()
+                return self.snapshot()
+            self._prev_turn_signal = current_turn
+            return self.snapshot()
+        if isinstance(condition, dict):
             if self._check_token_condition(condition, p1_tokens, p2_tokens, hq_markers):
                 self._advance()
 
@@ -212,7 +235,8 @@ class TutorialController:
     def _advance(self) -> None:
         if self.step_index < len(STEPS) - 1:
             self.step_index += 1
-            self.last_turn = None
+            self._prev_turn_signal = None
+            self._confirm_prev = False
             if STEPS[self.step_index].get("final"):
                 self.completed = True
             print(f"[TUTORIAL] Advanced to step {self.step_index}: {STEPS[self.step_index]['id']}")
@@ -222,6 +246,7 @@ class TutorialController:
 
     def snapshot(self) -> dict:
         step = STEPS[self.step_index]
+        cond = step.get("condition")
         return {
             "active": not self.finished,
             "step_index": self.step_index,
@@ -232,7 +257,9 @@ class TutorialController:
             "highlight": step.get("highlight"),
             "highlight_alternate_sides": bool(step.get("highlight_alternate_sides")),
             "tutorial_gif": step.get("tutorial_gif"),
-            "needs_dismiss": step.get("condition") == "dismiss",
+            "needs_dismiss": cond == "dismiss",
+            "allow_skip": cond in ("confirm_present", "turn_change"),
+            "can_undo": self.step_index > 0 and not self.finished,
             "completed": self.completed,
         }
 

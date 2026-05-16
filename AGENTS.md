@@ -2,21 +2,21 @@
 
 ## Project overview
 
-AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to the `yu_test3` live frontend.
+AR board game: camera detects ArUco markers, Python tracker/model computes game state, bridge streams over WebSocket to the live frontend.
 
-Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> yu_test3/frontend/index.html`
+Data flow: `camera -> tracker -> bridge -> run_live_tracker HTTP/WS -> frontend/index.html`
 
-Python is authoritative for game state. `live_rules/game_model.py` owns the live rules. `bridge` owns transport. `python_tracker` owns vision. `runner/` assembles the live app. `model_backend` remains in the repo for legacy/smoke-test paths.
+Python is authoritative for game state. `backend/live_rules/game_model.py` owns the live rules. `backend/bridge` owns transport. `backend/python_tracker` owns vision. `runner/` assembles the live app. `backend/model_backend` remains in the repo for legacy/smoke-test paths.
 
 ## Setup
 
 ```bash
 chmod +x setup.sh && ./setup.sh          # first time only
 source .venv/bin/activate
-pip install -e .                         # editable install — required so python_tracker, bridge, model_backend import from anywhere
+pip install -e .                         # editable install — required so backend packages import from anywhere
 ```
 
-The venv is `.venv/` (not `venv`). The editable install packages `python_tracker`, `bridge`, and `model_backend`.
+The venv is `.venv/` (not `venv`). The editable install packages backend modules such as `python_tracker`, `bridge`, `live_rules`, and `model_backend`.
 
 ## Running
 
@@ -38,10 +38,8 @@ Windows notes:
 
 ## Architecture notes
 
-- `archive/docs/Reference/main.cpp` is a preserved C++ reference — do not use it as a runtime entry.
-- `archive/` is preserved reference material and not a primary runtime path.
 - Python bridge naming: `*_schema.py` (contract), `*_adapter.py` (conversion), `*_transport.py` (network).
-- The live frontend is `yu_test3/frontend/index.html`, served by `run_live_tracker.py`, and it consumes the flat live runtime payload directly.
+- The live frontend is `frontend/index.html`, served by `run_live_tracker.py`, and it consumes the flat live runtime payload directly.
 
 ## Type checking
 
@@ -62,10 +60,10 @@ On macOS, if camera access is denied: enable Camera for the app launching Python
 | File | Purpose |
 |------|---------|
 | `runner/run_live_tracker.py` | Full live system: camera -> tracker -> shared live rules -> WS/HTTP |
-| `python_tracker/state_output/tracker_snapshot.py` | Tracker snapshot, homography fallback, marker stability |
-| `bridge/transport/websocket_transport.py` | WebSocket server + inbound UI commands |
-| `live_rules/game_model.py` | Live game rules used by the browser UI |
-| `yu_test3/frontend/index.html` | The primary live frontend |
+| `backend/python_tracker/state_output/tracker_snapshot.py` | Tracker snapshot, homography fallback, marker stability |
+| `backend/bridge/transport/websocket_transport.py` | WebSocket server + inbound UI commands |
+| `backend/live_rules/game_model.py` | Live game rules used by the browser UI |
+| `frontend/index.html` | The primary live frontend |
 
 ## Existing instruction files
 

@@ -14,7 +14,7 @@ The snapshot includes:
 import cv2
 import numpy as np
 
-from python_tracker.tracked_markers import CONFIRM_MARKER_IDS, HELP_MARKER_IDS, HQ_MARKER_IDS, TOKEN_IDS, TURN_MARKER_IDS, marker_label
+from python_tracker.tracked_markers import CONFIRM_MARKER_IDS, HELP_MARKER_IDS, HQ_MARKER_IDS, NUKE_MARKER_IDS, TOKEN_IDS, TURN_MARKER_IDS, marker_label
 from python_tracker.calibration.homography import (
     GRID_COLS,
     GRID_ROWS,
@@ -27,7 +27,7 @@ from python_tracker.token_detection.token_rotation import compute_rotation_deg
 
 BOARD_CORNER_IDS = {0, 1, 2, 3}
 
-ALL_TRACKED_IDS = TOKEN_IDS | TURN_MARKER_IDS | HQ_MARKER_IDS | CONFIRM_MARKER_IDS | HELP_MARKER_IDS
+ALL_TRACKED_IDS = TOKEN_IDS | TURN_MARKER_IDS | HQ_MARKER_IDS | CONFIRM_MARKER_IDS | HELP_MARKER_IDS | NUKE_MARKER_IDS
 
 
 def build_tracker_snapshot(corners, ids):
@@ -45,6 +45,7 @@ def build_tracker_snapshot(corners, ids):
             "turn_markers": [],
             "confirm_markers": [],
             "help_markers": [],
+            "nuke_markers": [],
             "board_corners": board_corners_out,
         }
 
@@ -70,6 +71,7 @@ def build_tracker_snapshot(corners, ids):
     hq_markers_out = []
     confirm_markers_out = []
     help_markers_out = []
+    nuke_markers_out = []
 
     for i, mid in enumerate(ids.flatten()):
         if mid in TURN_MARKER_IDS:
@@ -116,6 +118,20 @@ def build_tracker_snapshot(corners, ids):
             })
             continue
 
+        if mid in NUKE_MARKER_IDS:
+            center = corners[i][0].mean(axis=0)
+            px, py = float(center[0]), float(center[1])
+            rotation_deg = compute_rotation_deg(corners[i][0])
+            gx, gy, in_bounds = pixel_to_grid_with_bounds(px, py, H)
+            nuke_markers_out.append({
+                "id": int(mid),
+                "position": {"x": gx, "y": gy} if gx is not None and in_bounds else None,
+                "raw_position": {"x": round(px, 1), "y": round(py, 1)},
+                "in_bounds": in_bounds,
+                "rotation": round(rotation_deg, 1),
+            })
+            continue
+
         if mid not in TOKEN_IDS:
             continue
 
@@ -148,6 +164,7 @@ def build_tracker_snapshot(corners, ids):
         "turn_markers": turn_markers_out,
         "confirm_markers": confirm_markers_out,
         "help_markers": help_markers_out,
+        "nuke_markers": nuke_markers_out,
         "board_corners": board_corners_out,
         "playable_corners": _serialize_playable_corners(playable_corners),
         "homography": H,
@@ -168,12 +185,14 @@ def apply_calibration_fallback(snapshot: dict, fallback_snapshot: dict | None) -
 
     remapped_markers = _remap_marker_positions(snapshot.get("markers", []), fallback_h)
     remapped_hq_markers = _remap_marker_positions(snapshot.get("hq_markers", []), fallback_h)
+    remapped_nuke_markers = _remap_marker_positions(snapshot.get("nuke_markers", []), fallback_h)
 
     return {
         **snapshot,
         "calibration_ready": True,
         "markers": remapped_markers,
         "hq_markers": remapped_hq_markers,
+        "nuke_markers": remapped_nuke_markers,
         "board_corners": snapshot.get("board_corners") or fallback_snapshot.get("board_corners", []),
         "playable_corners": fallback_snapshot.get("playable_corners", []),
         "homography": fallback_h,

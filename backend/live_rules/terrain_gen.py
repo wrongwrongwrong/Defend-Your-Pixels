@@ -1,10 +1,7 @@
 """Symmetric random terrain and resource generator.
 
-Each side gets a mirrored set of 24 attackable resource cells:
-
-- 22 cells are worth 1 point
-- 2 hidden cells are worth 2 points
-- all resource cells share the same presentation
+Each side gets a mirrored set of 24 attackable resource cells.
+All resource cells are worth 1 unit.
 """
 
 import random
@@ -17,7 +14,6 @@ N_SOFT_PER_SIDE = 3
 FENCE_BUFFER = 2
 DEF_CENTRE_EXCL = True
 RESOURCE_COUNT = 24
-RESOURCE_TWO_POINT_COUNT = 2
 # Spawn corners — no resources or terrain allowed here so players have
 RESERVED_CELLS = frozenset({(0, 0), (0, 1), (1, 0), (11, 11), (11, 10), (10, 11)})
 
@@ -26,25 +22,17 @@ def _pack(cells: list[tuple[int, int]], prefix: str) -> list[dict]:
     return [{"id": f"{prefix}_{i}", "name": f"{prefix}_{i}", "col": c, "row": r} for i, (c, r) in enumerate(cells)]
 
 
-def _pack_resources(cells: list[tuple[int, int]], *, two_point_cells: set[tuple[int, int]]) -> list[dict]:
+def _pack_resources(cells: list[tuple[int, int]]) -> list[dict]:
     packed: list[dict] = []
     for index, (c, r) in enumerate(cells):
-        value = 1
-        max_hp = 1
-        visible = False
-        resource_type = "standard"
-        if (c, r) in two_point_cells:
-            value = 2
-            resource_type = "bonus"
-
         packed.append({
             "id": f"resource_{index}",
             "col": c,
             "row": r,
-            "value": value,
-            "max_hp": max_hp,
-            "visible": visible,
-            "resource_type": resource_type,
+            "value": 1,
+            "max_hp": 1,
+            "visible": False,
+            "resource_type": "standard",
         })
     return packed
 
@@ -86,21 +74,10 @@ def generate(seed: int | None = None) -> dict:
     p1_resource_cells = rng.sample(p1_eligible, RESOURCE_COUNT)
     rng.shuffle(p1_resource_cells)
 
-    bonus_cells = list(p1_resource_cells)
-    rng.shuffle(bonus_cells)
-    p1_two_point_cells = set(bonus_cells[:RESOURCE_TWO_POINT_COUNT])
-
     p2_resource_cells = mirror(p1_resource_cells)
-    p2_two_point_cells = set(mirror(list(p1_two_point_cells)))
 
-    p1_resources = _pack_resources(
-        p1_resource_cells,
-        two_point_cells=p1_two_point_cells,
-    )
-    p2_resources = _pack_resources(
-        p2_resource_cells,
-        two_point_cells=p2_two_point_cells,
-    )
+    p1_resources = _pack_resources(p1_resource_cells)
+    p2_resources = _pack_resources(p2_resource_cells)
 
     return {
         "p1_hard": _pack(p1_hard_cells, "fence"),

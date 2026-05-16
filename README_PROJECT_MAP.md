@@ -14,11 +14,11 @@ The system uses a camera to detect board markers and tokens, converts those dete
 3. Tracker maps marker positions to board/grid coordinates.
 4. Runtime game model updates authoritative state.
 5. Bridge sends live state over WebSocket.
-6. `yu_test3/frontend/index.html` receives messages and renders the game.
+6. `frontend/index.html` receives messages and renders the game.
 
 ## Current top-level folders
 
-### `python_tracker`
+### `backend/python_tracker`
 Purpose: computer vision pipeline.
 
 Includes:
@@ -29,7 +29,7 @@ Includes:
 
 Use this when you need to work on camera input, marker detection, or coordinate mapping.
 
-### `model_backend`
+### `backend/model_backend`
 Purpose: legacy and smoke-test rules code.
 
 Includes:
@@ -39,7 +39,7 @@ Includes:
 
 Use this when you need to change the older backend prototype or smoke tests.
 
-### `bridge`
+### `backend/bridge`
 Purpose: connect tracker + runtime model + frontend.
 
 Includes:
@@ -49,7 +49,16 @@ Includes:
 
 Use this when you need to change real-time communication or message formats.
 
-### `live_rules`
+### `protocol`
+Purpose: shared frontend/backend integration contract and browser-side protocol helpers.
+
+Includes:
+- `websocket/browser_client.js` browser WebSocket client used by frontend UIs
+- `websocket/contract.md` current WebSocket payload and action-envelope notes
+
+Use this when a frontend needs to connect to the Python live runtime without depending on a specific UI implementation.
+
+### `backend/live_rules`
 Purpose: authoritative live rules and terrain generation shared by the current runtimes.
 
 Includes:
@@ -58,12 +67,13 @@ Includes:
 
 Use this when you need to change live gameplay rules or the shared terrain generator.
 
-### `yu_test3`
+### `frontend`
 Purpose: the primary live browser frontend.
 
 Includes:
-- `frontend/index.html` main browser entrypoint
-- `frontend/src/` modular Phaser scenes, HUD, audio, and WS client
+- `index.html` main browser entrypoint
+- `src/` modular Phaser scenes, HUD, and audio
+- `assets/` browser-loaded images and tutorial GIFs
 
 Use this when you need to change the shipped live UI or frontend flow.
 
@@ -81,20 +91,15 @@ Purpose: project documentation and integration notes.
 
 Includes protocol documents and architecture references.
 
-### `archive` (context)
-- `archive`: older or reference material
-
-This is not a primary runtime entrypoint for the current architecture.
-
 ## Recommended "where to start" order
 
 1. Root `README.md`
 2. `runner/README.md`
 3. Run `runner/run_live_tracker.py` or `runner/run_old_mick_core_smoke.py`
-4. Read `python_tracker` basics
-5. Read `bridge` flow
-6. Read `model_backend` state/actions
-7. Read `yu_test3/frontend/src/`
+4. Read `backend/python_tracker` basics
+5. Read `backend/bridge` flow
+6. Read `backend/model_backend` state/actions
+7. Read `frontend/src/`
 
 ## Quick glossary
 

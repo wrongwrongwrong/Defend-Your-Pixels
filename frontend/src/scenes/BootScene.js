@@ -123,8 +123,8 @@ export class BootScene extends Phaser.Scene {
       callback: () => sub.setText("Connecting" + ".".repeat((++dots % 4))),
     });
 
-    // Connect to WS — import lazily so first paint is fast
-    import("../WSClient.js").then(({ WSClient }) => {
+    // Connect to WS - import lazily so first paint is fast.
+    import("/protocol/websocket/browser_client.js").then(({ WSClient }) => {
       const ws = new WSClient();
       let advanced = false;
 

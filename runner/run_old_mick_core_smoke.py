@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT_DIR / "backend"
+for import_root in (ROOT_DIR, BACKEND_DIR):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
+
 from model_backend.game import AttackDirection, Attacker, CommandTower, Defender, GameState, PlayerId, Pos, TerrainType
 from model_backend.game.entities import Pixel
 

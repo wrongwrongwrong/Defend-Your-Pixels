@@ -18,14 +18,16 @@ import time
 import cv2
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+BACKEND_DIR = ROOT_DIR / "backend"
+for import_root in (ROOT_DIR, BACKEND_DIR):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
 from python_tracker.camera.camera_runtime import configure_camera, open_camera, release_camera
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
-from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, TOKEN_MARKERS, TURN_MARKERS
+from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, NUKE_MARKERS, TOKEN_MARKERS, TURN_MARKERS
 from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
 from live_rules import game_model, terrain_gen, tutorial
 from runner.frontend_static_server import start_frontend_http_server
@@ -36,7 +38,7 @@ SEND_FPS = 10
 HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
-FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
+FRONTEND_DIR = ROOT_DIR / "frontend"
 PHASE_MODE_SELECT = "mode_select"
 MODE_NORMAL = "normal"
 MODE_TUTORIAL = "tutorial"
@@ -56,6 +58,10 @@ TURN_BY_MARKER_ID = {
 HQ_BY_MARKER_ID = {
     11: "p1",
     21: "p2",
+}
+NUKE_BY_MARKER_ID = {
+    19: "p1",
+    29: "p2",
 }
 
 COMPASS_8 = [
@@ -79,7 +85,7 @@ def parse_args() -> argparse.Namespace:
         help="Camera index for the live tracker. (macOS default: 0, others: 1)",
     )
     parser.add_argument("--send-fps", type=int, default=SEND_FPS, help="Broadcast rate for frontend payloads.")
-    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the yu_test3 frontend.")
+    parser.add_argument("--http-port", type=int, default=HTTP_PORT, help="HTTP port for the frontend.")
     parser.add_argument("--ws-port", type=int, default=WS_PORT, help="WebSocket port for frontend state sync.")
     parser.add_argument("--no-camera", action="store_true", help="Run the live frontend without opening a camera.")
     return parser.parse_args()
@@ -94,7 +100,7 @@ def _opponent_side(side: str | None) -> str | None:
 
 
 def _snapshot_has_detected_markers(snapshot: dict) -> bool:
-    return bool(snapshot.get("markers")) or bool(snapshot.get("hq_markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers")) or bool(snapshot.get("confirm_markers")) or bool(snapshot.get("help_markers"))
+    return bool(snapshot.get("markers")) or bool(snapshot.get("hq_markers")) or bool(snapshot.get("nuke_markers")) or bool(snapshot.get("board_corners")) or bool(snapshot.get("turn_markers")) or bool(snapshot.get("confirm_markers")) or bool(snapshot.get("help_markers"))
 
 
 def _merge_marker_collection(cached_markers: list[dict], current_markers: list[dict]) -> list[dict]:
@@ -117,6 +123,7 @@ def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict
         merged_snapshot["turn_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("turn_markers", [])]
         merged_snapshot["confirm_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("confirm_markers", [])]
         merged_snapshot["help_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("help_markers", [])]
+        merged_snapshot["nuke_markers"] = [{**marker, "stale": False} for marker in current_snapshot.get("nuke_markers", [])]
         return merged_snapshot
 
     merged_markers = _merge_marker_collection(cached_snapshot.get("markers", []), current_snapshot.get("markers", []))
@@ -124,6 +131,7 @@ def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict
     merged_turn_markers = _merge_marker_collection(cached_snapshot.get("turn_markers", []), current_snapshot.get("turn_markers", []))
     merged_confirm_markers = _merge_marker_collection(cached_snapshot.get("confirm_markers", []), current_snapshot.get("confirm_markers", []))
     merged_help_markers = _merge_marker_collection(cached_snapshot.get("help_markers", []), current_snapshot.get("help_markers", []))
+    merged_nuke_markers = _merge_marker_collection(cached_snapshot.get("nuke_markers", []), current_snapshot.get("nuke_markers", []))
 
     return {
         **cached_snapshot,
@@ -133,6 +141,7 @@ def _merge_visible_snapshot(cached_snapshot: dict | None, current_snapshot: dict
         "turn_markers": merged_turn_markers,
         "confirm_markers": merged_confirm_markers,
         "help_markers": merged_help_markers,
+        "nuke_markers": merged_nuke_markers,
         "board_corners": current_snapshot.get("board_corners") or cached_snapshot.get("board_corners", []),
         "playable_corners": current_snapshot.get("playable_corners") or cached_snapshot.get("playable_corners", []),
         "calibration_ready": bool(current_snapshot.get("calibration_ready") or cached_snapshot.get("calibration_ready")),
@@ -327,6 +336,14 @@ def _build_token_state(snapshot: dict) -> tuple[dict, dict, int | None, dict, bo
     return p1, p2, _turn_from_markers(snapshot), hq_markers, _confirm_marker_present(snapshot), _help_marker_present(snapshot)
 
 
+def _nuke_markers(snapshot: dict) -> list[dict]:
+    return [
+        marker
+        for marker in snapshot.get("nuke_markers", [])
+        if isinstance(marker, dict) and int(marker.get("id", -1)) in NUKE_BY_MARKER_ID and not marker.get("stale", False)
+    ]
+
+
 class Session:
     def __init__(self):
         self.setup = SetupState()
@@ -353,6 +370,7 @@ class Session:
         self.help_visible = False
         self.model: game_model.GameModel | None = None
         self.pending_events: list[dict] = []
+        self._nuke_consumed_marker_ids: set[int] = set()
         self._reset_setup_tracking()
         self._reset_battle_tracking()
         self.setup.reset(board_scan_ready=self.board_scan_ready)
@@ -477,6 +495,11 @@ class Session:
                 if self.tutorial_ctrl.finished:
                     self._finish_tutorial_mode()
             return errors
+        
+        if action_name == "tutorial_undo":
+            if self.tutorial_ctrl is not None:
+                self.tutorial_ctrl.undo()
+            return errors
 
         if action_name == "set_hq_candidate":
             side = command.get("side")
@@ -527,7 +550,7 @@ class Session:
             self._reset_setup_tracking()
         self.setup.set_board_scan_ready(board_scan_ready)
 
-    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool, help_present: bool) -> list[dict]:
+    def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool, help_present: bool, nuke_markers: list[dict] | None = None) -> list[dict]:
         self.hq_markers = hq_markers
         self.help_visible = help_present
         active_side = None
@@ -550,11 +573,35 @@ class Session:
         if self.setup.phase == PHASE_HQ_PLACEMENT:
             self._update_marker_driven_hq_setup(turn, hq_markers, confirm_present)
         self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
+        self._update_marker_driven_nukes(nuke_markers or [])
         if self.tutorial_ctrl is not None:
-            self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers)
+            self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers, confirm_present)
             if self.tutorial_ctrl.finished:
                 self._finish_tutorial_mode()
         return errors
+
+    def _update_marker_driven_nukes(self, nuke_markers: list[dict]) -> None:
+        if self.setup.phase != PHASE_GAME or self.model is None or self.battle_active_side not in PLAYERS:
+            return
+
+        for marker in nuke_markers:
+            marker_id = int(marker.get("id", -1))
+            side = NUKE_BY_MARKER_ID.get(marker_id)
+            if side is None or side != self.battle_active_side or marker_id in self._nuke_consumed_marker_ids:
+                continue
+            position = marker.get("position") if isinstance(marker.get("position"), dict) else None
+            if position is None:
+                continue
+            col = _grid_index(position.get("x"))
+            row = _grid_index(position.get("y"))
+            enemy_side = _opponent_side(side)
+            if col is None or row is None or side_of_cell(col, row) != enemy_side:
+                continue
+            events = self.model.trigger_nuke(side, (col, row))
+            if events:
+                self.pending_events.extend(events)
+                if any(event.get("type") == "nuke_triggered" for event in events):
+                    self._nuke_consumed_marker_ids.add(marker_id)
 
     def game_events(self) -> list[dict]:
         events = self.pending_events
@@ -751,11 +798,12 @@ async def publish_live_tracker(camera_id: int = DEFAULT_CAMERA_ID, send_fps: int
 
             session.sync_scan_state(board_scan_ready)
             raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present = _build_token_state(snapshot_for_ui)
+            nuke_markers = _nuke_markers(snapshot_for_ui)
 
             frame_errors: list[dict] = []
             if not board_scan_ready and session.setup.phase != PHASE_GAME:
                 frame_errors.append(make_error("marker_map_scan_failed"))
-            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present))
+            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present, nuke_markers))
 
             for command in await drain_actions():
                 frame_errors.extend(session.apply_command(command, board_scan_ready=board_scan_ready))
@@ -800,7 +848,7 @@ async def publish_no_camera(send_fps: int = SEND_FPS):
             frame_errors.extend(session.apply_command(command, board_scan_ready=True))
 
         raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present = simulation.step()
-        frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present))
+        frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present, []))
 
         events = session.game_events()
         payload = session.payload(
@@ -817,7 +865,7 @@ async def async_main(args: argparse.Namespace):
     if not FRONTEND_DIR.is_dir():
         raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
 
-    start_frontend_http_server(args.http_port, FRONTEND_DIR)
+    start_frontend_http_server(args.http_port, FRONTEND_DIR, ROOT_DIR / "protocol")
 
     print("=" * 55)
     print("  Old Mick Live Tracker")
@@ -845,13 +893,17 @@ async def async_main(args: argparse.Namespace):
     for marker in HELP_MARKERS:
         print(f"    ID {marker.id}={marker.label}")
     print()
+    print("  Nuke markers:")
+    for marker in NUKE_MARKERS:
+        print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
+    print()
     print("  Turn markers:")
     for marker in TURN_MARKERS:
         print(f"    ID {marker.id}=P{int(marker.player)} {marker.label}")
     print()
     print("  Hidden HQ setup is marker-driven once board scan is ready.")
     print()
-    print("[Server] Open yu_test3/frontend via the HTTP URL above\n")
+    print("[Server] Open the frontend via the HTTP URL above\n")
 
     if args.no_camera:
         publisher = functools.partial(publish_no_camera, args.send_fps)

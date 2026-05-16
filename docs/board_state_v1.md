@@ -110,7 +110,7 @@ Example:
 
 ## Current frontend usage
 
-`yu_test3/frontend/index.html` currently consumes these fields as follows:
+`frontend/index.html` currently consumes these fields as follows:
 
 - When `phase !== "game"`, it shows setup state through the top bar, bottom warning bar, board overlays, and side panels.
 - During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.
