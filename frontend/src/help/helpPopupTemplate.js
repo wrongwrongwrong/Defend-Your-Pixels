@@ -663,7 +663,7 @@ export function buildHelpPopupTemplate({ width, height }) {
               <div class="help-popup__sec-label">How upgrades are funded</div>
               <div class="help-popup__prose"><strong>ATK upgrade:</strong> ATK A and ATK B do not share progress. Each token upgrades from its own resource kills: 4 kills for Tier 1, 8 kills for Tier 2. Extra splash kills also count for that same token.</div>
 
-              <div class="help-popup__sec-label">Upgrade levels</div>
+              <div class="help-popup__sec-label">Upgrade triggers</div>
               <div class="help-popup__col-headers">
                 <div class="help-popup__col-hdr is-blank"></div>
                 <div class="help-popup__col-hdr is-farmer">Farmer side</div>
@@ -672,8 +672,8 @@ export function buildHelpPopupTemplate({ width, height }) {
               <div class="help-popup__upgrade-table">
                 <div class="help-popup__upgrade-row">
                   <div class="help-popup__tier-cell">
-                    <span class="help-popup__tier-num">1</span>
-                    <span class="help-popup__tier-tag">ATK</span>
+                    <span class="help-popup__tier-num">4</span>
+                    <span class="help-popup__tier-tag">Kills</span>
                   </div>
                   <div class="help-popup__upgrade-cell">
                     <div class="help-popup__upgrade-img"><img src="assets/images/atk-mick-rifleman.png" alt="Tier 1 riflemen"></div>
@@ -691,17 +691,17 @@ export function buildHelpPopupTemplate({ width, height }) {
 
                 <div class="help-popup__upgrade-row">
                   <div class="help-popup__tier-cell">
-                    <span class="help-popup__tier-num">2</span>
-                    <span class="help-popup__tier-tag">DEF</span>
+                    <span class="help-popup__tier-num">12</span>
+                    <span class="help-popup__tier-tag">Cells</span>
                   </div>
                   <div class="help-popup__upgrade-cell">
-                    <div class="help-popup__upgrade-img"><img src="assets/images/def-mick.png" alt="Tier 2 Old Mick"></div>
+                    <div class="help-popup__upgrade-img"><img src="assets/images/def-mick.png" alt="Old Mick DEF upgrade"></div>
                     <div class="help-popup__upgrade-name">Machine Gun Nest</div>
                     <div class="help-popup__upgrade-token help-popup__farmer-col">Old Mick</div>
                     <div class="help-popup__upgrade-desc">Old Mick's protection zone expands from 3×3 to 5×5 when the Farmer side has 12 or fewer resource cells remaining.</div>
                   </div>
                   <div class="help-popup__upgrade-cell">
-                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-emu-cassowary.png" alt="Tier 2 Cassowary"></div>
+                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-emu-cassowary.png" alt="Cassowary DEF upgrade"></div>
                     <div class="help-popup__upgrade-name">Dark Awakening</div>
                     <div class="help-popup__upgrade-token help-popup__emu-col">Cassowary</div>
                     <div class="help-popup__upgrade-desc">The Cassowary's protection zone expands from 3×3 to 5×5 when The Mob has 12 or fewer resource cells remaining.</div>
@@ -710,17 +710,17 @@ export function buildHelpPopupTemplate({ width, height }) {
 
                 <div class="help-popup__upgrade-row">
                   <div class="help-popup__tier-cell">
-                    <span class="help-popup__tier-num">3</span>
-                    <span class="help-popup__tier-tag">ATK</span>
+                    <span class="help-popup__tier-num">8</span>
+                    <span class="help-popup__tier-tag">Kills</span>
                   </div>
                   <div class="help-popup__upgrade-cell">
-                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-mick-rifleman.png" alt="Tier 3 riflemen"></div>
+                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-mick-rifleman.png" alt="Riflemen 8-kill upgrade"></div>
                     <div class="help-popup__upgrade-name">Call Canberra</div>
                     <div class="help-popup__upgrade-token help-popup__farmer-col">The Riflemen</div>
                     <div class="help-popup__upgrade-desc">That specific rifleman token randomly destroys up to 2 extra feeding grounds in the 3×3 area around its primary target.</div>
                   </div>
                   <div class="help-popup__upgrade-cell">
-                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-emu.png" alt="Tier 3 emu pack"></div>
+                    <div class="help-popup__upgrade-img"><img src="assets/images/atk-emu.png" alt="Emu pack 8-kill upgrade"></div>
                     <div class="help-popup__upgrade-name">The Stampede</div>
                     <div class="help-popup__upgrade-token help-popup__emu-col">The Emu Pack</div>
                     <div class="help-popup__upgrade-desc">That specific mob token randomly destroys up to 2 extra wheat paddocks in the 3×3 area around its primary target.</div>
@@ -729,8 +729,8 @@ export function buildHelpPopupTemplate({ width, height }) {
 
                 <div class="help-popup__upgrade-row">
                   <div class="help-popup__tier-cell">
-                    <span class="help-popup__tier-num">4</span>
-                    <span class="help-popup__tier-tag">Nuke</span>
+                    <span class="help-popup__tier-num">8</span>
+                    <span class="help-popup__tier-tag">Cells</span>
                   </div>
                   <div class="help-popup__upgrade-cell">
                     <div class="help-popup__upgrade-img"><img src="assets/images/nuke-mick-keith.png" alt="Keith nuke"></div>
@@ -778,7 +778,7 @@ export function buildHelpPopupTemplate({ width, height }) {
               </div>
 
               <div class="help-popup__sec-label">Strategy note</div>
-              <div class="help-popup__prose">You are always playing two games at once: <strong>the hidden game</strong> of finding their HQ before they find yours, and <strong>the attrition game</strong> of destroying enough enemy territory to starve them out. Upgrades strengthen both plans, but every turn still comes down to positioning the right lane.</div>
+              <div class="help-popup__prose">You are always playing two games at once: <strong>the hidden game</strong> of finding their HQ before they find yours, and <strong>the attrition game</strong> of destroying enough enemy territory to starve them out. ATK upgrades reward the specific token doing the damage, while DEF and NUKE unlock as your side loses cells.</div>
             </div>
           </div>
 

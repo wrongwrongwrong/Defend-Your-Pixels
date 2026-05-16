@@ -460,21 +460,6 @@ class Session:
             self.reset(board_scan_ready=board_scan_ready)
             return errors
 
-        if command_type == "tier":
-            if self.model is None:
-                return errors
-            try:
-                player = int(command.get("player"))
-                delta = int(command.get("delta"))
-            except (TypeError, ValueError):
-                return errors
-
-            if player == 1:
-                self.model.tier_p1 = max(0, min(4, self.model.tier_p1 + delta))
-            elif player == 2:
-                self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
-            return errors
-
         if action_name == "choose_side":
             if self.selected_mode is None:
                 return errors
@@ -587,21 +572,37 @@ class Session:
         for marker in nuke_markers:
             marker_id = int(marker.get("id", -1))
             side = NUKE_BY_MARKER_ID.get(marker_id)
-            if side is None or side != self.battle_active_side or marker_id in self._nuke_consumed_marker_ids:
+            if side is None:
+                continue
+            if marker_id in self._nuke_consumed_marker_ids:
+                continue
+            if side != self.battle_active_side:
+                print(f"[NUKE] ID{marker_id} ignored: active side is {self.battle_active_side}, marker side is {side}")
                 continue
             position = marker.get("position") if isinstance(marker.get("position"), dict) else None
             if position is None:
+                print(f"[NUKE] ID{marker_id} ignored: marker has no board position")
                 continue
             col = _grid_index(position.get("x"))
             row = _grid_index(position.get("y"))
             enemy_side = _opponent_side(side)
             if col is None or row is None or side_of_cell(col, row) != enemy_side:
+                print(f"[NUKE] ID{marker_id} ignored: cell=({col},{row}) is not in enemy territory for {side}")
+                continue
+            snapshot = self.model.snapshot()
+            if not snapshot.get(f"nuke_available_{side}", False):
+                remaining = snapshot.get(f"score_{side}_remaining_cells")
+                used = snapshot.get(f"nuke_used_{side}")
+                print(f"[NUKE] ID{marker_id} ignored: available=false remaining={remaining} used={used}")
                 continue
             events = self.model.trigger_nuke(side, (col, row))
             if events:
                 self.pending_events.extend(events)
                 if any(event.get("type") == "nuke_triggered" for event in events):
                     self._nuke_consumed_marker_ids.add(marker_id)
+                    print(f"[NUKE] ID{marker_id} triggered by {side} at cell=({col},{row}) events={len(events)}")
+            else:
+                print(f"[NUKE] ID{marker_id} ignored: trigger_nuke returned no events")
 
     def game_events(self) -> list[dict]:
         events = self.pending_events

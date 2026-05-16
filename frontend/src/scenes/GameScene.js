@@ -1082,7 +1082,7 @@ export class GameScene extends Phaser.Scene {
   // ─── Defence zone ─────────────────────────────────────────────────────────
 
   _drawDefZone(col, row, tier, color) {
-    const rad  = tier >= 2 ? 2 : 1;
+    const rad  = tier >= 1 ? 2 : 1;
     const cellW = GRID_DRAW_W / GRID_SIZE;
     const cellH = GRID_DRAW_H / GRID_SIZE;
     const size  = (rad * 2 + 1);
@@ -1558,20 +1558,48 @@ export class GameScene extends Phaser.Scene {
     const battle = s?.battle || {};
     const game = s?.game || {};
     const activeSide = battle.active_side || null;
+    const p1Available = !!game.nuke_available_p1;
+    const p2Available = !!game.nuke_available_p2;
+    const p1Used = !!game.nuke_used_p1;
+    const p2Used = !!game.nuke_used_p2;
+    const totalCells = game.resource_cell_total ?? 24;
     this._nukeArmingSide = null;
 
     if (!activeSide) {
-      this.nukeBtn?.setVisible(false);
+      const readyText = p1Available && p2Available
+        ? "Nukes Ready"
+        : p1Available
+          ? "P1 Nuke Ready"
+          : p2Available
+            ? "P2 Nuke Ready"
+            : p1Used && p2Used
+              ? "Nukes Spent"
+              : p1Used
+                ? "P1 Nuke Spent"
+                : p2Used
+                  ? "P2 Nuke Spent"
+                  : "Nuke Locked";
+      const anyKnown = p1Available || p2Available || p1Used || p2Used;
+      const isReady = p1Available || p2Available;
+      this.nukeBtn
+        ?.setVisible(anyKnown)
+        .setText(readyText)
+        .setColor(isReady ? "#ffd070" : "#8a7a68")
+        .setBackgroundColor(isReady ? "#2a120c" : "#241812")
+        .setAlpha(isReady || p1Used || p2Used ? 1 : 0.45);
       return;
     }
 
-    const nukeUsed = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
-    const nukeAvailable = activeSide === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
+    const nukeUsed = activeSide === "p1" ? p1Used : p2Used;
+    const nukeAvailable = activeSide === "p1" ? p1Available : p2Available;
+    const remainingCells = activeSide === "p1"
+      ? (game.score_p1_remaining_cells ?? totalCells)
+      : (game.score_p2_remaining_cells ?? totalCells);
     const markerId = activeSide === "p1" ? 19 : 29;
 
     this.nukeBtn
       .setVisible(true)
-      .setText(nukeUsed ? "Nuke Spent" : (nukeAvailable ? `Scan ID${markerId}` : "Nuke Locked"))
+      .setText(nukeUsed ? "Nuke Spent" : (nukeAvailable ? `Scan ID${markerId}` : `Nuke Locked ${remainingCells}/${totalCells}`))
       .setColor(nukeAvailable ? "#ffd070" : "#8a7a68")
       .setBackgroundColor(nukeAvailable ? "#2a120c" : "#241812")
       .setAlpha(nukeAvailable || nukeUsed ? 1 : 0.45);

@@ -4,11 +4,11 @@ This document defines the action messages sent from the browser frontend, tracke
 
 ## Current status
 
-- The currently implemented authoritative gameplay actions are `end_turn`, `move_unit`, and `attack_in_direction`.
-- The live Old Mick setup flow also accepts `choose_side`, `set_hq_candidate`, `confirm_hq`, and the optional setup reset aliases `reset_setup` and `cancel_hq`.
-- The live path is primarily marker-driven during setup and battle.
-- `upgrade_unit` is out of scope for the current integration prototype.
-- `move_unit` intents may currently come from either the tracker flow or the browser frontend.
+- The live Old Mick path is primarily marker-driven during setup and battle.
+- Setup actions include `choose_side`, `set_hq_candidate`, `confirm_hq`, and optional setup reset aliases `reset_setup` / `cancel_hq`.
+- Battle attacks are resolved by the live runtime from physical ATK marker positions and `ID4` confirm scans.
+- Nuke can be triggered through the live runtime by marker (`ID19` for P1, `ID29` for P2) or by the debug `trigger_nuke` action.
+- `upgrade_unit` is not used; ATK, DEF, and NUKE progression is computed automatically from live game state.
 
 ## WebSocket message
 

@@ -54,8 +54,6 @@ turn 1
 turn 2
 flip
 new_map
-tier 1 +1
-tier 2 -1
 quit
 ```
 
@@ -68,7 +66,6 @@ Rules for commands:
 - `flip` toggles turn `1 <-> 2`
 - `turn 1` or `turn 2` sets the current turn explicitly
 - `new_map` regenerates terrain and resets the setup flow
-- `tier` changes the same tier values the browser UI already renders
 - `show` prints a readable summary of the current state
 - `show_setup` prints setup-only progress and status
 
