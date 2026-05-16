@@ -42,7 +42,9 @@ The backend remains authoritative for phase transitions.
 - `10` = begin `P1` positioning during battle
 - `20` = begin `P2` positioning during battle
 - `12` / `13` / `14` = `P1 ATK A` / `ATK B` / `DEF`
+- `19` = `P1 NUKE`
 - `22` / `23` / `24` = `P2 ATK A` / `ATK B` / `DEF`
+- `29` = `P2 NUKE`
 - `4` = shared battle confirm; resolves the currently active side's attack and ends that side's turn
 
 During battle, `ID10` / `ID20` only arm the side that is allowed to move. Attack resolution now happens when `ID4` is scanned, not when the turn marker changes.
@@ -147,7 +149,7 @@ The runtime payload includes safe setup metadata only:
 
 ## Frontend placeholder rendering
 
-`yu_test2/frontend/index.html` now renders a marker-guided setup placeholder whenever `phase` is not `game`.
+`frontend/index.html` now renders marker-guided setup feedback whenever `phase` is not `game`.
 
 - `scan`: shows a setup status card and scan-waiting messaging
 - `side_selection`: fallback/debug state only
@@ -194,6 +196,7 @@ The live frontend also surfaces `errors[]` as a temporary warning layover:
 - Reserved corner cells are invalid HQ cells:
   - `p1`: `A1`, `A2`, `B1`
   - `p2`: `L12`, `L11`, `K12`
+- Terrain generation also keeps those reserved corner cells empty.
 - Old Mick tokens must stay on the Old Mick side and cannot be placed on the fence.
 - Mob tokens must stay on the Mob side and cannot be placed on the fence.
 - Old Mick attack directions: `E`, `SE`, `S`, `SW`
@@ -209,6 +212,7 @@ During `hq_placement`:
 - if a valid HQ candidate exists for the active side, scanning `ID4` locks it
 - the same visible `ID4` must not lock both sides back-to-back without being removed first
 - once both HQs are locked, the runtime enters `game`
+- scanning `ID5` shows the frontend help overlay only while that marker remains visible
 
 ## Active-turn token protection
 

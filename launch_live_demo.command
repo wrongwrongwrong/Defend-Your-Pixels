@@ -7,27 +7,46 @@ VENV_PY="$REPO_ROOT/.venv/bin/python3"
 
 if [ ! -x "$VENV_PY" ]; then
   echo ""
-  echo "[launch_live_demo] Missing .venv. Run from repo root:"
-  echo "  chmod +x setup.sh && ./setup.sh"
+  echo "[launch_live_demo] Missing .venv. Bootstrapping environment..."
   echo ""
-  read -r -p "Press Enter to close..."
-  exit 1
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[launch_live_demo] ERROR: python3 not found on PATH."
+    echo "Install Python 3.10+ and re-run."
+    echo ""
+    read -r -p "Press Enter to close..."
+    exit 1
+  fi
+
+  echo "[launch_live_demo] Creating .venv ..."
+  python3 -m venv "$REPO_ROOT/.venv"
+
+  echo "[launch_live_demo] Installing dependencies (this may take a minute) ..."
+  "$VENV_PY" -m pip install --upgrade pip
+  "$VENV_PY" -m pip install -r "$REPO_ROOT/requirements.txt"
+  "$VENV_PY" -m pip install -e "$REPO_ROOT"
 fi
 
-TRACKER_CMD="cd \"${REPO_ROOT}\"; \"${VENV_PY}\" -m runner.run_live_tracker"
-
-# Start tracker in a new Terminal window (keeps it open).
-osascript >/dev/null <<EOF
-tell application "Terminal"
-  activate
-  do script "${TRACKER_CMD}"
-end tell
-EOF
-
-# Open the UI in the default browser.
-open "$UI_URL"
-
 echo ""
-echo "[launch_live_demo] Started tracker in Terminal and opened UI:"
+echo "[launch_live_demo] Opening UI:"
 echo "  $UI_URL"
 echo ""
+
+# Open the UI in the default browser (non-blocking).
+open "$UI_URL" >/dev/null 2>&1 || true
+
+echo "[launch_live_demo] Starting live tracker (close this Terminal window to stop)."
+echo ""
+
+cd "$REPO_ROOT"
+
+ARGS=()
+if [ "${DYP_NO_CAMERA:-}" = "1" ] || [ "${DYP_NO_CAMERA:-}" = "true" ]; then
+  ARGS+=(--no-camera)
+fi
+
+echo "[launch_live_demo] Running:"
+echo "  \"$VENV_PY\" -m runner.run_live_tracker ${ARGS[*]}"
+echo ""
+
+exec "$VENV_PY" -m runner.run_live_tracker "${ARGS[@]}"

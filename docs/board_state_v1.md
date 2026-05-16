@@ -15,7 +15,7 @@ It defines the shared meaning used by Python as the authoritative source, `bridg
 
 ## Authoritative JSON shape
 
-Field names use `snake_case` and stay aligned with `model_backend`. The frontend is responsible for mapping these fields into whatever UI-facing shape it needs. The authoritative payload keeps `units[]` as the source-of-truth board-unit list and does not emit frontend-specific derived shapes.
+Field names use `snake_case` and stay aligned with the live runtime payload. The frontend is responsible for mapping these fields into whatever UI-facing shape it needs. The authoritative payload keeps `units[]` as the source-of-truth board-unit list and does not emit frontend-specific derived shapes.
 
 ```json
 {
@@ -59,9 +59,9 @@ Field names use `snake_case` and stay aligned with `model_backend`. The frontend
 }
 ```
 
-- `winner`: `null` or `1` / `2`, aligned with `PlayerId`.
+- `winner`: `null` or a side/player winner value from the live runtime.
 - `last_action`: optional HUD or debug text.
-- `units[].id`: always a `string`, aligned with existing `model_backend` unit ids such as `A1` and `D2`.
+- `units[].id`: always a `string`.
 - `units[].rotation_deg`: optional. If absent, the frontend may map to its default facing representation.
 - `resource_tiles[]`: authoritative destructible objectives with owner, position, theme name, and protection layers.
 - Tower data stays folded into `players[]` through `command_tower_position`, `command_tower_hp`, and `command_tower_max_hp`. There is no separate `towers[]` array in v1.
@@ -105,21 +105,23 @@ Example:
 - `setup.hq.*`: exposes candidate and confirmed flags only, never hidden HQ coordinates.
 - `battle.active_side`: the side currently allowed to position and submit tokens. `null` means the runtime is waiting for the next `ID10` or `ID20`.
 - `battle.waiting_for_side`: if present, indicates which side's turn marker must be scanned next.
+- `help_visible`: `true` only while `ID5` is currently visible; the frontend uses it to show the help overlay.
 - `game.hq_revealed`: the only public path for exposing an HQ coordinate after it has been destroyed.
 
 ## Current frontend usage
 
-`yu_test2/frontend/index.html` currently consumes these fields as follows:
+`frontend/index.html` currently consumes these fields as follows:
 
-- When `phase !== "game"`, it shows a pre-game setup placeholder card.
+- When `phase !== "game"`, it shows setup state through the top bar, bottom warning bar, board overlays, and side panels.
 - During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.
 - It shows `setup.status_message` and safe HQ progress directly to players.
 - It uses `setup.hq.*` only for `has_candidate` and `confirmed` state, never for exact HQ coordinates.
 - `side_selection` remains a fallback or debug path. The live marker path chooses the active setup side through `ID10` and `ID20`.
 - During `hq_placement`, `ID11` and `ID21` provide the live HQ candidate, and `ID4` confirms it.
+- `ID5` drives a marker-presence help overlay without changing authoritative game state.
 - The frontend may highlight the active setup side's current HQ candidate cell, but the side panel does not show exact coordinates and confirmed HQs are hidden immediately after confirmation.
 - During `game`, the battle flow is primarily described by `battle.*`: `ID10` and `ID20` open positioning for one side, and `ID4` submits and resolves that side's attack.
-- `errors[]` are rendered as a prioritized warning overlay plus recent warning text in the side panel.
+- `errors[]` are rendered through the bottom warning bar and related board-side UI cues.
 - `inactive_side_token_changed` is treated as a recoverable warning that explains the opponent movement was ignored.
 - `hq_setup_complete` is rendered as a success-style alert instead of a warning.
 
@@ -156,7 +158,7 @@ The authoritative payload remains `units[]`. Older frontend code may still deriv
 
 | Source | Example |
 |--------|---------|
-| `model_backend` `Unit` | default `hp` / `max_hp` values are small integers such as `3` |
+| Live runtime unit | default `hp` / `max_hp` values are small integers such as `3` |
 | older UI token display | values such as `30` or `40` used for presentation-only bars |
 
 Recommended approach for the MVP:
