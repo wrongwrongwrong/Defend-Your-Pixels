@@ -1,26 +1,11 @@
 /**
- * ui.js — HTML panel updater.
- *
+ * ui.js — HTML panel updater for Prototype 4.
  * Subscribes to WSClient and reflects every state change into the DOM.
- * Phaser does NOT touch any of these elements.
- *
- * New panel layout (matching screenshot):
- *   score block · token cards (atk_a, atk_b, def, nuke) · player name
- *
- * New mechanics reflected here:
- *   • Per-token kill count + 2-star upgrade system
- *   • Defense "protecting" count + 2-star upgrade at ≤12 cells
- *   • Nuke card: locked → pulsing-ready when player has ≤12 active cells
- *   • Bottom bar: hint text during turn, attack result for 10 s after resolve
  */
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const UPGRADE_1 = 5;
 const UPGRADE_2 = 8;
 const ACTIVE_TOTAL = 24;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function pad2(n) { return String(Math.max(0, n ?? 0)).padStart(2, "0"); }
 
@@ -43,7 +28,7 @@ function starsHTML(filled, total = 2) {
 
 function el(id) { return document.getElementById(id); }
 
-// ─── Panel state update ───────────────────────────────────────────────────────
+// ─── State update ─────────────────────────────────────────────────────────────
 
 function onState(s) {
   if (!s) return;
@@ -52,13 +37,11 @@ function onState(s) {
   const battle     = s.battle  || {};
   const activeSide = battle.active_side ?? null;
 
-  // ── Score blocks ───────────────────────────────────────────────────────────
   const rem1 = p1.active_remaining ?? ACTIVE_TOTAL;
   const rem2 = p2.active_remaining ?? ACTIVE_TOTAL;
   _setScore("p1", rem1, ACTIVE_TOTAL);
   _setScore("p2", rem2, ACTIVE_TOTAL);
 
-  // ── Token cards ────────────────────────────────────────────────────────────
   _setAttackCard("p1", "atk_a", p1.atk_a, activeSide === "p1");
   _setAttackCard("p1", "atk_b", p1.atk_b, activeSide === "p1");
   _setAttackCard("p2", "atk_a", p2.atk_a, activeSide === "p2");
@@ -70,11 +53,9 @@ function onState(s) {
   _setNukeCard("p1", p1.nuke_available ?? false, p1.nuke_used ?? false, activeSide === "p1");
   _setNukeCard("p2", p2.nuke_available ?? false, p2.nuke_used ?? false, activeSide === "p2");
 
-  // ── Panel active glow ──────────────────────────────────────────────────────
   el("panel-left") ?.classList.toggle("active-p1", activeSide === "p1");
   el("panel-right")?.classList.toggle("active-p2", activeSide === "p2");
 
-  // ── Bottom bar hint ────────────────────────────────────────────────────────
   if (!_resultTimerActive) {
     _updateHint(activeSide, p1, p2);
   }
@@ -95,27 +76,27 @@ function _setScore(side, remaining, total) {
   }
 }
 
-// ── Attack token card ──────────────────────────────────────────────────────────
+// ── Attack card ────────────────────────────────────────────────────────────────
 
 function _setAttackCard(side, role, tok, isActive) {
-  const kills    = tok?.kills ?? 0;
-  const level    = upgradeLevel(kills);
-  const fill     = upgradeFill(kills);
+  const kills   = tok?.kills ?? 0;
+  const level   = upgradeLevel(kills);
+  const fill    = upgradeFill(kills);
 
-  const numEl    = el(`${side}-num-${role}`);
-  const starsEl  = el(`${side}-stars-${role}`);
-  const fillEl   = el(`${side}-fill-${role}`);
+  const numEl   = el(`${side}-num-${role}`);
+  const starsEl = el(`${side}-stars-${role}`);
+  const fillEl  = el(`${side}-fill-${role}`);
 
   if (numEl)   numEl.textContent   = pad2(kills);
   if (starsEl) starsEl.textContent = starsHTML(level);
   if (fillEl)  fillEl.style.height = `${(fill * 100).toFixed(1)}%`;
 }
 
-// ── Defense card ──────────────────────────────────────────────────────────────
+// ── Defense card ───────────────────────────────────────────────────────────────
 
 function _setDefCard(side, def, activeRemaining) {
   const protecting = def?.protecting ?? 0;
-  const upgrade    = def?.upgrade    ?? 0;   // 0 = 1 star, 1 = 2 stars (glowing)
+  const upgrade    = def?.upgrade    ?? 0;
   const fillPct    = def?.upgrade_fill ?? 0;
 
   const numEl   = el(`${side}-num-def`);
@@ -124,10 +105,9 @@ function _setDefCard(side, def, activeRemaining) {
   const cardEl  = el(`${side}-card-def`);
 
   if (numEl)   numEl.textContent   = pad2(protecting);
-  if (starsEl) starsEl.textContent = starsHTML(1 + upgrade);  // starts at 1
+  if (starsEl) starsEl.textContent = starsHTML(1 + upgrade);
   if (fillEl)  fillEl.style.height = `${(fillPct * 100).toFixed(1)}%`;
 
-  // Glow when fully upgraded (2nd star)
   if (cardEl) {
     cardEl.classList.toggle("def-maxed", upgrade >= 1);
   }
@@ -157,17 +137,17 @@ function _setNukeCard(side, available, used, isActiveSide) {
 let _resultTimerActive = false;
 let _resultTimer       = null;
 let _lastActiveSide    = null;
-let _lastP1 = {};
-let _lastP2 = {};
-let _wsConnected       = false;   // tracks live WebSocket state
+let _lastP1            = {};
+let _lastP2            = {};
+let _wsConnected       = false;
 
 function _updateHint(activeSide, p1, p2) {
   _lastActiveSide = activeSide;
   _lastP1 = p1;
   _lastP2 = p2;
 
-  const bar     = el("notif-bar");
-  const textEl  = el("notif-text");
+  const bar    = el("notif-bar");
+  const textEl = el("notif-text");
   if (!bar || !textEl) return;
 
   bar.className = activeSide === "p1" ? "notif-bar turn-p1"
@@ -190,10 +170,10 @@ function _updateHint(activeSide, p1, p2) {
 
     if (level === 0) {
       const need = UPGRADE_1 - kills;
-      hints.push(`${label}: ${need} more hit${need !== 1 ? "s" : ""} to upgrade`);
+      hints.push(`${label}: ${need} hit${need !== 1 ? "s" : ""} to upgrade`);
     } else if (level === 1) {
       const need = UPGRADE_2 - kills;
-      hints.push(`${label}: ${need} more hit${need !== 1 ? "s" : ""} to max`);
+      hints.push(`${label}: ${need} hit${need !== 1 ? "s" : ""} to max`);
     } else {
       hints.push(`${label}: MAX`);
     }
@@ -210,7 +190,7 @@ function _showAttackResult(text, side) {
   const textEl = el("notif-text");
   if (!bar || !textEl) return;
 
-  bar.className    = `notif-bar result-${side}`;
+  bar.className      = `notif-bar result-${side}`;
   textEl.textContent = text;
 
   _resultTimer = setTimeout(() => {
@@ -230,7 +210,7 @@ function onEvents(events) {
         `${count} SUCCESSFUL ATTACK${count !== 1 ? "S" : ""} BY ${byLabel}`,
         ev.by,
       );
-      break;  // only one attack_result per resolve
+      break;
     }
   }
 }
@@ -240,10 +220,7 @@ function onEvents(events) {
 export function initUI(ws) {
   ws.on("connected", () => {
     _wsConnected = true;
-    // Update bar immediately so it doesn't flicker before first state arrives
-    if (!_resultTimerActive) {
-      _updateHint(_lastActiveSide, _lastP1, _lastP2);
-    }
+    if (!_resultTimerActive) _updateHint(_lastActiveSide, _lastP1, _lastP2);
   });
 
   ws.on("state",  onState);
