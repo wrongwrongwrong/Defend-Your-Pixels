@@ -90,6 +90,7 @@ export class GameScene extends Phaser.Scene {
     this._nukeArmingSide  = null;
     this._prevWinner      = null;
     this._terrainSprites  = [];
+    this._rayGfxPool      = [];   // recycled Graphics objects for ray animations
   }
 
   create() {
@@ -111,6 +112,18 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard.on("keydown-N", () => this.ws?.send("demo_next", {}));
 
     this.time.addEvent({ delay: 33, loop: true, callback: () => this._render() });
+
+    // ── Nuke bridge: HTML card click → Phaser ────────────────────────────────
+    window._nukeArm = (side) => {
+      const s = this.gameState;
+      if (!s || s.phase !== "game") return;
+      const activeSide = s.battle?.active_side;
+      if (activeSide !== side) return;
+      if (!s[side]?.nuke_available) return;
+      this._nukeArmingSide = side;
+      // Brief visual feedback: flash the board border
+      this.cameras.main.flash(200, 255, 140, 0, false);
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -721,17 +734,179 @@ export class GameScene extends Phaser.Scene {
     this.ws.on("state", (s) => { this.gameState = s; });
 
     this.ws.on("events", (events) => {
+      // ── Animated rays (one per ray_complete event) ─────────────────────────
+      let rayDelay = 0;
       for (const ev of events) {
-        switch (ev.type) {
-          case "cell_damaged":   playSfx(this, (ev.required_hp ?? 1) >= 2 ? "sfx_first_hit" : "sfx_p1_attack"); break;
-          case "cell_destroyed": playSfx(this, "sfx_destroy");   break;
-          case "soft_destroyed":
-          case "blocked_hard":   playSfx(this, "sfx_block");     break;
-          case "hq_destroyed":   playSfx(this, "sfx_explosion"); break;
-          case "nuke_triggered": playSfx(this, "sfx_explosion"); break;
-          case "attrition_win":  playSfx(this, "sfx_victory");   break;
+        if (ev.type === "ray_complete") {
+          const capturedEv    = ev;
+          const capturedDelay = rayDelay;
+          this.time.delayedCall(capturedDelay, () => {
+            this._animateRay(capturedEv);
+          });
+          // Each ray animation = path.length * 70 ms + 400 ms tail
+          rayDelay += (ev.path?.length ?? 0) * 70 + 420;
         }
       }
+
+      // ── Sound & shake for other events ─────────────────────────────────────
+      for (const ev of events) {
+        switch (ev.type) {
+          case "cell_destroyed":
+            playSfx(this, "sfx_destroy");
+            break;
+          case "soft_destroyed":
+          case "blocked_hard":
+            playSfx(this, "sfx_block");
+            break;
+          case "hq_destroyed":
+            playSfx(this, "sfx_explosion");
+            this.time.delayedCall(rayDelay, () => {
+              this.cameras.main.shake(600, 0.020);
+            });
+            break;
+          case "nuke_triggered":
+            playSfx(this, "sfx_explosion");
+            this._animateNuke(ev);
+            this.cameras.main.shake(500, 0.018);
+            break;
+          case "cell_shielded":
+            playSfx(this, "sfx_p1_defense");
+            break;
+          case "attrition_win":
+            playSfx(this, "sfx_victory");
+            break;
+        }
+      }
+    });
+  }
+
+  // ─── Ray animation ───────────────────────────────────────────────────────────
+
+  _animateRay(ev) {
+    const path   = ev.path  ?? [];
+    const token  = ev.token ?? "";
+    const isP1   = token.startsWith("p1");
+
+    if (!path.length) return;
+
+    const g = this.add.graphics().setDepth(30);
+    this._rayGfxPool.push(g);
+
+    // Play shoot sound immediately
+    playSfx(this, isP1 ? "sfx_p1_attack" : "sfx_p2_attack");
+
+    const cw = GRID_DRAW_W / GRID_SIZE;
+    const ch = GRID_DRAW_H / GRID_SIZE;
+
+    path.forEach((step, i) => {
+      this.time.delayedCall(i * 70, () => {
+        const bx = BOARD_OFF_X + GRID_INSET_X + step.col * cw;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + step.row * ch;
+
+        if (step.hit) {
+          // Bright flash on hit cell
+          g.fillStyle(COLORS.attackRayHit, 0.85);
+          g.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+
+          // X cross on hit
+          g.lineStyle(3, 0xff2200, 1.0);
+          g.strokeLineShape(new Phaser.Geom.Line(bx + 8, by + 8, bx + cw - 8, by + ch - 8));
+          g.strokeLineShape(new Phaser.Geom.Line(bx + cw - 8, by + 8, bx + 8, by + ch - 8));
+
+          // Hit sound per type
+          if (step.type === "territory") {
+            playSfx(this, "sfx_destroy");
+            this._spawnImpactFlash(step.col, step.row, 0xff4400);
+            this.cameras.main.shake(120, 0.006);
+          } else if (step.type === "terrain") {
+            playSfx(this, "sfx_block");
+            this._spawnImpactFlash(step.col, step.row, 0xff8800);
+          } else if (step.type === "hq") {
+            playSfx(this, "sfx_explosion");
+            this._spawnImpactFlash(step.col, step.row, 0xffff00);
+            this.cameras.main.shake(500, 0.020);
+          }
+        } else {
+          // Path cell — semi-transparent ray trail
+          g.fillStyle(COLORS.attackRay, 0.20);
+          g.fillRect(bx + 2, by + 2, cw - 4, ch - 4);
+          g.lineStyle(2, COLORS.attackRay, 0.70);
+          g.strokeRect(bx + 2, by + 2, cw - 4, ch - 4);
+        }
+      });
+    });
+
+    // Fade out and destroy ray graphics after animation completes
+    const totalMs = path.length * 70 + 300;
+    this.time.delayedCall(totalMs, () => {
+      this.tweens.add({
+        targets:  g,
+        alpha:    0,
+        duration: 350,
+        onComplete: () => {
+          g.destroy();
+          const idx = this._rayGfxPool.indexOf(g);
+          if (idx !== -1) this._rayGfxPool.splice(idx, 1);
+        },
+      });
+    });
+  }
+
+  // ─── Impact flash ────────────────────────────────────────────────────────────
+
+  _spawnImpactFlash(col, row, color = 0xff4400) {
+    const { x, y } = cellXY(col, row);
+    const cw = GRID_DRAW_W / GRID_SIZE;
+
+    // Expanding ring
+    const ring = this.add.graphics().setDepth(31);
+    ring.lineStyle(3, color, 1.0);
+    ring.strokeCircle(x, y, cw * 0.20);
+
+    this.tweens.add({
+      targets: ring,
+      scaleX: 2.8, scaleY: 2.8,
+      alpha: 0,
+      duration: 380,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+
+    // Four corner sparks
+    for (let s = 0; s < 4; s++) {
+      const angle  = (s / 4) * Math.PI * 2;
+      const spark  = this.add.graphics().setDepth(31);
+      const sx     = x + Math.cos(angle) * cw * 0.28;
+      const sy     = y + Math.sin(angle) * cw * 0.28;
+      spark.fillStyle(color, 1.0);
+      spark.fillCircle(sx, sy, 3);
+
+      this.tweens.add({
+        targets: spark,
+        x:       spark.x + Math.cos(angle) * cw * 0.55,
+        y:       spark.y + Math.sin(angle) * cw * 0.55,
+        alpha:   0,
+        duration: 320,
+        ease: "Quad.easeOut",
+        onComplete: () => spark.destroy(),
+      });
+    }
+  }
+
+  // ─── Nuke animation ──────────────────────────────────────────────────────────
+
+  _animateNuke(ev) {
+    const cells  = ev.cells ?? [];
+    const center = ev.center;
+
+    // Flash the whole board white briefly
+    this.cameras.main.flash(180, 255, 220, 80, false);
+
+    cells.forEach((cell, i) => {
+      this.time.delayedCall(i * 60, () => {
+        this._spawnImpactFlash(cell[0], cell[1], 0xff8800);
+        playSfx(this, i === 0 ? "sfx_explosion" : "sfx_destroy");
+      });
     });
   }
 }

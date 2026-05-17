@@ -34,9 +34,8 @@ import websockets
 # Add it to sys.path so `from live_rules import ...` works when running
 # server.py directly from inside the yu_test3/ folder.
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-
-import tracker
+# live_rules/ lives inside yu_pat_test4/ itself
+sys.path.insert(0, str(HERE))
 
 try:
     from live_rules import terrain_gen, game_model, tutorial
@@ -279,6 +278,11 @@ async def ws_handler(websocket, *, session: Session):
                 elif t == "tutorial_dismiss" and not isinstance(session, DemoSession):
                     if session.tutorial_ctrl:
                         session.tutorial_ctrl.dismiss()
+                elif t == "action" and not isinstance(session, DemoSession):
+                    action_data = data.get("data", {})
+                    action      = action_data.get("action", "")
+                    if action:
+                        session.model.apply_action(action, action_data)
             except (json.JSONDecodeError, KeyError, ValueError):
                 pass
     except websockets.exceptions.ConnectionClosed:
@@ -310,6 +314,7 @@ def open_camera(index: int):
 
 async def camera_loop(session: Session, camera_index: int, show_window: bool):
     import cv2
+    import tracker
     cap = open_camera(camera_index)
     if cap is None:
         return
@@ -408,33 +413,49 @@ async def demo_loop(session: DemoSession):
 
 
 async def idle_loop(session: Session):
-    """No-camera mode: still broadcast state so the UI can render."""
-    print("[OK] Running in --no-camera mode. UI will render but markers are inactive.")
-    empty_token = {"col": None, "row": None, "angle": None,
-                   "direction": None, "stale": True}
-    p_empty = {role: empty_token.copy() for role in ("atk_a", "atk_b", "def")}
+    """No-camera mode: broadcast state driven by action messages from the client."""
+    print("[OK] Running in --no-camera mode. Token placement via UI actions.")
     hq_empty = {"p1": {"col": None, "row": None, "stale": True},
                 "p2": {"col": None, "row": None, "stale": True}}
     while True:
-        await broadcast(_build_state(session, {}, p_empty, p_empty, None, None, hq_empty, []))
-        await asyncio.sleep(0.1)  # 10 fps is plenty for static UI
+        p1_raw, p2_raw = session.model.get_token_positions()
+        events = list(session.model.last_events)
+        session.model.last_events = []
+        await broadcast(_build_state(
+            session, {"_": 1, "__": 2, "___": 3, "____": 4},  # fake 4 corners
+            p1_raw, p2_raw,
+            session.model.current_turn, None,
+            hq_empty, events,
+        ))
+        await asyncio.sleep(0.1)
 
 
 def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
+    # Augment raw token dicts with model-derived data (kills, upgrade, protecting…)
+    aug_p1 = session.model.augment_tokens("p1", p1)
+    aug_p2 = session.model.augment_tokens("p2", p2)
+
     state = {
         "phase":         "game",
         "corners_found": len(cc),
         "turn":          turn,
         "turn_angle":    round(turn_angle, 1) if turn_angle is not None else None,
-        "p1":            p1,
-        "p2":            p2,
-        "hq_markers":    hq_markers,   # physical HQ token positions
+        "battle":        {"active_side": f"p{turn}" if turn else None},
+        "p1":            aug_p1,
+        "p2":            aug_p2,
+        "hq_markers":    hq_markers,
         "terrain":       session.terrain,
         "map_seed":      session.seed,
         "game":          session.model.snapshot(),
         "events":        events,
+        "setup": {
+            "board_scan_ready": len(cc) == 4,
+            "hq": {
+                "p1": {"confirmed": session.model.hq_p1 is not None, "has_candidate": False},
+                "p2": {"confirmed": session.model.hq_p2 is not None, "has_candidate": False},
+            },
+        },
     }
-    # Include tutorial state if in tutorial mode
     if session.tutorial_ctrl:
         state["tutorial"] = session.tutorial_ctrl.tick(p1, p2, turn, hq_markers)
     return state
@@ -467,7 +488,7 @@ async def main():
         return
 
     start_http_server(args.http_port, FRONTEND_DIR)
-    print(f"[UI] Open browser → http://localhost:{args.http_port}")
+    print(f"[UI] Open browser -> http://localhost:{args.http_port}")
 
     if args.demo:
         session = DemoSession()

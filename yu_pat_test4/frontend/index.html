@@ -1,301 +1,183 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Old Mick Against the Mob</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Defend Your Pixels — The Great Emu War</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <!-- <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Oswald:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet"> -->
+  <script src="phaser.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- ══ HEADER ══════════════════════════════════════════════ -->
-  <div id="header">
-    <h1>Old Mick Against the Mob</h1>
-    <div class="header-right">
-      <button class="help-btn" onclick="openHelp()" aria-label="Help">?</button>
-      <span class="turn-badge" id="turn-badge"></span>
-    </div>
-  </div>
+  <!-- Full-page background: board image + dark overlay -->
+  <div class="bg-board"></div>
+  <div class="bg-overlay"></div>
 
-  <!-- ══ MAIN ════════════════════════════════════════════════ -->
-  <div id="main">
+  <div class="game-root">
 
-    <!-- ── LEFT PANEL — Old Mick ─────────────────────────── -->
-    <aside class="side-panel" id="panel-left">
+    <!-- ═══════════════════════════════════ LEFT PANEL (Old Mick) -->
+    <aside class="panel panel-left" id="panel-left">
 
-      <div class="panel-head">
-        <h2>OLD MICK</h2>
-        <p>The Farmlands — His wheat. His rules. His problem now.</p>
-      </div>
-
-      <!-- Score -->
-      <div class="ps">
-        <div class="ps-label">SCORE</div>
-        <div class="score-row">
-          <div class="score-bar-wrap"><div class="score-bar" id="p1-score-bar"></div></div>
-          <span class="score-val" id="p1-score-val">0 / 40</span>
+      <div class="score-block">
+        <div class="score-number" id="p1-score">24<span class="score-denom">/24</span></div>
+        <div class="score-bar-track">
+          <div class="score-bar score-bar-p1" id="p1-score-bar"></div>
         </div>
+        <div class="score-label">Farms</div>
       </div>
 
-      <!-- Level -->
-      <div class="ps">
-        <div class="ps-label">LEVEL</div>
-        <div class="tier-row">
-          <span class="tier-num" id="p1-tier-num">0</span>
-          <span class="tier-pips" id="p1-tier-pips">○○○○</span>
-          <span class="tier-name" id="p1-tier-name">Base Level</span>
+      <div class="token-cards">
+
+        <!-- Defense -->
+        <div class="token-card farmer" id="p1-card-def">
+          <div class="card-fill card-fill-p1" id="p1-fill-def"></div>
+          <div class="card-img">
+            <img src="assets/images/def-mick.png" alt="Defense">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Protecting</div>
+            <div class="card-number" id="p1-num-def">00</div>
+            <div class="card-stars" id="p1-stars-def">★☆</div>
+          </div>
         </div>
-      </div>
 
-      <!-- Tokens -->
-      <div class="ps">
-        <div class="ps-label">TOKENS</div>
-
-        <div class="token-row">
-          <div class="token-img-wrap">
+        <!-- Attack A -->
+        <div class="token-card farmer" id="p1-card-atk_a">
+          <div class="card-fill card-fill-p1" id="p1-fill-atk_a"></div>
+          <div class="card-img">
             <img src="assets/images/atk-mick-a.png" alt="Rifleman A">
           </div>
-          <div class="token-info">
-            <div class="token-name">⚔ Rifleman A</div>
-            <div class="token-pos" id="p1-pos-atk_a">—</div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p1-num-atk_a">00</div>
+            <div class="card-stars" id="p1-stars-atk_a">☆☆</div>
           </div>
-          <div class="token-tier" id="p1-tier-atk_a">○○○○</div>
         </div>
 
-        <div class="token-row">
-          <div class="token-img-wrap">
+        <!-- Attack B -->
+        <div class="token-card farmer" id="p1-card-atk_b">
+          <div class="card-fill card-fill-p1" id="p1-fill-atk_b"></div>
+          <div class="card-img">
             <img src="assets/images/atk-mick-b.png" alt="Rifleman B">
           </div>
-          <div class="token-info">
-            <div class="token-name">⚔ Rifleman B</div>
-            <div class="token-pos" id="p1-pos-atk_b">—</div>
-          </div>
-          <div class="token-tier" id="p1-tier-atk_b">○○○○</div>
-        </div>
-
-        <div class="token-row">
-          <div class="token-img-wrap">
-            <img src="assets/images/def-mick.png" alt="Old Mick">
-          </div>
-          <div class="token-info">
-            <div class="token-name">🛡 Old Mick</div>
-            <div class="token-pos" id="p1-pos-def">—</div>
-          </div>
-          <div class="token-tier" id="p1-tier-def">—</div>
-        </div>
-      </div>
-
-      <!-- HQ -->
-      <div class="ps">
-        <div class="ps-label">THE GRAIN STASH</div>
-        <div class="hq-row">
-          <div class="hq-img-wrap hidden" id="p1-hq-wrap">
-            <img src="assets/images/hq-mick.png" id="p1-hq-img" alt="The Grain Stash">
-          </div>
-          <div class="hq-info">
-            <div class="hq-status" id="p1-hq-status">HIDDEN</div>
-            <div class="hq-sub"    id="p1-hq-sub"></div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p1-num-atk_b">00</div>
+            <div class="card-stars" id="p1-stars-atk_b">☆☆</div>
           </div>
         </div>
-      </div>
 
-      <!-- Upgrade path -->
-      <div class="ps upgrade-section">
-        <div class="ps-label">UPGRADE PATH</div>
-        <div class="upgrade-stages" id="p1-upgrades">
-          <div class="upg-stage current" data-level="0"><span class="upg-dot"></span><span class="upg-label">Base Level</span></div>
-          <div class="upg-stage"         data-level="1"><span class="upg-dot"></span><span class="upg-label">Better Aim — Level 1</span></div>
-          <div class="upg-stage"         data-level="2"><span class="upg-dot"></span><span class="upg-label">Machine Gun Nest — Level 2</span></div>
-          <div class="upg-stage"         data-level="3"><span class="upg-dot"></span><span class="upg-label">Call Canberra — Level 3</span></div>
-          <div class="upg-stage"         data-level="4"><span class="upg-dot"></span><span class="upg-label">Unleash Keith — Level 4</span></div>
+       
+
+        <!-- Nuke -->
+        <div class="token-card token-card-nuke" id="p1-card-nuke">
+          <div class="card-img">
+            <img src="assets/images/nuke-mick-keith.png" alt="Nuke">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Nuke</div>
+            <div class="card-nuke-status" id="p1-nuke-status">LOCKED</div>
+          </div>
         </div>
-      </div>
 
+      </div><!-- /token-cards -->
+
+      <div class="panel-name p1-name">OLD MICK</div>
     </aside>
 
-    <!-- ── CENTER COLUMN ─────────────────────────────────── -->
-    <div id="center">
+    <!-- ═══════════════════════════════════ BOARD -->
+    <main class="board-area">
+      <div id="game-canvas"></div>
+    </main>
 
-      <div id="notification">
-        <span id="notif-text">Connecting…</span>
-      </div>
+    <!-- ═══════════════════════════════════ RIGHT PANEL (The Mob) -->
+    <aside class="panel panel-right" id="panel-right">
 
-      <div id="game-canvas">
-        <!-- Phaser mounts here -->
-      </div>
-
-      <div id="log">
-        <div class="log-label">GAME LOG</div>
-        <div class="log-entry" id="log-0"></div>
-        <div class="log-entry" id="log-1"></div>
-        <div class="log-entry" id="log-2"></div>
-        <div class="log-entry" id="log-3"></div>
-      </div>
-
-    </div>
-
-    <!-- ── RIGHT PANEL — The Mob ──────────────────────────── -->
-    <aside class="side-panel" id="panel-right">
-
-      <div class="panel-head">
-        <h2>THE MOB</h2>
-        <p>The Scrublands — Nobody mapped this side of the fence. The emus prefer it that way.</p>
-      </div>
-
-      <!-- Score -->
-      <div class="ps">
-        <div class="ps-label">SCORE</div>
-        <div class="score-row">
-          <div class="score-bar-wrap"><div class="score-bar" id="p2-score-bar"></div></div>
-          <span class="score-val" id="p2-score-val">0 / 40</span>
+      <div class="score-block">
+        <div class="score-number" id="p2-score">24<span class="score-denom">/24</span></div>
+        <div class="score-bar-track">
+          <div class="score-bar score-bar-p2" id="p2-score-bar"></div>
         </div>
+        <div class="score-label">Nest</div>
       </div>
 
-      <!-- Level -->
-      <div class="ps">
-        <div class="ps-label">LEVEL</div>
-        <div class="tier-row">
-          <span class="tier-num" id="p2-tier-num">0</span>
-          <span class="tier-pips" id="p2-tier-pips">○○○○</span>
-          <span class="tier-name" id="p2-tier-name">Base Level</span>
-        </div>
-      </div>
+      <div class="token-cards">
 
-      <!-- Tokens -->
-      <div class="ps">
-        <div class="ps-label">TOKENS</div>
-
-        <div class="token-row">
-          <div class="token-img-wrap">
-            <img src="assets/images/atk-emu-a.png" alt="Emu Pack A">
-          </div>
-          <div class="token-info">
-            <div class="token-name">⚔ Emu Pack A</div>
-            <div class="token-pos" id="p2-pos-atk_a">—</div>
-          </div>
-          <div class="token-tier" id="p2-tier-atk_a">○○○○</div>
-        </div>
-
-        <div class="token-row">
-          <div class="token-img-wrap">
-            <img src="assets/images/atk-emu-b.png" alt="Emu Pack B">
-          </div>
-          <div class="token-info">
-            <div class="token-name">⚔ Emu Pack B</div>
-            <div class="token-pos" id="p2-pos-atk_b">—</div>
-          </div>
-          <div class="token-tier" id="p2-tier-atk_b">○○○○</div>
-        </div>
-
-        <div class="token-row">
-          <div class="token-img-wrap">
+        <!-- Defense (Cassowary — listed first on Mob side) -->
+        <div class="token-card emu" id="p2-card-def">
+          <div class="card-fill card-fill-p2" id="p2-fill-def"></div>
+          <div class="card-img">
             <img src="assets/images/atk-emu-cassowary.png" alt="Cassowary">
           </div>
-          <div class="token-info">
-            <div class="token-name">🛡 Cassowary</div>
-            <div class="token-pos" id="p2-pos-def">—</div>
-          </div>
-          <div class="token-tier" id="p2-tier-def">—</div>
-        </div>
-      </div>
-
-      <!-- HQ -->
-      <div class="ps">
-        <div class="ps-label">THE BIRD COUNCIL</div>
-        <div class="hq-row">
-          <div class="hq-img-wrap hidden" id="p2-hq-wrap">
-            <img src="assets/images/hq-emu.png" id="p2-hq-img" alt="The Bird Council">
-          </div>
-          <div class="hq-info">
-            <div class="hq-status" id="p2-hq-status">HIDDEN</div>
-            <div class="hq-sub"    id="p2-hq-sub"></div>
+          <div class="card-info">
+            <div class="card-label">Protecting</div>
+            <div class="card-number" id="p2-num-def">00</div>
+            <div class="card-stars" id="p2-stars-def">★☆</div>
           </div>
         </div>
-      </div>
 
-      <!-- Upgrade path -->
-      <div class="ps upgrade-section">
-        <div class="ps-label">UPGRADE PATH</div>
-        <div class="upgrade-stages" id="p2-upgrades">
-          <div class="upg-stage current" data-level="0"><span class="upg-dot"></span><span class="upg-label">Base Level</span></div>
-          <div class="upg-stage"         data-level="1"><span class="upg-dot"></span><span class="upg-label">First Lesson — Level 1</span></div>
-          <div class="upg-stage"         data-level="2"><span class="upg-dot"></span><span class="upg-label">Dark Awakening — Level 2</span></div>
-          <div class="upg-stage"         data-level="3"><span class="upg-dot"></span><span class="upg-label">The Stampede — Level 3</span></div>
-          <div class="upg-stage"         data-level="4"><span class="upg-dot"></span><span class="upg-label">The Ancestors — Level 4</span></div>
+        <!-- Attack A -->
+        <div class="token-card emu" id="p2-card-atk_a">
+          <div class="card-fill card-fill-p2" id="p2-fill-atk_a"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-emu-a.png" alt="Emu Pack A">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p2-num-atk_a">00</div>
+            <div class="card-stars" id="p2-stars-atk_a">☆☆</div>
+          </div>
         </div>
-      </div>
 
+        <!-- Attack B -->
+        <div class="token-card emu" id="p2-card-atk_b">
+          <div class="card-fill card-fill-p2" id="p2-fill-atk_b"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-emu-b.png" alt="Emu Pack B">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p2-num-atk_b">00</div>
+            <div class="card-stars" id="p2-stars-atk_b">☆☆</div>
+          </div>
+        </div>
+
+        <!-- Nuke -->
+        <div class="token-card token-card-nuke" id="p2-card-nuke">
+          <div class="card-img">
+            <img src="assets/images/nuke-emu-ancestors.png" alt="Nuke">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Nuke</div>
+            <div class="card-nuke-status" id="p2-nuke-status">LOCKED</div>
+          </div>
+        </div>
+
+      </div><!-- /token-cards -->
+
+      <div class="panel-name p2-name">THE MOB</div>
     </aside>
 
-  </div><!-- #main -->
+  </div><!-- /game-root -->
 
-  <!-- ══ HELP POPUP ═══════════════════════════════════════════ -->
-  <div class="help-overlay" id="helpOverlay">
-    <iframe src="help-popup.html" class="help-iframe" id="helpFrame"></iframe>
+  <!-- ═══════════════════════════════════ BOTTOM BAR -->
+  <div class="notif-bar" id="notif-bar">
+    <span id="notif-text">Waiting for server…</span>
   </div>
 
-  <style>
-    .header-right { display: flex; align-items: center; gap: 12px; }
-    .help-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 1.5px solid #d4a030;
-      background: transparent;
-      color: #d4a030;
-      font-family: 'Oswald', sans-serif;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-    }
-    .help-btn:hover { background: #d4a030; color: #0a0804; }
-    .help-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(10,8,4,0.72);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 9000;
-      padding: 16px;
-    }
-    .help-overlay.active { display: flex; }
-    .help-iframe {
-      width: 100%;
-      max-width: 680px;
-      height: 88vh;
-      border: none;
-      border-radius: 16px;
-      background: transparent;
-    }
-  </style>
+  <script type="module" src="src/main.js"></script>
 
+  <!-- Bridge: HTML nuke card clicks → Phaser scene -->
   <script>
-    function openHelp() {
-      document.getElementById('helpOverlay').classList.add('active');
-    }
-    function closeHelp() {
-      document.getElementById('helpOverlay').classList.remove('active');
-    }
-    document.getElementById('helpOverlay').addEventListener('click', function(e) {
-      if (e.target === this) closeHelp();
-    });
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeHelp();
-    });
-    window.addEventListener('message', function(e) {
-      if (e.data === 'closeHelp') closeHelp();
-    });
+    window._nukeArm = null; // set by GameScene.create()
+    document.getElementById("p1-card-nuke").addEventListener("click", () => window._nukeArm?.("p1"));
+    document.getElementById("p2-card-nuke").addEventListener("click", () => window._nukeArm?.("p2"));
   </script>
 
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"></script>
-  <script type="module" src="src/main.js"></script>
 </body>
 </html>
