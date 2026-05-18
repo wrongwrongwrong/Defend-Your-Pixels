@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Defend Your Pixels — The Great Emu War</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="phaser.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="game-root">
+
+    <!-- ═══════════════════════════════════ LEFT PANEL (Old Mick) -->
+    <aside class="panel panel-left" id="panel-left">
+
+      <!-- Score -->
+      <div class="score-block">
+        <div class="score-number" id="p1-score">24<span class="score-denom">/24</span></div>
+        <div class="score-bar-track">
+          <div class="score-bar score-bar-p1" id="p1-score-bar"></div>
+        </div>
+        <div class="score-label">Farms</div>
+      </div>
+
+      <!-- Token cards -->
+      <div class="token-cards">
+
+        <!-- Defense -->
+        <div class="token-card card-farmer" id="p1-card-def">
+          <div class="card-fill card-fill-p1" id="p1-fill-def"></div>
+          <div class="card-img">
+            <img src="assets/images/def-mick.png" alt="Defense">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Protecting</div>
+            <div class="card-number" id="p1-num-def">00</div>
+            <div class="card-stars" id="p1-stars-def">★☆</div>
+          </div>
+        </div>
+
+        <!-- Attack A -->
+        <div class="token-card card-farmer" id="p1-card-atk_a">
+          <div class="card-fill card-fill-p1" id="p1-fill-atk_a"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-mick-a.png" alt="Rifleman A">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p1-num-atk_a">00</div>
+            <div class="card-stars" id="p1-stars-atk_a">☆☆</div>
+          </div>
+        </div>
+
+        <!-- Attack B -->
+        <div class="token-card card-farmer" id="p1-card-atk_b">
+          <div class="card-fill card-fill-p1" id="p1-fill-atk_b"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-mick-b.png" alt="Rifleman B">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p1-num-atk_b">00</div>
+            <div class="card-stars" id="p1-stars-atk_b">☆☆</div>
+          </div>
+        </div>
+
+        <!-- Nuke -->
+        <div class="token-card token-card-nuke card-farmer" id="p1-card-nuke">
+          <div class="card-img">
+            <img src="assets/images/nuke-mick-keith.png" alt="Nuke">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Nuke</div>
+            <div class="card-nuke-status" id="p1-nuke-status">LOCKED</div>
+          </div>
+        </div>
+
+      </div><!-- /token-cards -->
+
+      <div class="panel-name p1-name">OLD MICK</div>
+    </aside>
+
+    <!-- ═══════════════════════════════════ BOARD -->
+    <main class="board-area">
+      <div id="game-canvas"></div>
+    </main>
+
+    <!-- ═══════════════════════════════════ RIGHT PANEL (The Mob) -->
+    <aside class="panel panel-right" id="panel-right">
+
+      <!-- Score -->
+      <div class="score-block">
+        <div class="score-number" id="p2-score">24<span class="score-denom">/24</span></div>
+        <div class="score-bar-track">
+          <div class="score-bar score-bar-p2" id="p2-score-bar"></div>
+        </div>
+        <div class="score-label">Nest</div>
+      </div>
+
+      <!-- Token cards -->
+      <div class="token-cards">
+
+        <!-- Defense (Cassowary first on Mob side) -->
+        <div class="token-card card-emu" id="p2-card-def">
+          <div class="card-fill card-fill-p2" id="p2-fill-def"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-emu-cassowary.png" alt="Cassowary">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Protecting</div>
+            <div class="card-number" id="p2-num-def">00</div>
+            <div class="card-stars" id="p2-stars-def">★☆</div>
+          </div>
+        </div>
+
+        <!-- Attack A -->
+        <div class="token-card card-emu" id="p2-card-atk_a">
+          <div class="card-fill card-fill-p2" id="p2-fill-atk_a"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-emu-a.png" alt="Emu Pack A">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p2-num-atk_a">00</div>
+            <div class="card-stars" id="p2-stars-atk_a">☆☆</div>
+          </div>
+        </div>
+
+        <!-- Attack B -->
+        <div class="token-card card-emu" id="p2-card-atk_b">
+          <div class="card-fill card-fill-p2" id="p2-fill-atk_b"></div>
+          <div class="card-img">
+            <img src="assets/images/atk-emu-b.png" alt="Emu Pack B">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Destroyed</div>
+            <div class="card-number" id="p2-num-atk_b">00</div>
+            <div class="card-stars" id="p2-stars-atk_b">☆☆</div>
+          </div>
+        </div>
+
+        <!-- Nuke -->
+        <div class="token-card token-card-nuke card-emu" id="p2-card-nuke">
+          <div class="card-img">
+            <img src="assets/images/nuke-emu-ancestors.png" alt="Nuke">
+          </div>
+          <div class="card-info">
+            <div class="card-label">Nuke</div>
+            <div class="card-nuke-status" id="p2-nuke-status">LOCKED</div>
+          </div>
+        </div>
+
+      </div><!-- /token-cards -->
+
+      <div class="panel-name p2-name">THE MOB</div>
+    </aside>
+
+  </div><!-- /game-root -->
+
+  <!-- ═══════════════════════════════════ BOTTOM BAR -->
+  <div class="notif-bar" id="notif-bar">
+    <span id="notif-text">Waiting for server…</span>
+  </div>
+
+  <div class="mode-overlay" id="mode-overlay">
+    <div class="mode-card">
+      <div class="mode-title">DEFEND YOUR PIXELS</div>
+      <div class="mode-subtitle">Choose a play mode to start setup</div>
+      <button class="mode-button" id="mode-normal" type="button">NORMAL GAME</button>
+      <button class="mode-button mode-button-secondary" id="mode-tutorial" type="button">TUTORIAL</button>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+
+  <!-- Bridge: HTML nuke card clicks → Phaser scene -->
+  <script>
+    window._nukeArm = null;
+    document.getElementById("p1-card-nuke").addEventListener("click", () => window._nukeArm?.("p1"));
+    document.getElementById("p2-card-nuke").addEventListener("click", () => window._nukeArm?.("p2"));
+  </script>
+
+</body>
+</html>

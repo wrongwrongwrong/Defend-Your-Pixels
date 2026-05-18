@@ -64,7 +64,7 @@ Same sound for every upgrade step.
 
 | Sound key | Status | Trigger |
 |-----------|--------|---------|
-| `sfx_tier_up` | Wired | Frontend compares previous and current `state.game.tier_p1` / `tier_p2` and plays once whenever either increments. |
+| `sfx_tier_up` | Wired | Frontend compares previous tier state, including per-token `state.game.atk_tiers` and `def_tier_p1` / `def_tier_p2`, and plays once whenever one increments. |
 
 ## E. Game end
 

@@ -7,7 +7,7 @@ This repository now includes an add-only manual play mode that lets you drive th
 The existing marker-based flow is unchanged.
 
 Manual mode:
-- uses the `yu_test3` mainline frontend served over HTTP
+- uses the mainline frontend served over HTTP
 - keeps using the same WebSocket host and port
 - keeps using `live_rules/game_model.py` and `live_rules/terrain_gen.py`
 - replaces marker input with terminal commands
@@ -100,7 +100,7 @@ Typical flow:
 ## Notes and Limitations
 
 - This mode is terminal-controlled, not browser-click controlled.
-- The browser page is now the `yu_test3` mainline frontend at `http://localhost:8080`.
+- The browser page is now the mainline frontend at `http://localhost:8080`.
 - Do not run manual mode and marker mode at the same time. Both use `ws://localhost:8765`.
 - Manual mode is add-only and does not replace the existing marker-driven flow.
 - `corners_found` is reported as ready in manual mode so the existing UI can render normally without tracker input.

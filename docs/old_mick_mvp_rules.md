@@ -79,7 +79,7 @@ Instead, the MVP attack flow is:
 2. Choose one of the 8 straight directions.
 3. Trace a line outward from the attacker.
 4. The attack hits the first valid enemy target found on that line.
-5. If hard terrain blocks the line before any valid enemy target is found, the attack fails.
+5. If terrain blocks the line before any valid enemy target is found, the attack hits that terrain instead. Soft terrain clears after 2 hits; hard terrain clears after 5 hits.
 
 Allowed attack directions:
 
@@ -130,21 +130,39 @@ Rules:
 - Default HP = 1
 - If protected by DEF, HP = 2
 - They can be destroyed by ATK line attacks
-- 22 cells are worth 1 point.
-- 2 hidden cells are worth 2 points.
-- All resource cells share the same visible presentation.
+- Each cell is worth 1 unit.
+- The scoreboard counts down from 24 remaining cells.
+- There are no hidden bonus-value cells.
 
 Reserved cells:
 
 - `A1`, `A2`, `B1`, `K12`, `L11`, and `L12` stay empty.
 - Those cells cannot hold HQs, terrain, or destructible resource cells.
 
-Tier progression:
+DEF progression:
 
-- Tier 1 after destroying 4 enemy resource cells.
-- Tier 2 after destroying 8 enemy resource cells.
-- Tier 3 after destroying 12 enemy resource cells.
-- Tier 4 after destroying 16 enemy resource cells.
+- DEF starts with a `3x3` protection zone.
+- When a side has 12 or fewer resource cells remaining, that side's DEF zone expands to `5x5`.
+
+ATK progression:
+
+- ATK A and ATK B track destroyed resource cells separately.
+- Destroying 4 resource cells with one ATK token upgrades that token to ATK tier 1.
+- Destroying 8 resource cells with one ATK token upgrades that token to ATK tier 2.
+- ATK tier 1 randomly destroys 1 extra enemy resource cell in the `3x3` area around the primary target.
+- ATK tier 2 randomly destroys up to 2 extra enemy resource cells in the `3x3` area around the primary target.
+- Extra destroyed cells from this splash count toward that same ATK token's progression.
+- Terrain, HQs, and nuke-destroyed resources do not count toward ATK progression.
+
+Nuke progression:
+
+- When a side has 8 or fewer resource cells remaining, that side's one-use nuke unlocks.
+- P1 triggers nuke with marker `ID19`; P2 triggers nuke with marker `ID29`.
+- The nuke marker only works during that side's active turn and must be placed in enemy territory.
+- Nuke affects a `3x3` area centered on the marker.
+- All terrain in the area is destroyed.
+- Up to 5 resource cells in the area are randomly destroyed.
+- HQs are not destroyed by nuke.
 
 ## MVP interaction assumptions
 
@@ -169,11 +187,11 @@ Once the above is implemented, the team should test:
 
 Current executable gameplay smoke coverage lives in:
 
-- `runner/run_old_mick_core_smoke.py`
+- `runner/run_manual_play.py`
 
 ## Implementation note
 
-The first implementation should happen in `model_backend`.
+The live implementation lives in `backend/live_rules`.
 
 Recommended early focus:
 

@@ -15,7 +15,7 @@ It defines the shared meaning used by Python as the authoritative source, `bridg
 
 ## Authoritative JSON shape
 
-Field names use `snake_case` and stay aligned with `model_backend`. The frontend is responsible for mapping these fields into whatever UI-facing shape it needs. The authoritative payload keeps `units[]` as the source-of-truth board-unit list and does not emit frontend-specific derived shapes.
+Field names use `snake_case` and stay aligned with the live runtime payload. The frontend is responsible for mapping these fields into whatever UI-facing shape it needs. The authoritative payload keeps `units[]` as the source-of-truth board-unit list and does not emit frontend-specific derived shapes.
 
 ```json
 {
@@ -59,9 +59,9 @@ Field names use `snake_case` and stay aligned with `model_backend`. The frontend
 }
 ```
 
-- `winner`: `null` or `1` / `2`, aligned with `PlayerId`.
+- `winner`: `null` or a side/player winner value from the live runtime.
 - `last_action`: optional HUD or debug text.
-- `units[].id`: always a `string`, aligned with existing `model_backend` unit ids such as `A1` and `D2`.
+- `units[].id`: always a `string`.
 - `units[].rotation_deg`: optional. If absent, the frontend may map to its default facing representation.
 - `resource_tiles[]`: authoritative destructible objectives with owner, position, theme name, and protection layers.
 - Tower data stays folded into `players[]` through `command_tower_position`, `command_tower_hp`, and `command_tower_max_hp`. There is no separate `towers[]` array in v1.
@@ -110,7 +110,7 @@ Example:
 
 ## Current frontend usage
 
-`yu_test3/frontend/index.html` currently consumes these fields as follows:
+`frontend/index.html` currently consumes these fields as follows:
 
 - When `phase !== "game"`, it shows setup state through the top bar, bottom warning bar, board overlays, and side panels.
 - During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.
@@ -158,7 +158,7 @@ The authoritative payload remains `units[]`. Older frontend code may still deriv
 
 | Source | Example |
 |--------|---------|
-| `model_backend` `Unit` | default `hp` / `max_hp` values are small integers such as `3` |
+| Live runtime unit | default `hp` / `max_hp` values are small integers such as `3` |
 | older UI token display | values such as `30` or `40` used for presentation-only bars |
 
 Recommended approach for the MVP:
