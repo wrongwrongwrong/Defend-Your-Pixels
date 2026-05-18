@@ -20,7 +20,7 @@ import {
   COLORS, DIR_VEC, ARROW_CHAR,
   FONT_TITLE, FONT_LABEL, FONT_MONO,
 } from "../constants.js";
-import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
+import { playSfx, playBgm, toggleMute } from "../audio.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,14 @@ function isP1Cell(c, r)  { return c + r < 11; }
 function isP2Cell(c, r)  { return c + r > 11; }
 function isOnFence(c, r) { return c + r === 11; }
 function colLabel(col)   { return String.fromCharCode(65 + col); }
+
+/** Matches backend setup: p1 bottom-left, p2 top-right, fence when col+row === 11. */
+function sideOfTutorialCell(col, row) {
+  const sum = col + row;
+  if (sum < 11) return "p1";
+  if (sum > 11) return "p2";
+  return null;
+}
 
 function isWrongSideDir(side, dir) {
   if (!dir || !DIR_VEC[dir]) return false;
@@ -130,6 +138,7 @@ export class GameScene extends Phaser.Scene {
     this._buildTutorialOverlay();
     this._buildEndTurnBtn();
     this._buildTurnOverlay();
+    this._buildMuteButton();
     this._bindWS();
 
     this.input.on("pointerdown", this._handleBoardClick, this);
@@ -282,50 +291,231 @@ export class GameScene extends Phaser.Scene {
   }
 
   _buildTutorialOverlay() {
-    const cx   = CANVAS_W / 2;
-    const topY = BOARD_OFF_Y + 80;
+    const tutPad   = 12;
+    const maxPanelW = CANVAS_W - tutPad * 2;
 
-    this.tutorialContainer = this.add.container(cx, topY).setDepth(50).setVisible(false);
+    this.tutorialContainer = this.add
+      .container(CANVAS_W / 2, BOARD_OFF_Y + 100)
+      .setDepth(50)
+      .setVisible(false);
 
-    const panelW = 550, panelH = 140;
-    const bg = this.add.rectangle(0, 0, panelW, panelH, 0x1a1008, 0.95)
+    this._tutLayoutTextOnly = {
+      panelW: maxPanelW, panelH: 168, pad: tutPad,
+      titleSize: 26, bodySize: 18, stepSize: 14, hintSize: 12,
+      gifW: 0, gifH: 0,
+    };
+    this._tutLayoutWithGif = {
+      panelW: maxPanelW, panelH: 186, pad: tutPad,
+      gifW: 188, gifH: 140,
+      gifInsetRight: 0,
+      gifDomNudgeX: 14,
+      gifDomNudgeY: 28,
+      textGifGap: 20,
+      titleSize: 26, bodySize: 18, stepSize: 14, hintSize: 12,
+    };
+
+    const L = this._tutLayoutTextOnly;
+    this._tutBg = this.add.rectangle(0, 0, L.panelW, L.panelH, 0x1a1008, 0.95)
       .setStrokeStyle(2, 0xffd060);
 
-    this._tutStepTxt = this.add.text(panelW / 2 - 12, -panelH / 2 + 12, "", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#8a7060",
-    }).setOrigin(1, 0);
+    this._tutStepTxt = this.add.text(-L.panelW / 2 + L.pad, -L.panelH / 2 + L.pad, "", {
+      fontFamily: FONT_MONO, fontSize: `${L.stepSize}px`, color: "#8a7060",
+    }).setOrigin(0, 0);
 
-    this._tutTitleTxt = this.add.text(0, -panelH / 2 + 30, "", {
-      fontFamily: FONT_TITLE, fontSize: "20px", fontStyle: "bold", color: "#ffd060",
+    this._tutTitleTxt = this.add.text(0, -L.panelH / 2 + 36, "", {
+      fontFamily: FONT_TITLE, fontSize: `${L.titleSize}px`, fontStyle: "bold", color: "#ffd060",
     }).setOrigin(0.5, 0);
 
-    this._tutTextTxt = this.add.text(0, -panelH / 2 + 65, "", {
-      fontFamily: FONT_LABEL, fontSize: "14px", color: "#d0c0a0",
-      align: "center", wordWrap: { width: panelW - 40 }, lineSpacing: 4,
+    this._tutTextTxt = this.add.text(0, -L.panelH / 2 + 78, "", {
+      fontFamily: FONT_LABEL, fontSize: `${L.bodySize}px`, color: "#d0c0a0",
+      align: "center", wordWrap: { width: L.panelW - L.pad * 2 }, lineSpacing: 6,
     }).setOrigin(0.5, 0);
 
-    this._tutHintTxt = this.add.text(0, panelH / 2 - 18, "Press SPACE or click to continue", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#7a6a50",
+    this._tutHintTxt = this.add.text(0, L.panelH / 2 - 22, "", {
+      fontFamily: FONT_MONO, fontSize: `${L.hintSize}px`, color: "#7a6a50",
     }).setOrigin(0.5).setVisible(false);
 
-    this.tutorialContainer.add([bg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt]);
+    const gifHtml = [
+      '<motion.div class="tut-gif-wrap" style="width:200px;height:148px;overflow:hidden;',
+      'border:2px solid #5a4020;border-radius:8px;background:#0d0804;">',
+      '<img class="tut-gif-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;" />',
+      "</motion.div>",
+    ].join("").replaceAll("motion.div", "div");
+    // DOM elements do not follow Phaser Container transforms — scene-level + world sync.
+    this._tutGifDom = this.add.dom(0, 0).createFromHTML(gifHtml);
+    this._tutGifDom.setOrigin(0.5, 0.5).setDepth(51).setVisible(false);
+    this._tutGifLayout = null;
+    this._tutGifWorld  = new Phaser.Math.Vector2();
+
+    this.tutorialContainer.add([
+      this._tutBg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt,
+    ]);
     this.tutHighlightGfx = this.add.graphics().setDepth(45);
+
+    this._tutHitArea = this.add.zone(0, 0, L.panelW, L.panelH)
+      .setInteractive({ useHandCursor: true });
+    this.tutorialContainer.add(this._tutHitArea);
+    this._tutHitArea.on("pointerdown", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && this._tutorialCanSpaceContinue(tut)) this._sendTutorialDismiss();
+    });
 
     this.input.keyboard.on("keydown-SPACE", () => {
       const tut = this.gameState?.tutorial;
-      if (tut?.active && tut?.needs_dismiss) this._sendTutorialDismiss();
+      if (tut?.active && this._tutorialCanSpaceContinue(tut)) this._sendTutorialDismiss();
+    });
+    this.input.keyboard.on("keydown-W", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && tut?.can_undo) {
+        this.ws?.send("tutorial_undo", {});
+        playSfx(this, "sfx_select");
+      }
     });
 
-    this.tutorialContainer.setInteractive(
-      new Phaser.Geom.Rectangle(-275, -70, 550, 140), Phaser.Geom.Rectangle.Contains);
-    this.tutorialContainer.on("pointerdown", () => {
-      const tut = this.gameState?.tutorial;
-      if (tut?.active && tut?.needs_dismiss) this._sendTutorialDismiss();
-    });
+    this._applyTutorialLayout("text");
+  }
+
+  _applyTutorialLayout(mode) {
+    const L = mode === "gif" ? this._tutLayoutWithGif : this._tutLayoutTextOnly;
+    const { panelW, panelH, pad, gifW, gifH } = L;
+    const hasGif = mode === "gif";
+
+    this._tutBg.setSize(panelW, panelH);
+
+    // Keep the whole panel inside the Phaser canvas (over the top of the board).
+    const centerY = BOARD_OFF_Y + 20 + panelH / 2;
+    this.tutorialContainer.setPosition(CANVAS_W / 2, centerY);
+
+    const gifInsetRight = L.gifInsetRight ?? 0;
+    const textGifGap    = L.textGifGap ?? 16;
+    const leftMinX = -panelW / 2 + pad;
+    const leftMaxX = hasGif
+      ? panelW / 2 - gifW - pad - gifInsetRight - textGifGap
+      : panelW / 2 - pad;
+    const leftCx   = (leftMinX + leftMaxX) / 2;
+    const textW    = Math.max(120, leftMaxX - leftMinX);
+
+    this._tutStepTxt.setPosition(-panelW / 2 + pad, -panelH / 2 + pad);
+    this._tutTitleTxt.setPosition(leftCx, -panelH / 2 + 30);
+    this._tutTextTxt
+      .setPosition(leftCx, -panelH / 2 + 62)
+      .setWordWrapWidth(textW, true);
+    this._tutHintTxt.setPosition(leftCx, panelH / 2 - 18);
+
+    if (hasGif) {
+      // Bottom-align GIF inside panel (below step counter row).
+      const gifTop = panelH - pad - gifH;
+      this._tutGifLayout = {
+        x: panelW / 2 - gifInsetRight - gifW,
+        y: -panelH / 2 + gifTop,
+        w: gifW,
+        h: gifH,
+        domNudgeX: L.gifDomNudgeX ?? 0,
+        domNudgeY: L.gifDomNudgeY ?? 0,
+      };
+      const wrap = this._tutGifDom.node?.querySelector(".tut-gif-wrap");
+      if (wrap) {
+        wrap.style.width  = `${gifW}px`;
+        wrap.style.height = `${gifH}px`;
+      }
+      this._syncTutorialGifDomPosition();
+    } else {
+      this._tutGifLayout = null;
+      this._tutGifDom.setVisible(false);
+    }
+
+    if (this._tutHitArea) this._tutHitArea.setSize(panelW, panelH);
+  }
+
+  /** Position tutorial GIF in canvas space (DOM ignores container parent transform). */
+  _syncTutorialGifDomPosition() {
+    const lay = this._tutGifLayout;
+    if (!lay || !this._tutGifDom || !this.tutorialContainer.visible) return;
+
+    this._tutGifDom.setOrigin(0, 0);
+    const mat = this.tutorialContainer.getWorldTransformMatrix();
+    mat.transformPoint(lay.x, lay.y, this._tutGifWorld);
+    const nudgeX = lay.domNudgeX ?? 0;
+    const nudgeY = lay.domNudgeY ?? 0;
+    this._tutGifDom.setPosition(this._tutGifWorld.x + nudgeX, this._tutGifWorld.y + nudgeY);
+    if (typeof this._tutGifDom.setSize === "function") {
+      this._tutGifDom.setSize(lay.w, lay.h);
+    }
+  }
+
+  _setTutorialGifSrc(url) {
+    if (!this._tutGifDom?.node) return;
+    const img = this._tutGifDom.node.querySelector("img.tut-gif-img");
+    if (!img || !url) return;
+    if (img.dataset.tutSrc === url) return;
+    img.src = url;
+    img.dataset.tutSrc = url;
+  }
+
+  _drawTutorialAlternateSides() {
+    const cw = GRID_DRAW_W / GRID_SIZE;
+    const ch = GRID_DRAW_H / GRID_SIZE;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
+
+    for (let col = 0; col < GRID_SIZE; col++) {
+      for (let row = 0; row < GRID_SIZE; row++) {
+        const side = sideOfTutorialCell(col, row);
+        if (!side) continue;
+        const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
+        const color = side === "p1" ? 0xe8a030 : 0x60e8a0;
+        const alpha = 0.08 + 0.10 * pulse;
+        this.tutHighlightGfx.fillStyle(color, alpha);
+        this.tutHighlightGfx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+        this.tutHighlightGfx.lineStyle(2, color, 0.35 + 0.35 * pulse);
+        this.tutHighlightGfx.strokeRect(bx + 1, by + 1, cw - 2, ch - 2);
+      }
+    }
+  }
+
+  _tutorialCanSpaceContinue(tut) {
+    return !!(tut?.needs_dismiss || tut?.allow_skip);
+  }
+
+  _updateTutorialHint(tut) {
+    if (!tut?.active) {
+      this._tutHintTxt.setVisible(false);
+      return;
+    }
+    if (tut.completed) {
+      this._tutHintTxt
+        .setText("Tutorial complete! Press SPACE or click to play.")
+        .setVisible(true);
+      return;
+    }
+    const parts = [];
+    if (tut.needs_dismiss || tut.allow_skip) parts.push("SPACE or click to continue");
+    if (tut.allow_skip && !tut.needs_dismiss) parts.push("SPACE to skip");
+    if (tut.can_undo) parts.push("W to undo");
+    if (parts.length) {
+      this._tutHintTxt.setText(parts.join(" · ")).setVisible(true);
+    } else {
+      this._tutHintTxt.setVisible(false);
+    }
   }
 
   _sendTutorialDismiss() {
-    if (this.ws) { this.ws.send("tutorial_dismiss", {}); playSfx(this, "sfx_select"); }
+    if (this.ws) {
+      this.ws.send("tutorial_dismiss", {});
+      playSfx(this, "sfx_select");
+    }
+  }
+
+  _buildMuteButton() {
+    const btn = this.add.text(CANVAS_W - 12, 12, "🔊", {
+      fontFamily: FONT_MONO, fontSize: "18px", color: "#fff0d0",
+    }).setOrigin(1, 0).setDepth(55).setInteractive({ useHandCursor: true });
+
+    btn.on("pointerdown", () => {
+      const muted = toggleMute();
+      btn.setText(muted ? "🔇" : "🔊");
+      if (!muted && this._bgmStarted) playBgm(this, "bgm_outback");
+    });
   }
 
   // ─── End Turn Button ─────────────────────────────────────────────────────────
@@ -578,6 +768,12 @@ export class GameScene extends Phaser.Scene {
   // ══════════════════════════════════════════════════════════════════════════════
 
   _handleBoardClick(pointer) {
+    const tut = this.gameState?.tutorial;
+    if (tut?.active && this._tutorialCanSpaceContinue(tut)) {
+      this._sendTutorialDismiss();
+      return;
+    }
+
     // First click = guaranteed user gesture → safe to start BGM now
     if (!this._bgmStarted) {
       this._bgmStarted = true;
@@ -592,13 +788,20 @@ export class GameScene extends Phaser.Scene {
     const col = Math.floor((pointer.x - BOARD_OFF_X - GRID_INSET_X) / cw);
     const row = Math.floor((pointer.y - BOARD_OFF_Y - GRID_INSET_Y) / ch);
 
-    // ── Nuke targeting (highest priority) ────────────────────────────────────
+    // ── Nuke targeting (manual / no-camera: click enemy cell after arming card) ─
     if (this._nukeArmingSide) {
       if (col >= 0 && col < GRID_SIZE && row >= 0 && row < GRID_SIZE) {
         const onEnemy = this._nukeArmingSide === "p1" ? isP2Cell(col, row) : isP1Cell(col, row);
         if (onEnemy) {
           this.ws?.send("trigger_nuke", { side: this._nukeArmingSide, position: { x: col, y: row } });
           playSfx(this, "sfx_select");
+          const confirmId = s.battle?.confirm_marker_id ?? 4;
+          if (!s.manual_controls) {
+            this._ensureNukeHint();
+            this._nukeHintTxt
+              .setText(`Nuke target set — scan ID${confirmId} to launch`)
+              .setVisible(true);
+          }
         }
       }
       this._nukeArmingSide = null;
@@ -707,7 +910,10 @@ export class GameScene extends Phaser.Scene {
     this._renderTokens(s.p1, s.p2, inBattle, G);
     this._renderHqSprites(s, G);
     this._renderWinOverlay(G);
+    this._drawNukePendingZone(battle);
+    this._updateNukeUi(s);
     this._renderTutorial(s.tutorial);
+    if (this._tutGifDom?.visible) this._syncTutorialGifDomPosition();
     this._updateEndTurnBtn();
   }
 
@@ -797,26 +1003,16 @@ export class GameScene extends Phaser.Scene {
   // ─── Defence zone ───────────────────────────────────────────────────────────
 
   _drawDefZone(col, row, tier, color) {
-<<<<<<< Updated upstream
-    const rad  = tier >= 2 ? 2 : 1;
-    const cellW = GRID_DRAW_W / GRID_SIZE;
-    const cellH = GRID_DRAW_H / GRID_SIZE;
-    const size  = (rad * 2 + 1);
-    const x     = BOARD_OFF_X + GRID_INSET_X + (col - rad) * cellW;
-    const y     = BOARD_OFF_Y + GRID_INSET_Y + (row - rad) * cellH;
-    this.dynGfx.fillStyle(color, 0.09);
-    this.dynGfx.fillRect(x, y, size * cellW, size * cellH);
-    this.dynGfx.lineStyle(2, color, 0.55);
-    this.dynGfx.strokeRect(x, y, size * cellW, size * cellH);
-=======
     const rad  = tier >= 1 ? 2 : 1;
-    const cw   = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
+    const cw   = GRID_DRAW_W / GRID_SIZE;
+    const ch   = GRID_DRAW_H / GRID_SIZE;
     const size = rad * 2 + 1;
     const x    = BOARD_OFF_X + GRID_INSET_X + (col - rad) * cw;
     const y    = BOARD_OFF_Y + GRID_INSET_Y + (row - rad) * ch;
-    this.dynGfx.fillStyle(color, 0.09);  this.dynGfx.fillRect(x, y, size * cw, size * ch);
-    this.dynGfx.lineStyle(2, color, 0.55); this.dynGfx.strokeRect(x, y, size * cw, size * ch);
->>>>>>> Stashed changes
+    this.dynGfx.fillStyle(color, 0.09);
+    this.dynGfx.fillRect(x, y, size * cw, size * ch);
+    this.dynGfx.lineStyle(2, color, 0.55);
+    this.dynGfx.strokeRect(x, y, size * cw, size * ch);
   }
 
   // ─── Attack ray ─────────────────────────────────────────────────────────────
@@ -1069,25 +1265,117 @@ export class GameScene extends Phaser.Scene {
     this.winContainer.setVisible(true);
   }
 
+  // ─── Nuke UI (live marker flow + manual click targeting) ─────────────────────
+
+  _ensureNukeHint() {
+    if (this._nukeHintTxt) return;
+    this._nukeHintTxt = this.add.text(CANVAS_W / 2, BOARD_OFF_Y + BOARD_PX + 14, "", {
+      fontFamily: FONT_MONO, fontSize: "12px", color: "#ffd070",
+      align: "center", wordWrap: { width: BOARD_PX },
+    }).setOrigin(0.5, 0).setDepth(52).setVisible(false);
+  }
+
+  _updateNukeUi(s) {
+    this._ensureNukeHint();
+    const battle     = s?.battle || {};
+    const game       = s?.game   || {};
+    const activeSide = battle.active_side ?? null;
+    const manual     = !!s?.manual_controls;
+
+    if (!activeSide || s?.phase !== "game") {
+      this._nukeArmingSide = null;
+      this._nukeHintTxt?.setVisible(false);
+      return;
+    }
+
+    if (!manual && this._nukeArmingSide) this._nukeArmingSide = null;
+
+    const markerId   = battle.nuke_marker_id ?? (activeSide === "p1" ? 19 : 29);
+    const confirmId  = battle.confirm_marker_id ?? 4;
+    const pending    = battle.pending_nuke;
+    const available  = activeSide === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
+    const used       = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
+
+    if (pending?.col != null && pending?.row != null) {
+      const label = `${colLabel(pending.col)}${pending.row + 1}`;
+      this._nukeHintTxt
+        .setText(`Nuke locked on ${label} — scan ID${confirmId} to launch`)
+        .setVisible(true);
+    } else if (this._nukeArmingSide === activeSide) {
+      this._nukeHintTxt
+        .setText("Click an enemy cell to set the nuke target")
+        .setVisible(true);
+    } else if (available && !used) {
+      const lead = manual
+        ? "Nuke ready — click the Nuke card, then an enemy cell"
+        : `Nuke ready — scan ID${markerId} on an enemy cell, then ID${confirmId}`;
+      this._nukeHintTxt.setText(lead).setVisible(true);
+    } else {
+      this._nukeHintTxt.setVisible(false);
+    }
+  }
+
+  _drawNukePendingZone(battle) {
+    const pending = battle?.pending_nuke;
+    if (!pending || pending.col == null || pending.row == null) return;
+
+    const cx = pending.col;
+    const cy = pending.row;
+    const cw = GRID_DRAW_W / GRID_SIZE;
+    const ch = GRID_DRAW_H / GRID_SIZE;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 160);
+    const g = this.dynGfx;
+
+    for (let row = cy - 1; row <= cy + 1; row++) {
+      for (let col = cx - 1; col <= cx + 1; col++) {
+        if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) continue;
+        const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
+        g.fillStyle(0xff6020, 0.12 + 0.12 * pulse);
+        g.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+        g.lineStyle(2, 0xff9040, 0.55 + 0.35 * pulse);
+        g.strokeRect(bx + 1, by + 1, cw - 2, ch - 2);
+      }
+    }
+  }
+
   // ─── Tutorial overlay ────────────────────────────────────────────────────────
 
   _renderTutorial(tut) {
     this.tutHighlightGfx.clear();
+
     if (!tut?.active) {
       this.tutorialContainer.setVisible(false);
+      this._tutGifDom?.setVisible(false);
       this._tutCellLabel?.setVisible(false);
       return;
     }
 
+    const gifUrl = tut.tutorial_gif || null;
+    this._applyTutorialLayout(gifUrl ? "gif" : "text");
+
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
-    this._tutTextTxt.setText(tut.text  || "");
-    this._tutHintTxt.setVisible(!!tut.needs_dismiss);
+    this._tutTextTxt.setText(tut.text || "");
+    this._updateTutorialHint(tut);
     this.tutorialContainer.setVisible(true);
 
-    if (tut.highlight) {
+    if (gifUrl) {
+      this._setTutorialGifSrc(gifUrl);
+      this._tutGifDom?.setVisible(true);
+      this._syncTutorialGifDomPosition();
+    } else {
+      this._tutGifLayout = null;
+      this._tutGifDom?.setVisible(false);
+    }
+
+    if (tut.highlight_alternate_sides) {
+      this._drawTutorialAlternateSides();
+      this._tutCellLabel?.setVisible(false);
+    } else if (tut.highlight) {
       const { col, row } = tut.highlight;
-      const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
+      const cw = GRID_DRAW_W / GRID_SIZE;
+      const ch = GRID_DRAW_H / GRID_SIZE;
       const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
       const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
       const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 200);
@@ -1098,18 +1386,15 @@ export class GameScene extends Phaser.Scene {
 
       if (!this._tutCellLabel) {
         this._tutCellLabel = this.add.text(0, 0, "", {
-          fontFamily: FONT_MONO, fontSize: "12px", fontStyle: "bold",
+          fontFamily: FONT_MONO, fontSize: "14px", fontStyle: "bold",
           color: "#ffd060", stroke: "#000000", strokeThickness: 3,
         }).setOrigin(0.5).setDepth(46);
       }
       this._tutCellLabel.setText(`${colLabel(col)}${row + 1}`)
-        .setPosition(bx + cw / 2, by + ch + 8).setVisible(true);
+        .setPosition(bx + cw / 2, by + ch + 10)
+        .setVisible(true);
     } else {
       this._tutCellLabel?.setVisible(false);
-    }
-
-    if (tut.completed) {
-      this._tutHintTxt.setText("Tutorial Complete! Press SPACE to continue.").setVisible(true);
     }
   }
 
@@ -1146,48 +1431,7 @@ export class GameScene extends Phaser.Scene {
     return { hardMap, softMap, destroyedMap, p1TargetMap, p2TargetMap };
   }
 
-<<<<<<< Updated upstream
-  // ─── Nuke handling ────────────────────────────────────────────────────────
-
-  _toggleNukeArming() {
-    // Live nuke targeting is marker-driven: scan ID19 (P1) or ID29 (P2).
-    this._nukeArmingSide = null;
-  }
-
-  _updateNukeUi(s) {
-    const battle = s?.battle || {};
-    const game = s?.game || {};
-    const activeSide = battle.active_side || null;
-    this._nukeArmingSide = null;
-
-    if (!activeSide) {
-      this.nukeBtn?.setVisible(false);
-      return;
-    }
-
-    const nukeUsed = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
-    const nukeAvailable = activeSide === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
-    const markerId = activeSide === "p1" ? 19 : 29;
-
-    this.nukeBtn
-      .setVisible(true)
-      .setText(nukeUsed ? "Nuke Spent" : (nukeAvailable ? `Scan ID${markerId}` : "Nuke Locked"))
-      .setColor(nukeAvailable ? "#ffd070" : "#8a7a68")
-      .setBackgroundColor(nukeAvailable ? "#2a120c" : "#241812")
-      .setAlpha(nukeAvailable || nukeUsed ? 1 : 0.45);
-  }
-
-  _handleBoardClick(pointer) {
-    if (this._tutorialCanSpaceContinue()) {
-      this._sendTutorialDismiss();
-      return;
-    }
-  }
-
-  // ─── WebSocket binding ────────────────────────────────────────────────────
-=======
   // ─── WebSocket binding ───────────────────────────────────────────────────────
->>>>>>> Stashed changes
 
   _bindWS() {
     if (!this.ws) return;

@@ -69,8 +69,8 @@ function onState(s) {
   _setDefCard("p1", p1.def, rem1, total, game.def_tier_p1 ?? 0, s);
   _setDefCard("p2", p2.def, rem2, total, game.def_tier_p2 ?? 0, s);
 
-  _setNukeCard("p1", game.nuke_available_p1 ?? false, game.nuke_used_p1 ?? false, activeSide === "p1");
-  _setNukeCard("p2", game.nuke_available_p2 ?? false, game.nuke_used_p2 ?? false, activeSide === "p2");
+  _setNukeCard("p1", game, activeSide === "p1", s);
+  _setNukeCard("p2", game, activeSide === "p2", s);
 
   el("panel-left") ?.classList.toggle("active-p1", activeSide === "p1");
   el("panel-right")?.classList.toggle("active-p2", activeSide === "p2");
@@ -183,18 +183,29 @@ function _setDefCard(side, def, activeRemaining, total, upgrade, state) {
 
 // ── Nuke card ──────────────────────────────────────────────────────────────────
 
-function _setNukeCard(side, available, used, isActiveSide) {
+function _setNukeCard(side, game, isActiveSide, state) {
   const cardEl   = el(`${side}-card-nuke`);
   const statusEl = el(`${side}-nuke-status`);
   if (!cardEl || !statusEl) return;
 
-  const pulsing = available && isActiveSide && !used;
+  const available = side === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
+  const used      = side === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
+  const manual    = !!state?.manual_controls;
+  const markerId  = side === "p1" ? 19 : 29;
+  const pending   = state?.battle?.pending_nuke;
+  const hasPending = isActiveSide && pending && pending.col != null;
+
+  const pulsing = available && isActiveSide && !used && !hasPending;
   cardEl.classList.toggle("nuke-ready", pulsing);
 
   if (used) {
     statusEl.textContent = "USED";
+  } else if (hasPending) {
+    statusEl.textContent = "TARGET LOCKED";
+  } else if (available && isActiveSide) {
+    statusEl.textContent = manual ? "CLICK TO ARM" : `SCAN ID${markerId}`;
   } else if (available) {
-    statusEl.textContent = isActiveSide ? "ARMED" : "READY";
+    statusEl.textContent = "READY";
   } else {
     statusEl.textContent = "LOCKED";
   }

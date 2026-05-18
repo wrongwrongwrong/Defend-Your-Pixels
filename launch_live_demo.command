@@ -45,8 +45,10 @@ if [ "${DYP_NO_CAMERA:-}" = "1" ] || [ "${DYP_NO_CAMERA:-}" = "true" ]; then
   ARGS+=(--no-camera)
 fi
 
+TRACKER="$REPO_ROOT/runner/run_live_tracker.py"
+
 echo "[launch_live_demo] Running:"
-echo "  \"$VENV_PY\" -m runner.run_live_tracker ${ARGS[*]}"
+echo "  \"$VENV_PY\" \"$TRACKER\" ${ARGS[*]}"
 echo ""
 
-exec "$VENV_PY" -m runner.run_live_tracker "${ARGS[@]}"
+exec "$VENV_PY" "$TRACKER" "${ARGS[@]}"

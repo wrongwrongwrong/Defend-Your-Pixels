@@ -421,14 +421,38 @@ class Session:
         if self.battle_active_side in PLAYERS:
             marker_id = 10 if self.battle_active_side == "p1" else 20
             confirm_id = 4
-            return {
+            nuke_marker_id = 19 if self.battle_active_side == "p1" else 29
+            pending = self._pending_nuke_cell.get(self.battle_active_side)
+            if pending is not None:
+                col, row = pending
+                status_message = (
+                    f"Nuke targeted at ({col}, {row}). Scan ID{confirm_id} to launch the strike."
+                )
+                status_code = "nuke_pending"
+            elif self.model is not None and self.model.snapshot().get(f"nuke_available_{self.battle_active_side}"):
+                status_message = (
+                    f"{self.battle_active_side.upper()} turn. Scan ID{nuke_marker_id} on an enemy cell to "
+                    f"arm the nuke, or arrange tokens and scan ID{confirm_id} to attack."
+                )
+                status_code = "positioning"
+            else:
+                status_message = (
+                    f"{self.battle_active_side.upper()} positioning active. "
+                    f"Arrange that side's tokens, then scan ID{confirm_id} to attack."
+                )
+                status_code = "positioning"
+            payload = {
                 "active_side": self.battle_active_side,
                 "waiting_for_side": None,
-                "status_code": "positioning",
-                "status_message": f"{self.battle_active_side.upper()} positioning active. Arrange that side's tokens, then scan ID{confirm_id} to attack.",
+                "status_code": status_code,
+                "status_message": status_message,
                 "turn_marker_id": marker_id,
                 "confirm_marker_id": confirm_id,
+                "nuke_marker_id": nuke_marker_id,
             }
+            if pending is not None:
+                payload["pending_nuke"] = {"col": pending[0], "row": pending[1]}
+            return payload
 
         waiting_side = self.battle_waiting_for_side
         if waiting_side in PLAYERS:
@@ -460,7 +484,6 @@ class Session:
             self.reset(board_scan_ready=board_scan_ready)
             return errors
 
-<<<<<<< Updated upstream
         if command_type == "tier":
             if self.model is None:
                 return errors
@@ -476,16 +499,6 @@ class Session:
                 self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
             return errors
 
-        if action_name == "choose_side":
-            if self.selected_mode is None:
-                return errors
-            first_player_side = command.get("first_player_side")
-            if isinstance(first_player_side, str):
-                self.setup.choose_side(first_player_side)
-            return errors
-
-=======
->>>>>>> Stashed changes
         if action_name == "select_mode":
             mode = command.get("mode")
             if isinstance(mode, str):
@@ -585,11 +598,7 @@ class Session:
         for marker in nuke_markers:
             marker_id = int(marker.get("id", -1))
             side = NUKE_BY_MARKER_ID.get(marker_id)
-<<<<<<< Updated upstream
-            if side is None or side != self.battle_active_side or marker_id in self._nuke_consumed_marker_ids:
-=======
             if side is None or side != active_side:
->>>>>>> Stashed changes
                 continue
             position = marker.get("position") if isinstance(marker.get("position"), dict) else None
             if position is None:
@@ -598,14 +607,6 @@ class Session:
             row = _grid_index(position.get("y"))
             enemy_side = _opponent_side(side)
             if col is None or row is None or side_of_cell(col, row) != enemy_side:
-<<<<<<< Updated upstream
-                continue
-            events = self.model.trigger_nuke(side, (col, row))
-            if events:
-                self.pending_events.extend(events)
-                if any(event.get("type") == "nuke_triggered" for event in events):
-                    self._nuke_consumed_marker_ids.add(marker_id)
-=======
                 self._pending_nuke_cell[active_side] = None
                 continue
             snapshot = self.model.snapshot()
@@ -617,7 +618,6 @@ class Session:
 
         if not pending_set:
             self._pending_nuke_cell[active_side] = None
->>>>>>> Stashed changes
 
     def game_events(self) -> list[dict]:
         events = self.pending_events
