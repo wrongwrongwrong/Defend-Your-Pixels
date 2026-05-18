@@ -18,7 +18,7 @@
  *   `{type:"action", data:{action:type, ...payload}}`
  */
 export class WSClient {
-  constructor(url = "ws://localhost:8766") {
+  constructor(url = "ws://localhost:8765") {
     this.url = url;
     this._listeners = {};
     this._ws = null;
