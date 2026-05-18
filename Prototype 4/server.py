@@ -234,6 +234,7 @@ class Session:
         # Reset tutorial if in tutorial mode
         if self.tutorial_ctrl:
             self.tutorial_ctrl = tutorial.new_tutorial()
+        self._confirm_present = False
         print(f"[MAP] New game (seed={self.seed}) "
               f"HQ p1={self.model.hq_p1} p2={self.model.hq_p2}"
               f"{' [TUTORIAL]' if self.tutorial_mode else ''}")
@@ -278,11 +279,16 @@ async def ws_handler(websocket, *, session: Session):
                 elif t == "tutorial_dismiss" and not isinstance(session, DemoSession):
                     if session.tutorial_ctrl:
                         session.tutorial_ctrl.dismiss()
+                elif t == "tutorial_undo" and not isinstance(session, DemoSession):
+                    if session.tutorial_ctrl:
+                        session.tutorial_ctrl.undo()
                 elif t == "action" and not isinstance(session, DemoSession):
                     action_data = data.get("data", {})
                     action      = action_data.get("action", "")
                     if action:
                         session.model.apply_action(action, action_data)
+                        if action == "end_turn":
+                            session._confirm_present = True
             except (json.JSONDecodeError, KeyError, ValueError):
                 pass
     except websockets.exceptions.ConnectionClosed:
@@ -457,7 +463,12 @@ def _build_state(session, cc, p1, p2, turn, turn_angle, hq_markers, events):
         },
     }
     if session.tutorial_ctrl:
-        state["tutorial"] = session.tutorial_ctrl.tick(p1, p2, turn, hq_markers)
+        tut = session.tutorial_ctrl.tick(
+            p1, p2, turn, hq_markers,
+            confirm_present=getattr(session, "_confirm_present", False),
+        )
+        state["tutorial"] = tut
+        state["mode"] = "tutorial" if tut.get("active") else "normal"
     return state
 
 
