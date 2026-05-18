@@ -13,6 +13,9 @@ requires-python = ">=3.10"
 #   pip install -r requirements.txt
 #   pip install -e .
 
+# backend/ holds bridge, live_rules, python_tracker. runner/ is at repo root.
+# Do not add "." for backend package names — legacy top-level bridge/ or
+# python_tracker/ dirs (only __pycache__) break editable installs.
 [tool.setuptools.packages.find]
 where = ["backend", "."]
 include = ["bridge*", "live_rules*", "python_tracker*", "runner*"]

@@ -1,4 +1,3 @@
 opencv-contrib-python
 websockets
 numpy
-django==5.0.0

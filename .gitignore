@@ -13,6 +13,12 @@ venv/
 # Local environment artifacts (not source)
 dyp/
 
+# Legacy pre-backend/ package dirs (stale __pycache__ only; breaks pip install -e .)
+/bridge/
+/python_tracker/
+/live_rules/
+/model_backend/
+
 # macOS
 .DS_Store
 
