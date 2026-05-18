@@ -25,7 +25,7 @@ powershell -ExecutionPolicy Bypass -File .\launch_live_demo.ps1
 
 This starts:
 - the Python live tracker
-- the built-in HTTP server for `yu_test3/frontend`
+- the built-in HTTP server for `frontend/`
 
 ### Launch live demo (macOS)
 
@@ -55,21 +55,7 @@ This launcher:
 Notes:
 - If PowerShell execution policy blocks scripts, use `launch_live_demo.cmd` instead of running the `.ps1` file directly.
 - Close the tracker by focusing the camera preview window and pressing `Q`, or by closing the spawned PowerShell window.
-- `yu_test3/frontend` is served directly by `run_live_tracker.py`. No `npm install`, Vite, or separate frontend dev server is required.
-
-### Backend rules smoke test
-
-From `D:\Defend-Your-Pixels`:
-
-```bash
-.venv\Scripts\python -m runner.run_old_mick_core_smoke
-```
-
-This validates the current Old Mick MVP core rules:
-- directional line attack hits the first valid target
-- hard terrain blocks attacks
-- defender protection requires two hits on protected resource tiles
-- destroying the enemy HQ ends the game immediately
+- `frontend/` is served directly by `run_live_tracker.py`. No `npm install`, Vite, or separate frontend dev server is required.
 
 ### Start separately
 
@@ -95,7 +81,7 @@ Notes:
 
 The primary runner entrypoints are:
 
-- `runner.run_live_tracker`: full runtime for camera -> tracker -> shared live rules -> websocket -> HTTP -> `yu_test3/frontend/index.html`
-- `runner.run_old_mick_core_smoke`: fast rules-validation smoke test for the Old Mick MVP
+- `runner.run_live_tracker`: full runtime for camera -> tracker -> shared live rules -> websocket -> HTTP -> `frontend/index.html`
+- `runner.run_manual_play`: no-camera manual runtime for local frontend and rules testing
 
 For a documented no-camera fallback, see `docs/manual_play.md` and `runner.run_manual_play`.

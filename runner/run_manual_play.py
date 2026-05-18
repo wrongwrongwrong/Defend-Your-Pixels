@@ -12,11 +12,14 @@ import json
 from pathlib import Path
 import queue
 import sys
+import threading
 import time
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+BACKEND_DIR = ROOT_DIR / "backend"
+for import_root in (ROOT_DIR, BACKEND_DIR):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
 from bridge.transport.websocket_transport import WS_HOST, WS_PORT, broadcast, drain_actions, run_server
 from runner.setup_flow import (
@@ -36,7 +39,10 @@ from runner.frontend_static_server import start_frontend_http_server
 
 SEND_FPS = 10
 HTTP_PORT = 8080
-FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
+FRONTEND_DIR = ROOT_DIR / "frontend"
+PHASE_MODE_SELECT = "mode_select"
+MODE_NORMAL = "normal"
+MODE_TUTORIAL = "tutorial"
 PLAYER_SET = set(PLAYERS)
 SLOT_SET = set(SLOTS)
 ATTACKER_SLOT_SET = set(ATTACKER_SLOTS)
@@ -53,7 +59,6 @@ ANGLE_BY_DIRECTION = {
     "NE": 315.0,
 }
 
-
 def _manual_empty_token() -> dict:
     return {
         "col": None,
@@ -61,6 +66,13 @@ def _manual_empty_token() -> dict:
         "angle": None,
         "direction": None,
         "stale": False,
+    }
+
+
+def _manual_hq_markers() -> dict:
+    return {
+        "p1": {"col": None, "row": None, "stale": True},
+        "p2": {"col": None, "row": None, "stale": True},
     }
 
 
@@ -100,6 +112,11 @@ def _print_help() -> None:
     print("  help")
     print("  show")
     print("  show_setup")
+    print("  mode normal")
+    print("  mode tutorial")
+    print("  help_ui on")
+    print("  help_ui off")
+    print("  help_ui toggle")
     print("  choose_side old_mick")
     print("  choose_side mob")
     print("  set_hq p1 A3")
@@ -114,8 +131,6 @@ def _print_help() -> None:
     print("  turn 2")
     print("  flip")
     print("  new_map")
-    print("  tier 1 +1")
-    print("  tier 2 -1")
     print("  quit")
 
 
@@ -149,6 +164,22 @@ def _parse_terminal_command(line: str) -> dict | None:
         return {"type": "new_map"}
     if name == "reset_setup":
         return {"action": "reset_setup"}
+
+    if name == "mode":
+        if len(parts) != 2:
+            raise ValueError("usage: mode normal|tutorial")
+        mode = parts[1].strip().lower()
+        if mode not in {MODE_NORMAL, MODE_TUTORIAL}:
+            raise ValueError("mode expects normal or tutorial")
+        return {"action": "select_mode", "mode": mode}
+
+    if name == "help_ui":
+        if len(parts) != 2:
+            raise ValueError("usage: help_ui on|off|toggle")
+        value = parts[1].strip().lower()
+        if value not in {"on", "off", "toggle"}:
+            raise ValueError("help_ui expects on, off, or toggle")
+        return {"type": "help_ui", "value": value}
 
     if name == "choose_side":
         if len(parts) != 2:
@@ -185,18 +216,6 @@ def _parse_terminal_command(line: str) -> dict | None:
         if turn not in (1, 2):
             raise ValueError("turn must be 1 or 2")
         return {"type": "turn", "turn": turn}
-
-    if name == "tier":
-        if len(parts) != 3:
-            raise ValueError("usage: tier 1 +1")
-        try:
-            player = int(parts[1])
-            delta = int(parts[2])
-        except ValueError as exc:
-            raise ValueError("tier expects an integer player and integer delta") from exc
-        if player not in (1, 2):
-            raise ValueError("tier player must be 1 or 2")
-        return {"type": "tier", "player": player, "delta": delta}
 
     if name == "nuke":
         if len(parts) != 3:
@@ -263,6 +282,7 @@ class Session:
     def __init__(self):
         self.setup = SetupState()
         self.quit_requested = False
+        self.selected_mode: str | None = None
         self.reset()
 
     def reset(self) -> None:
@@ -273,10 +293,20 @@ class Session:
         self.accepted_p1 = new_side_state(stale=False)
         self.accepted_p2 = new_side_state(stale=False)
         self.turn = 1
+        self.help_visible = False
         self.model: game_model.GameModel | None = None
         self.pending_events: list[dict] = []
         self.setup.reset(board_scan_ready=True)
-        print(f"[MAP] New game (seed={self.seed})")
+        mode_tag = f" mode={self.selected_mode}" if self.selected_mode else ""
+        print(f"[MAP] New game (seed={self.seed}{mode_tag})")
+
+    def select_mode(self, mode: str) -> bool:
+        if self.selected_mode is not None or mode not in {MODE_NORMAL, MODE_TUTORIAL}:
+            return False
+        self.selected_mode = mode
+        self.reset()
+        print(f"[MODE] Selected {mode}")
+        return True
 
     def apply_command(self, command: dict, *, source: str) -> tuple[list[dict], list[dict]]:
         events: list[dict] = []
@@ -306,28 +336,34 @@ class Session:
             print(f"[{source}] Regenerated map")
             return events, errors
 
-        if command_type == "tier":
-            if self.model is None:
-                print(f"[{source}] Ignored tier change until the game starts")
-                return events, errors
-            try:
-                player = int(command.get("player"))
-                delta = int(command.get("delta"))
-            except (TypeError, ValueError):
-                print(f"[{source}] Ignored invalid tier command")
-                return events, errors
-
-            if player == 1:
-                self.model.tier_p1 = max(0, min(4, self.model.tier_p1 + delta))
-                print(f"[{source}] P1 tier -> {self.model.tier_p1}")
-            elif player == 2:
-                self.model.tier_p2 = max(0, min(4, self.model.tier_p2 + delta))
-                print(f"[{source}] P2 tier -> {self.model.tier_p2}")
+        if command_type == "help_ui":
+            value = command.get("value")
+            if value == "on":
+                self.help_visible = True
+            elif value == "off":
+                self.help_visible = False
+            elif value == "toggle":
+                self.help_visible = not self.help_visible
             else:
-                print(f"[{source}] Ignored invalid tier player")
+                print(f"[{source}] Ignored invalid help_ui value")
+                return events, errors
+            print(f"[{source}] Help UI -> {'on' if self.help_visible else 'off'}")
+            return events, errors
+
+        if action_name == "select_mode":
+            mode = command.get("mode")
+            if isinstance(mode, str) and self.select_mode(mode):
+                return events, errors
+            if self.selected_mode is None:
+                print(f"[{source}] Invalid mode selection")
+            else:
+                print(f"[{source}] Mode already locked: {self.selected_mode}")
             return events, errors
 
         if action_name == "choose_side":
+            if self.selected_mode is None:
+                print(f"[{source}] Choose a mode before choosing a side")
+                return events, errors
             first_player_side = command.get("first_player_side")
             if isinstance(first_player_side, str) and self.setup.choose_side(first_player_side):
                 print(f"[{source}] First setup side -> {first_player_side}")
@@ -336,6 +372,9 @@ class Session:
             return events, errors
 
         if action_name == "set_hq_candidate":
+            if self.selected_mode is None:
+                print(f"[{source}] Choose a mode before placing HQs")
+                return events, errors
             side = command.get("side")
             position = command.get("position") if isinstance(command.get("position"), dict) else None
             if side in PLAYER_SET:
@@ -351,6 +390,9 @@ class Session:
             return events, errors
 
         if action_name == "confirm_hq":
+            if self.selected_mode is None:
+                print(f"[{source}] Choose a mode before confirming HQs")
+                return events, errors
             side = command.get("side")
             if side in PLAYER_SET:
                 game_ready, setup_event = self.setup.confirm_hq(side)
@@ -364,9 +406,15 @@ class Session:
             return events, errors
 
         if action_name in {"reset_setup", "cancel_hq"}:
+            if self.selected_mode is None:
+                print(f"[{source}] Choose a mode before resetting setup")
+                return events, errors
             self.model = None
             self.setup.reset_hq_setup()
             print(f"[{source}] Setup reset")
+            return events, errors
+
+        if action_name == "tutorial_dismiss":
             return events, errors
 
         if action_name == "trigger_nuke":
@@ -430,19 +478,65 @@ class Session:
 
     def payload(self, *, errors: list[dict], events: list[dict]) -> dict:
         return {
-            "phase": self.setup.phase,
+            "phase": PHASE_MODE_SELECT if self.selected_mode is None else self.setup.phase,
+            "mode": self.selected_mode,
             "corners_found": 4 if self.setup.board_scan_ready else 0,
             "turn": self.turn,
             "turn_angle": TURN_ANGLE_BY_VALUE.get(self.turn),
             "p1": self.accepted_p1,
             "p2": self.accepted_p2,
+            "hq_markers": self._hq_marker_payload(),
             "terrain": self.terrain,
             "map_seed": self.seed,
             "game": self.model.snapshot() if self.model is not None else {},
             "events": events,
             "setup": self.setup.public_payload(),
+            "battle": self._battle_payload(),
+            "help_visible": self.help_visible,
             "errors": dedupe_errors(errors),
         }
+
+    def _battle_payload(self) -> dict:
+        if self.setup.phase != PHASE_GAME:
+            return {
+                "active_side": None,
+                "waiting_for_side": None,
+                "status_code": "inactive",
+                "status_message": "Battle flow inactive until HQ setup completes.",
+            }
+
+        active_side = "p1" if self.turn == 1 else "p2" if self.turn == 2 else None
+        if active_side is None:
+            return {
+                "active_side": None,
+                "waiting_for_side": None,
+                "status_code": "waiting_for_turn",
+                "status_message": "Set the active turn from the terminal to continue.",
+            }
+
+        side_name = "Old Mick" if active_side == "p1" else "The Mob"
+        return {
+            "active_side": active_side,
+            "waiting_for_side": None,
+            "status_code": "positioning",
+            "status_message": f"{side_name} positioning active. Use terminal commands to arrange that side's tokens and resolve turns.",
+            "turn_marker_id": 10 if active_side == "p1" else 20,
+            "confirm_marker_id": 4,
+        }
+
+    def _hq_marker_payload(self) -> dict:
+        markers = _manual_hq_markers()
+        if self.setup.phase != "hq_placement":
+            return markers
+
+        for side in PLAYERS:
+            if self.setup.hq_confirmed.get(side):
+                continue
+            cell = self.setup.hq_candidates.get(side)
+            if cell is None:
+                continue
+            markers[side] = {"col": int(cell[0]), "row": int(cell[1]), "stale": False}
+        return markers
 
     def _set_turn(self, new_turn: int, source: str) -> list[dict]:
         if new_turn not in (1, 2):
@@ -491,8 +585,11 @@ class Session:
 
     def _print_state_summary(self) -> None:
         print("\nState summary")
-        print(f"  phase: {self.setup.phase}")
+        public_phase = PHASE_MODE_SELECT if self.selected_mode is None else self.setup.phase
+        print(f"  phase: {public_phase}")
+        print(f"  mode: {self.selected_mode}")
         print(f"  turn: {self.turn}")
+        print(f"  help_ui: {self.help_visible}")
         print(f"  p1 atk_a: {_format_token(self.accepted_p1['atk_a'])}")
         print(f"  p1 atk_b: {_format_token(self.accepted_p1['atk_b'])}")
         print(f"  p1 def:   {_format_token(self.accepted_p1['def'])}")
@@ -510,7 +607,10 @@ class Session:
     def _print_setup_summary(self) -> None:
         setup_payload = self.setup.public_payload()
         print("\nSetup summary")
-        print(f"  phase: {self.setup.phase}")
+        public_phase = PHASE_MODE_SELECT if self.selected_mode is None else self.setup.phase
+        print(f"  phase: {public_phase}")
+        print(f"  mode: {self.selected_mode}")
+        print(f"  help_ui: {self.help_visible}")
         print(f"  board_scan_ready: {setup_payload['board_scan_ready']}")
         print(f"  side_selection_complete: {setup_payload['side_selection_complete']}")
         print(f"  first_player_side: {setup_payload['first_player_side']}")
@@ -570,7 +670,7 @@ async def async_main() -> None:
     if not FRONTEND_DIR.is_dir():
         raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
 
-    start_frontend_http_server(HTTP_PORT, FRONTEND_DIR)
+    start_frontend_http_server(HTTP_PORT, FRONTEND_DIR, ROOT_DIR / "protocol")
 
     print("=" * 55)
     print("  Old Mick Manual Play")

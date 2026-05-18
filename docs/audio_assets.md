@@ -17,7 +17,7 @@ exactly, or update the manifest in the frontend code.
 | `sfx_p2_attack.mp3` | Mob-side attack fire | Distinct emu-side attack cue |
 | `sfx_first_hit.mp3` | First hit on a protected cell | Light chip / impact |
 | `sfx_destroy.mp3` | Cell destroyed | Stronger destruction cue |
-| `sfx_block.mp3` | Hard-terrain block or soft-terrain destruction | Ricochet or thud |
+| `sfx_block.mp3` | Terrain hit or soft-terrain destruction | Ricochet or thud |
 | `sfx_explosion.mp3` | HQ destroyed or nuke triggered | Large explosion |
 | `sfx_page.mp3` | Intro slide advance | Paper / typewriter cue |
 | `sfx_select.mp3` | Side selection click or confirm-style UI action | Soft confirm tone |

@@ -7,7 +7,7 @@ This repository now includes an add-only manual play mode that lets you drive th
 The existing marker-based flow is unchanged.
 
 Manual mode:
-- uses the `yu_test3` mainline frontend served over HTTP
+- uses the mainline frontend served over HTTP
 - keeps using the same WebSocket host and port
 - keeps using `live_rules/game_model.py` and `live_rules/terrain_gen.py`
 - replaces marker input with terminal commands
@@ -54,8 +54,6 @@ turn 1
 turn 2
 flip
 new_map
-tier 1 +1
-tier 2 -1
 quit
 ```
 
@@ -68,7 +66,6 @@ Rules for commands:
 - `flip` toggles turn `1 <-> 2`
 - `turn 1` or `turn 2` sets the current turn explicitly
 - `new_map` regenerates terrain and resets the setup flow
-- `tier` changes the same tier values the browser UI already renders
 - `show` prints a readable summary of the current state
 - `show_setup` prints setup-only progress and status
 
@@ -100,7 +97,7 @@ Typical flow:
 ## Notes and Limitations
 
 - This mode is terminal-controlled, not browser-click controlled.
-- The browser page is now the `yu_test3` mainline frontend at `http://localhost:8080`.
+- The browser page is now the mainline frontend at `http://localhost:8080`.
 - Do not run manual mode and marker mode at the same time. Both use `ws://localhost:8765`.
 - Manual mode is add-only and does not replace the existing marker-driven flow.
 - `corners_found` is reported as ready in manual mode so the existing UI can render normally without tracker input.

@@ -42,7 +42,9 @@ The backend remains authoritative for phase transitions.
 - `10` = begin `P1` positioning during battle
 - `20` = begin `P2` positioning during battle
 - `12` / `13` / `14` = `P1 ATK A` / `ATK B` / `DEF`
+- `19` = `P1 NUKE`
 - `22` / `23` / `24` = `P2 ATK A` / `ATK B` / `DEF`
+- `29` = `P2 NUKE`
 - `4` = shared battle confirm; resolves the currently active side's attack and ends that side's turn
 
 During battle, `ID10` / `ID20` only arm the side that is allowed to move. Attack resolution now happens when `ID4` is scanned, not when the turn marker changes.
@@ -147,7 +149,7 @@ The runtime payload includes safe setup metadata only:
 
 ## Frontend placeholder rendering
 
-`yu_test3/frontend/index.html` now renders marker-guided setup feedback whenever `phase` is not `game`.
+`frontend/index.html` now renders marker-guided setup feedback whenever `phase` is not `game`.
 
 - `scan`: shows a setup status card and scan-waiting messaging
 - `side_selection`: fallback/debug state only

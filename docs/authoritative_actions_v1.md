@@ -4,11 +4,11 @@ This document defines the action messages sent from the browser frontend, tracke
 
 ## Current status
 
-- The currently implemented authoritative gameplay actions are `end_turn`, `move_unit`, and `attack_in_direction`.
-- The live Old Mick setup flow also accepts `choose_side`, `set_hq_candidate`, `confirm_hq`, and the optional setup reset aliases `reset_setup` and `cancel_hq`.
-- The live path is primarily marker-driven during setup and battle.
-- `upgrade_unit` is out of scope for the current integration prototype.
-- `move_unit` intents may currently come from either the tracker flow or the browser frontend.
+- The live Old Mick path is primarily marker-driven during setup and battle.
+- Setup actions include `choose_side`, `set_hq_candidate`, `confirm_hq`, and optional setup reset aliases `reset_setup` / `cancel_hq`.
+- Battle attacks are resolved by the live runtime from physical ATK marker positions and `ID4` confirm scans.
+- Nuke can be triggered through the live runtime by marker (`ID19` for P1, `ID29` for P2) or by the debug `trigger_nuke` action.
+- `upgrade_unit` is not used; ATK, DEF, and NUKE progression is computed automatically from live game state.
 
 ## WebSocket message
 
@@ -40,7 +40,7 @@ Python behavior:
 - Stores `first_player_side`.
 - Records the first player and maintains or enters `hq_placement`.
 
-The `yu_test3` mainline frontend can send this action from its side-selection flow.
+The mainline frontend can send this action from its side-selection flow.
 
 ### `set_hq_candidate`
 
@@ -141,13 +141,13 @@ Current status:
 Python behavior:
 
 - Validates `unit_id` and `position`.
-- Calls `GameState.move_unit_to(...)`.
+- Applies the movement through the authoritative live rules.
 - Broadcasts an updated `board_state` on success.
 - Updates `last_action` on failure.
 
 ### `attack_in_direction`
 
-Purpose: perform a straight-line attack in one of eight directions, letting Python resolve the first valid target and hard-terrain blocking.
+Purpose: perform a straight-line attack in one of eight directions, letting Python resolve the first valid target and terrain blocking.
 
 ```json
 {
@@ -160,9 +160,9 @@ Purpose: perform a straight-line attack in one of eight directions, letting Pyth
 Python behavior:
 
 - Validates `unit_id` and `direction`.
-- Calls `GameState.attack_in_direction(...)`.
+- Applies the attack through the authoritative live rules.
 - Searches for the first valid enemy target along the chosen direction.
-- Fails if hard terrain blocks the line first.
+- Stops if terrain blocks the line first. Soft terrain is destroyed after 2 hits; hard terrain is destroyed after 5 hits.
 - Updates HQ or resource-tile state and `last_action` on success.
 
 ## Actions excluded from v1

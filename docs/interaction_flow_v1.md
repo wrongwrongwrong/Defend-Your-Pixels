@@ -40,7 +40,7 @@ Confirmed hidden-information rule:
 
 Current live frontend behavior:
 
-- `yu_test3/frontend/index.html` now renders setup state for `scan`, `side_selection`, and `hq_placement`
+- `frontend/index.html` now renders setup state for `scan`, `side_selection`, and `hq_placement`
 - setup state is shown through the top bar, side panels, board overlays, and warning/help UI
 - the board overlay marks Old Mick territory, Mob territory, and the fence/no-HQ diagonal during setup
 - during `hq_placement`, the active side is chosen by `ID10` / `ID20`
@@ -144,7 +144,7 @@ The frontend should make it clear that:
 
 - attacks travel in a straight or diagonal line
 - only the first valid enemy target is hit
-- hard terrain may block the attack before a target is reached
+- terrain may block the attack before a target is reached; soft terrain clears after 2 hits and hard terrain clears after 5 hits
 
 ### Current frontend behavior
 
@@ -168,6 +168,8 @@ This is acceptable for the current validation pass, but should be improved in la
 First-time players should understand why an attack succeeded, failed, or hit a specific target.
 
 ## 4. Understanding the DEF zone
+
+The DEF zone starts as `3x3`. When that side has 12 or fewer resource cells remaining, the DEF zone automatically expands to `5x5`.
 
 ### Required player flow
 
