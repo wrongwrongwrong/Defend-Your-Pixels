@@ -110,6 +110,7 @@ export class GameScene extends Phaser.Scene {
     this._rayGfxPool      = [];   // recycled Graphics objects for ray animations
     this._pickerData      = null; // {container, col, row, side} when picker is open
     this._lastActiveSide  = null; // track turn changes
+    this._bgmStarted      = false; // ensure BGM only starts once
   }
 
   create() {
@@ -131,6 +132,10 @@ export class GameScene extends Phaser.Scene {
     this.input.on("pointerdown", this._handleBoardClick, this);
 
     this.input.keyboard.on("keydown-N", () => this.ws?.send("demo_next", {}));
+
+    // BGM is started on first board click (see _handleBoardClick).
+    // Browsers block audio until a user gesture — starting it here would be
+    // silently ignored. First pointerdown is the guaranteed safe moment.
 
     this.time.addEvent({ delay: 33, loop: true, callback: () => this._render() });
 
@@ -557,7 +562,7 @@ export class GameScene extends Phaser.Scene {
     const nextDir = cycle[(curIdx + 1) % cycle.length];
 
     this.ws?.send("rotate_token", { side, role, direction: nextDir });
-    playSfx(this, "sfx_select");
+    playSfx(this, "sfx_marker_turn");  // short 523 Hz sine click on every rotation
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -565,6 +570,12 @@ export class GameScene extends Phaser.Scene {
   // ══════════════════════════════════════════════════════════════════════════════
 
   _handleBoardClick(pointer) {
+    // First click = guaranteed user gesture → safe to start BGM now
+    if (!this._bgmStarted) {
+      this._bgmStarted = true;
+      playBgm(this, "bgm_outback");
+    }
+
     const s = this.gameState;
     if (!s || s.phase !== "game") return;
 
@@ -1073,13 +1084,25 @@ export class GameScene extends Phaser.Scene {
   _bindWS() {
     if (!this.ws) return;
 
+    // Track previous tier values so we can detect upgrades via state diff
+    this._prevTiers = { p1: 0, p2: 0 };
+
     this.ws.on("state", (s) => {
       const prevSide = this._lastActiveSide;
       const newSide  = s.battle?.active_side ?? null;
 
       this.gameState = s;
 
-      // Detect turn switch: show overlay when active_side changes to a non-null value
+      // ── Tier-up detection (state diff) ─────────────────────────────────────
+      const t1 = s.game?.tier_p1 ?? s.p1?.tier ?? 0;
+      const t2 = s.game?.tier_p2 ?? s.p2?.tier ?? 0;
+      if (t1 > this._prevTiers.p1 || t2 > this._prevTiers.p2) {
+        playSfx(this, "sfx_tier_up");
+      }
+      this._prevTiers.p1 = t1;
+      this._prevTiers.p2 = t2;
+
+      // ── Turn switch: show pass-device overlay ───────────────────────────────
       if (newSide && newSide !== prevSide) {
         this._showTurnOverlay(newSide);
         // Close any open picker when turn changes
