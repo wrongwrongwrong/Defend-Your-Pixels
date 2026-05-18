@@ -137,6 +137,9 @@ export class BootScene extends Phaser.Scene {
       ws.on("connected", advance);
       // Fallback: proceed after 3 s even if the server never responds
       this.time.delayedCall(3000, advance);
+    }).catch((err) => {
+      console.warn("[boot] WebSocket client failed to load:", err);
+      this.time.delayedCall(300, () => this.scene.start("Intro", { ws: null }));
     });
   }
 }

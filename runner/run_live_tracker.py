@@ -36,7 +36,7 @@ SEND_FPS = 10
 HTTP_PORT = 8080
 HEADLESS = os.environ.get("DYP_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 SETUP_MARKER_STABLE_SECONDS = 0.35
-FRONTEND_DIR = ROOT_DIR / "yu_test3" / "frontend"
+FRONTEND_DIR = ROOT_DIR / "frontend"
 PHASE_MODE_SELECT = "mode_select"
 MODE_NORMAL = "normal"
 MODE_TUTORIAL = "tutorial"
@@ -828,7 +828,7 @@ async def async_main(args: argparse.Namespace):
     if not FRONTEND_DIR.is_dir():
         raise RuntimeError(f"Missing frontend directory: {FRONTEND_DIR}")
 
-    start_frontend_http_server(args.http_port, FRONTEND_DIR)
+    start_frontend_http_server(args.http_port, FRONTEND_DIR, ROOT_DIR / "protocol")
 
     print("=" * 55)
     print("  Old Mick Live Tracker")

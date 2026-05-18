@@ -25,7 +25,7 @@ import {
   FONT_TITLE, FONT_LABEL, FONT_MONO,
 } from "../constants.js";
 import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
-import { HELP_POPUP_TITLE, getHelpPopupBodyText } from "../help/helpPopupTemplate.js";
+import { HELP_POPUP_SELECTORS, buildHelpPopupTemplate } from "../help/helpPopupTemplate.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -156,6 +156,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.fadeIn(400, 10, 8, 4);
+
     // Layered graphics objects (drawn in order)
     this.boardGfx    = this.add.graphics().setDepth(0);  // grid lines
     this.resourceGfx = this.add.graphics().setDepth(1);  // terrain / resource overlays
@@ -841,19 +843,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   _buildHelpOverlay() {
-    const overlay = this.add.container(CANVAS_W / 2, CANVAS_H / 2).setDepth(45).setVisible(false);
-    const bg = this.add.rectangle(0, 0, CANVAS_W - 120, CANVAS_H - 140, 0x0b0704, 0.93)
-      .setStrokeStyle(3, 0xc89a44, 0.95);
-    const title = this.add.text(0, -CANVAS_H * 0.28, HELP_POPUP_TITLE, {
-      fontFamily: FONT_TITLE, fontSize: "28px", fontStyle: "bold", color: "#fff0b0",
-      stroke: "#2a1408", strokeThickness: 4,
-    }).setOrigin(0.5);
-    const body = this.add.text(0, -CANVAS_H * 0.22, getHelpPopupBodyText(), {
-        fontFamily: FONT_MONO, fontSize: "13px", color: "#f2d8a0", align: "left", lineSpacing: 7,
-        wordWrap: { width: CANVAS_W - 220 },
-      }).setOrigin(0.5, 0);
-    overlay.add([bg, title, body]);
-    this.helpOverlay = overlay;
+    const panelW = CANVAS_W - 80;
+    const panelH = CANVAS_H - 60;
+    this.helpOverlay = this.add.dom(CANVAS_W / 2, CANVAS_H / 2)
+      .createFromHTML(buildHelpPopupTemplate({ width: panelW, height: panelH }))
+      .setOrigin(0.5)
+      .setDepth(45)
+      .setVisible(false);
+
+    const root = this.helpOverlay.node.querySelector(HELP_POPUP_SELECTORS.root);
+    if (!root) return;
+
+    const hide = () => this.helpOverlay?.setVisible(false);
+    root.querySelector(HELP_POPUP_SELECTORS.close)?.addEventListener("click", hide);
+    const backdrop = root.querySelector(HELP_POPUP_SELECTORS.overlay);
+    backdrop?.addEventListener("click", (e) => {
+      if (e.target === backdrop) hide();
+    });
+
+    for (const btn of root.querySelectorAll(HELP_POPUP_SELECTORS.tabButton)) {
+      btn.addEventListener("click", () => {
+        const tab = btn.getAttribute("data-tab-btn");
+        for (const b of root.querySelectorAll(HELP_POPUP_SELECTORS.tabButton)) {
+          b.classList.toggle("is-active", b === btn);
+        }
+        for (const pane of root.querySelectorAll(HELP_POPUP_SELECTORS.tabPane)) {
+          pane.classList.toggle("is-active", pane.getAttribute("data-tab-pane") === tab);
+        }
+      });
+    }
   }
 
   // ─── Mute button ──────────────────────────────────────────────────────────
