@@ -452,8 +452,18 @@ export function buildHelpPopupTemplate({ width, height }) {
         border-top: 1px solid var(--rule);
         background: var(--paper);
         display: flex;
+        align-items: center;
+        gap: 16px;
         justify-content: flex-end;
         flex-shrink: 0;
+      }
+
+      .help-popup__marker-note {
+        color: rgba(26, 18, 8, 0.68);
+        flex: 1;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.35;
       }
 
       .help-popup__button {
@@ -547,6 +557,7 @@ export function buildHelpPopupTemplate({ width, height }) {
               </div>
 
               <div class="help-popup__sec-label">How to play</div>
+              <div class="help-popup__prose"><strong>Help marker:</strong> To close this guide, cover or remove marker ID5 from the camera view.</div>
               <div class="help-popup__prose"><strong>Positioning:</strong> Place ATK tokens on your side and aim them in a straight line. They hit the first enemy cell they reach across the fence. DEF tokens do not attack; they protect nearby cells with extra HP.</div>
               <div class="help-popup__prose"><strong>Score:</strong> Each side starts with 24 resource cells. Every cell is worth 1 unit, and the scoreboard counts down as cells are destroyed. Each ATK token tracks its own kills: 4 kills unlocks Tier 1 splash, 8 kills unlocks Tier 2 splash.</div>
               <div class="help-popup__prose"><strong>Win:</strong> Destroy the enemy HQ for an instant win, or wipe out all enemy resource cells for an attrition victory.</div>
@@ -783,6 +794,7 @@ export function buildHelpPopupTemplate({ width, height }) {
           </div>
 
           <div class="help-popup__footer">
+            <div class="help-popup__marker-note">To close this guide, cover or remove marker ID5 from the camera view.</div>
             <button class="help-popup__button" type="button" data-help-close>Got it</button>
           </div>
         </div>

@@ -28,7 +28,7 @@ from python_tracker.camera.camera_runtime import configure_camera, open_camera, 
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, NUKE_MARKERS, TOKEN_MARKERS, TURN_MARKERS
-from runner.setup_flow import PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
+from runner.setup_flow import FIRST_PLAYER_SIDE_TO_PLAYER, PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
 from live_rules import game_model, terrain_gen, tutorial
 from runner.frontend_static_server import start_frontend_http_server
 
@@ -370,7 +370,6 @@ class Session:
         self.help_visible = False
         self.model: game_model.GameModel | None = None
         self.pending_events: list[dict] = []
-        self._nuke_consumed_marker_ids: set[int] = set()
         self._reset_setup_tracking()
         self._reset_battle_tracking()
         self.setup.reset(board_scan_ready=self.board_scan_ready)
@@ -394,9 +393,9 @@ class Session:
         print("[MODE] Tutorial complete. Continuing in normal game mode.")
 
     def _reset_setup_tracking(self) -> None:
-        self._observed_setup_turn_side: str | None = None
-        self._observed_setup_turn_since = 0.0
-        self._stable_setup_turn_side: str | None = None
+        self._observed_turn_side: str | None = None
+        self._observed_turn_since = 0.0
+        self._debounced_turn_side: str | None = None
         self._observed_hq_cells = {side: None for side in PLAYERS}
         self._observed_hq_cell_since = {side: 0.0 for side in PLAYERS}
         self._stable_hq_cells = {side: None for side in PLAYERS}
@@ -408,6 +407,7 @@ class Session:
     def _reset_battle_tracking(self) -> None:
         self.battle_active_side: str | None = None
         self.battle_waiting_for_side: str | None = None
+        self._pending_nuke_cell: dict[str, tuple[int, int] | None] = {side: None for side in PLAYERS}
 
     def _battle_payload(self) -> dict:
         if self.setup.phase != PHASE_GAME:
@@ -460,6 +460,7 @@ class Session:
             self.reset(board_scan_ready=board_scan_ready)
             return errors
 
+<<<<<<< Updated upstream
         if command_type == "tier":
             if self.model is None:
                 return errors
@@ -483,6 +484,8 @@ class Session:
                 self.setup.choose_side(first_player_side)
             return errors
 
+=======
+>>>>>>> Stashed changes
         if action_name == "select_mode":
             mode = command.get("mode")
             if isinstance(mode, str):
@@ -501,30 +504,9 @@ class Session:
                 self.tutorial_ctrl.undo()
             return errors
 
-        if action_name == "set_hq_candidate":
-            side = command.get("side")
-            position = command.get("position") if isinstance(command.get("position"), dict) else None
-            if side in PLAYERS:
-                error = self.setup.set_hq_candidate(side, position, self.terrain)
-                if error is not None:
-                    errors.append(error)
-            return errors
-
-        if action_name == "confirm_hq":
-            side = command.get("side")
-            if side in PLAYERS:
-                game_ready, setup_event = self.setup.confirm_hq(side)
-                if setup_event is not None:
-                    errors.append(setup_event)
-                if game_ready:
-                    self._ensure_model_started()
-            return errors
-
-        if action_name in {"reset_setup", "cancel_hq"}:
-            self.model = None
-            self._reset_setup_tracking()
-            self._reset_battle_tracking()
-            self.setup.reset_hq_setup()
+        if action_name in {"choose_side", "set_hq_candidate", "confirm_hq", "reset_setup", "cancel_hq"}:
+            # Live tracker setup is marker-driven only: ID10/ID20 choose the active
+            # setup side, ID11/ID21 position HQs, and ID4 confirms.
             return errors
 
         if action_name == "trigger_nuke":
@@ -539,7 +521,13 @@ class Session:
             row = position.get("y")
             if not isinstance(col, int) or not isinstance(row, int):
                 return errors
-            self.pending_events.extend(self.model.trigger_nuke(active_side, (col, row)))
+            enemy_side = _opponent_side(active_side)
+            if enemy_side is None or side_of_cell(col, row) != enemy_side:
+                return errors
+            snapshot = self.model.snapshot()
+            if not snapshot.get(f"nuke_available_{active_side}", False):
+                return errors
+            self._pending_nuke_cell[active_side] = (col, row)
             return errors
 
         return errors
@@ -572,7 +560,12 @@ class Session:
         )
         if self.setup.phase == PHASE_HQ_PLACEMENT:
             self._update_marker_driven_hq_setup(turn, hq_markers, confirm_present)
-        self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
+        if self.setup.phase == PHASE_GAME:
+            self.turn = 1 if self.battle_active_side == "p1" else 2 if self.battle_active_side == "p2" else None
+        elif self.setup.phase == PHASE_HQ_PLACEMENT and self.setup.active_setup_side in PLAYERS:
+            self.turn = 1 if self.setup.active_setup_side == "p1" else 2
+        else:
+            self.turn = None
         self._update_marker_driven_nukes(nuke_markers or [])
         if self.tutorial_ctrl is not None:
             self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers, confirm_present)
@@ -581,13 +574,22 @@ class Session:
         return errors
 
     def _update_marker_driven_nukes(self, nuke_markers: list[dict]) -> None:
-        if self.setup.phase != PHASE_GAME or self.model is None or self.battle_active_side not in PLAYERS:
+        if self.setup.phase != PHASE_GAME or self.model is None:
             return
 
+        active_side = self.battle_active_side
+        if active_side not in PLAYERS:
+            return
+
+        pending_set = False
         for marker in nuke_markers:
             marker_id = int(marker.get("id", -1))
             side = NUKE_BY_MARKER_ID.get(marker_id)
+<<<<<<< Updated upstream
             if side is None or side != self.battle_active_side or marker_id in self._nuke_consumed_marker_ids:
+=======
+            if side is None or side != active_side:
+>>>>>>> Stashed changes
                 continue
             position = marker.get("position") if isinstance(marker.get("position"), dict) else None
             if position is None:
@@ -596,12 +598,26 @@ class Session:
             row = _grid_index(position.get("y"))
             enemy_side = _opponent_side(side)
             if col is None or row is None or side_of_cell(col, row) != enemy_side:
+<<<<<<< Updated upstream
                 continue
             events = self.model.trigger_nuke(side, (col, row))
             if events:
                 self.pending_events.extend(events)
                 if any(event.get("type") == "nuke_triggered" for event in events):
                     self._nuke_consumed_marker_ids.add(marker_id)
+=======
+                self._pending_nuke_cell[active_side] = None
+                continue
+            snapshot = self.model.snapshot()
+            if not snapshot.get(f"nuke_available_{side}", False):
+                self._pending_nuke_cell[active_side] = None
+                continue
+            self._pending_nuke_cell[active_side] = (col, row)
+            pending_set = True
+
+        if not pending_set:
+            self._pending_nuke_cell[active_side] = None
+>>>>>>> Stashed changes
 
     def game_events(self) -> list[dict]:
         events = self.pending_events
@@ -631,23 +647,26 @@ class Session:
             payload["tutorial"] = self.tutorial_state
         return payload
 
-    def _stable_turn_side(self, turn: int | None) -> str | None:
+    def _observe_turn_side(self, turn: int | None) -> str | None:
+        """Debounced turn side from the camera; keeps the last debounced side when the marker leaves frame."""
         side = "p1" if turn == 1 else "p2" if turn == 2 else None
         if side is None:
-            self._observed_setup_turn_side = None
-            self._observed_setup_turn_since = 0.0
-            self._stable_setup_turn_side = None
-            return None
+            return self._debounced_turn_side
 
         now = time.monotonic()
-        if side != self._observed_setup_turn_side:
-            self._observed_setup_turn_side = side
-            self._observed_setup_turn_since = now
-            return self._stable_setup_turn_side
+        if side != self._observed_turn_side:
+            self._observed_turn_side = side
+            self._observed_turn_since = now
+            return self._debounced_turn_side
 
-        if now - self._observed_setup_turn_since >= SETUP_MARKER_STABLE_SECONDS:
-            self._stable_setup_turn_side = side
-        return self._stable_setup_turn_side
+        if now - self._observed_turn_since >= SETUP_MARKER_STABLE_SECONDS:
+            self._debounced_turn_side = side
+        return self._debounced_turn_side
+
+    def _clear_turn_observation(self) -> None:
+        self._observed_turn_side = None
+        self._observed_turn_since = 0.0
+        self._debounced_turn_side = None
 
     def _stable_hq_cell(self, side: str, marker_state: dict) -> tuple[int, int] | None:
         col = marker_state.get("col")
@@ -681,16 +700,16 @@ class Session:
         return self._stable_confirm_present
 
     def _update_marker_driven_hq_setup(self, turn: int | None, hq_markers: dict, confirm_present: bool) -> None:
-        stable_turn_side = self._stable_turn_side(turn)
+        debounced_turn_side = self._observe_turn_side(turn)
         stable_confirm_present = self._stable_confirm_marker_present(confirm_present)
 
-        if stable_turn_side in PLAYERS and self.setup.active_setup_side is None:
-            self.setup.activate_hq_setup_side(stable_turn_side)
+        if debounced_turn_side in PLAYERS and self.setup.active_setup_side is None:
+            self.setup.activate_hq_setup_side(debounced_turn_side)
 
         active_side = self.setup.active_setup_side
         stable_hq_cells = {side: None for side in PLAYERS}
         for side in PLAYERS:
-            if side != active_side or stable_turn_side != active_side:
+            if side != active_side:
                 self._observed_hq_cells[side] = None
                 self._observed_hq_cell_since[side] = 0.0
                 self._stable_hq_cells[side] = None
@@ -717,20 +736,21 @@ class Session:
 
         game_ready, _ = self.setup.lock_hq(active_side)
         self._confirm_consumed = True
+        self._clear_turn_observation()
         if game_ready:
             self._ensure_model_started()
             return
 
     def _update_marker_driven_battle_flow(self, turn: int | None, confirm_present: bool) -> None:
-        stable_turn_side = self._stable_turn_side(turn)
+        debounced_turn_side = self._observe_turn_side(turn)
         stable_confirm_present = self._stable_confirm_marker_present(confirm_present)
 
         if self.battle_active_side not in PLAYERS:
-            if stable_turn_side not in PLAYERS:
+            if debounced_turn_side not in PLAYERS:
                 return
-            if self.battle_waiting_for_side in PLAYERS and stable_turn_side != self.battle_waiting_for_side:
+            if self.battle_waiting_for_side in PLAYERS and debounced_turn_side != self.battle_waiting_for_side:
                 return
-            self.battle_active_side = stable_turn_side
+            self.battle_active_side = debounced_turn_side
             return
 
         if not stable_confirm_present or self._confirm_consumed:
@@ -739,10 +759,19 @@ class Session:
             return
 
         attacker = self.battle_active_side
-        self.pending_events.extend(self.model.resolve_side_attack(attacker, self.accepted_p1, self.accepted_p2))
+        events = self.model.resolve_side_attack(attacker, self.accepted_p1, self.accepted_p2)
+        pending_nuke = self._pending_nuke_cell.get(attacker)
+        if pending_nuke is not None:
+            nuke_events = self.model.trigger_nuke(attacker, pending_nuke)
+            if nuke_events:
+                events.extend(nuke_events)
+                print(f"[NUKE] ID{19 if attacker == 'p1' else 29} triggered on confirm by {attacker} at cell={pending_nuke}")
+        self._pending_nuke_cell[attacker] = None
+        self.pending_events.extend(events)
         self.battle_waiting_for_side = _opponent_side(attacker)
         self.battle_active_side = None
         self._confirm_consumed = True
+        self._clear_turn_observation()
 
     def _ensure_model_started(self) -> None:
         if self.model is not None:
@@ -753,6 +782,7 @@ class Session:
         hq_p1, hq_p2 = hidden_hq_positions
         self.model = game_model.new_game(self.terrain, seed=self.seed, hq_p1=hq_p1, hq_p2=hq_p2)
         self._reset_battle_tracking()
+        self.battle_waiting_for_side = FIRST_PLAYER_SIDE_TO_PLAYER.get(self.setup.first_player_side)
         print("[MAP] HQ setup complete. Hidden HQs locked in.")
 
 

@@ -1,27 +1,25 @@
-import { BootScene }  from "./scenes/BootScene.js";
-import { IntroScene } from "./scenes/IntroScene.js";
-import { GameScene }  from "./scenes/GameScene.js";
+import { BootScene } from "./scenes/BootScene.js";
+import { GameScene } from "./scenes/GameScene.js";
+import { WSClient }  from "/protocol/websocket/browser_client.js";
+import { initUI }    from "./ui.js";
 import { CANVAS_W, CANVAS_H } from "./constants.js";
 
-// Classic script tag loads Phaser onto globalThis; ES modules do not treat bare
-// `Phaser` as a live binding in all environments.
-const Phaser = globalThis.Phaser;
-if (!Phaser) {
-  throw new Error("Phaser missing — check CDN (phaser.min.js) or network block.");
-}
+// WebSocket — created once, shared between HTML panels (ui.js) and Phaser (GameScene)
+const ws = new WSClient();
+initUI(ws);
 
-const config = {
-  type: Phaser.AUTO,
-  width:  CANVAS_W,
-  height: CANVAS_H,
+const game = new Phaser.Game({
+  type:            Phaser.AUTO,
+  width:           CANVAS_W,
+  height:          CANVAS_H,
   backgroundColor: "#0f0c08",
-  parent: "game-container",
-  dom: { createContainer: true },
-  scene: [BootScene, IntroScene, GameScene],
+  parent:          "game-canvas",
+  scene:           [BootScene, GameScene],
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    mode:       Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.NO_CENTER,
   },
-};
+});
 
-new Phaser.Game(config);
+// Make ws available to Phaser scenes via the registry
+game.registry.set("ws", ws);

@@ -1,18 +1,21 @@
 /**
- * Browser WebSocket client for the Defend Your Pixels live runtime.
+ * WebSocket client for yu_test2.
  *
- * The Python runtime broadcasts a raw state object, without a
- * `{ type, data }` envelope. This client translates incoming messages into
- * browser-side events:
+ * The server (yu_test2 dev server, or FW2 backend) broadcasts a raw state
+ * object — no { event, data } envelope. We translate the latest state into
+ * synthetic events:
  *
- *   "connected"     -> fired once when the WS opens
- *   "state"         -> fired each time a new state arrives (full payload)
- *   "events"        -> fired with the events[] array if non-empty
- *   "disconnected"  -> fired when the socket closes
+ *   "connected"     → fired once when the WS opens
+ *   "state"         → fired each time a new state arrives  (full payload)
+ *   "events"        → fired with the events[] array if non-empty
+ *   "disconnected"  → on close
  *
- * Outbound messages follow the current runtime protocol:
- * - `new_map` / `tier` stay as top-level transport commands.
- * - everything else is wrapped as `{type:"action", data:{action:type, ...payload}}`.
+ * Listeners can also `send(type, data)` for client → server messages.
+ *
+ * Transport rules:
+ * - `new_map` / `tier` / `demo_next` stay as top-level transport commands
+ * - everything else is wrapped in the FW2 action envelope:
+ *   `{type:"action", data:{action:type, ...payload}}`
  */
 export class WSClient {
   constructor(url = "ws://localhost:8765") {
@@ -40,7 +43,7 @@ export class WSClient {
       }
     };
     this._ws.onclose = () => {
-      console.warn(`[WS] Disconnected - retry in ${this._reconnectDelay}ms`);
+      console.warn(`[WS] Disconnected — retry in ${this._reconnectDelay}ms`);
       this._emit("disconnected", {});
       setTimeout(() => this._connect(), this._reconnectDelay);
     };
@@ -54,7 +57,9 @@ export class WSClient {
   }
   send(type, payload = {}) {
     if (this._ws?.readyState !== WebSocket.OPEN) return;
-    const message = (type === "new_map" || type === "tier")
+    // Top-level transport commands (not wrapped in action envelope)
+    const isTopLevel = type === "new_map" || type === "tier" || type === "demo_next";
+    const message = isTopLevel
       ? { type, ...payload }
       : { type: "action", data: { action: type, ...payload } };
     this._ws.send(JSON.stringify(message));

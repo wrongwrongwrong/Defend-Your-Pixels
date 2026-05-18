@@ -1,5 +1,5 @@
 /**
- * Audio manager for the live frontend (Phaser Sound system).
+ * Audio manager for yu_test2 (Phaser Sound system).
  *
  * - Lists every audio asset the game expects (`AUDIO_MANIFEST`).
  * - Loads them all in BootScene via `preloadAll(scene)`.
