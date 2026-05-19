@@ -8,7 +8,7 @@ core loop before expanding into upgrades, hidden information, and Phaser-specifi
 
 - 2-player turn-based board game.
 - Farmers versus Emus.
-- No hidden HQ yet.
+- Hidden HQ setup is part of the live rules.
 - No economy system yet.
 - No upgrade system yet.
 - No map art or 2D/3D presentation decisions in this file.
@@ -52,16 +52,19 @@ This keeps the current engine stable while the team replaces the old rules in la
 ## Primary win condition
 
 - Destroy the enemy HQ to win immediately.
-- The match ends as soon as one HQ reaches 0 HP.
-- The current backend implementation now uses HQ destruction as the only active win
-  condition for this MVP.
+- Destroy all 24 enemy resource cells to win by attrition.
+- The match ends as soon as either win condition is met.
+
+Current live rules implementation:
+
+- HQ destruction is still an immediate win.
+- Attrition win now means full destruction of the enemy's resource grid, not a score threshold.
 
 ## Deferred systems
 
 These are intentionally out of MVP scope:
 
 - hidden HQ / hidden information
-- attrition win based on resource collapse
 - economy / resource generation
 - upgrades
 - special attacks / nukes
@@ -76,7 +79,7 @@ Instead, the MVP attack flow is:
 2. Choose one of the 8 straight directions.
 3. Trace a line outward from the attacker.
 4. The attack hits the first valid enemy target found on that line.
-5. If hard terrain blocks the line before any valid enemy target is found, the attack fails.
+5. If terrain blocks the line before any valid enemy target is found, the attack hits that terrain instead. Soft terrain clears after 2 hits; hard terrain clears after 5 hits.
 
 Allowed attack directions:
 
@@ -123,12 +126,10 @@ Theme mapping:
 
 Rules:
 
+- Each side has exactly 24 destructible resource cells.
 - Default HP = 1
 - If protected by DEF, HP = 2
 - They can be destroyed by ATK line attacks
-<<<<<<< Updated upstream
-- They do not need to generate resources yet
-=======
 - Each cell is worth 1 unit.
 - The scoreboard counts down from 24 remaining cells.
 - There are no hidden bonus-value cells.
@@ -165,7 +166,6 @@ Nuke progression:
 - All terrain in the area is destroyed.
 - Up to 5 resource cells in the area are randomly destroyed.
 - HQs are not destroyed by nuke.
->>>>>>> Stashed changes
 
 ## MVP interaction assumptions
 
@@ -188,14 +188,13 @@ Once the above is implemented, the team should test:
 - Do resource tiles reduce pure HQ rushing?
 - Is the turn-to-turn decision space clear enough for first-time players?
 
-Core gameplay test cases are tracked in:
+Current executable gameplay smoke coverage lives in:
 
-- `docs/old_mick_core_test_cases.md`
-- `runner/run_old_mick_core_smoke.py`
+- `runner/run_manual_play.py`
 
 ## Implementation note
 
-The first implementation should happen in `model_backend`.
+The live implementation lives in `backend/live_rules`.
 
 Recommended early focus:
 
@@ -204,11 +203,16 @@ Recommended early focus:
 - authoritative DEF `3x3` protection
 - authoritative destructible resource tiles
 
-React or Phaser should consume these rules as presentation and interaction layers rather
+Current integration state:
+
+- resource tiles are exposed as first-class `board_state.resource_tiles[]`
+- frontend validation can display tile ownership and protection state
+
+The browser frontend or any future presentation layer should consume these rules rather
 than reimplementing them.
 
 See also:
 
-- `docs/frontend_backend_contract_v1.md`
+- `docs/board_state_v1.md`
 - `docs/authoritative_actions_v1.md`
 - `docs/interaction_flow_v1.md`

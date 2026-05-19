@@ -1,22 +1,16 @@
-# authoritative_actions v1
+# Authoritative Actions v1
 
-定義 React / tracker / bridge 送往 Python authoritative model 的 action 訊息。
+This document defines the action messages sent from the browser frontend, tracker, or bridge to the authoritative Python model.
 
-## 目前狀態
+## Current status
 
-<<<<<<< Updated upstream
-- 目前已實作並 authoritative 生效的 action 是 `end_turn`、`move_unit`、`attack_in_direction`。
-- `upgrade_unit` 已退出目前 integration prototype 範圍；UI 在 backend 模式下停用。
-- `move_unit` 目前同時可由 tracker flow 與 React validation layer 送出。
-=======
 - The currently implemented authoritative gameplay actions are `end_turn`, `move_unit`, `attack_in_direction`, and `trigger_nuke`.
 - The live Old Mick setup flow also accepts `choose_side`, `set_hq_candidate`, `confirm_hq`, and the optional setup reset aliases `reset_setup` and `cancel_hq`.
 - The live path is primarily marker-driven during setup and battle.
 - `upgrade_unit` is out of scope for the current integration prototype.
 - `move_unit` intents may currently come from either the tracker flow or the browser frontend.
->>>>>>> Stashed changes
 
-## WebSocket 訊息
+## WebSocket message
 
 ```json
 {
@@ -27,11 +21,92 @@
 }
 ```
 
-## 已實作 action
+## Implemented actions
+
+### `choose_side`
+
+Purpose: choose which faction places its HQ first once the board scan is ready.
+
+```json
+{
+  "action": "choose_side",
+  "first_player_side": "old_mick"
+}
+```
+
+Python behavior:
+
+- Accepted only after the board scan is ready and before the runtime reaches `game`.
+- Stores `first_player_side`.
+- Records the first player and maintains or enters `hq_placement`.
+
+The mainline frontend can send this action from its side-selection flow.
+
+### `set_hq_candidate`
+
+Purpose: submit an HQ candidate for the currently active setup side.
+
+```json
+{
+  "action": "set_hq_candidate",
+  "side": "p1",
+  "position": { "x": 3, "y": 4 }
+}
+```
+
+Python behavior:
+
+- Validates that the HQ is on the correct side and not on the fence.
+- Stores the candidate in backend session state when valid.
+- Exposes only `has_candidate` and `confirmed` through the public payload.
+
+This action is mainly kept for fallback or debug paths. In the live marker flow, `ID11` and `ID21` update the active side's HQ candidate automatically, and the frontend does not show exact HQ coordinates in the side panel.
+
+### `confirm_hq`
+
+Purpose: confirm the current side's HQ candidate.
+
+```json
+{
+  "action": "confirm_hq",
+  "side": "p1"
+}
+```
+
+Python behavior:
+
+- Locks the HQ if that side already has a candidate.
+- Transfers setup control to the other side after the first confirmation.
+- Emits `hq_setup_complete` and enters `game` after both HQs are confirmed.
+- Keeps confirmed HQ coordinates hidden from normal gameplay payloads.
+
+This action is mainly kept for fallback or debug paths. In the live marker flow, `ID4` performs the equivalent confirmation when the active side has a valid HQ candidate.
+
+### `reset_setup`
+
+Purpose: reset the current pre-game HQ setup.
+
+```json
+{
+  "action": "reset_setup"
+}
+```
+
+The live frontend may expose this through fallback or debug setup controls during `hq_placement`.
+
+### `cancel_hq`
+
+Purpose: compatibility alias for `reset_setup`.
+
+```json
+{
+  "action": "cancel_hq"
+}
+```
 
 ### `end_turn`
 
-用途：請 Python model 推進回合，並重新廣播最新 `board_state`。
+Purpose: request authoritative turn progression and broadcast the latest `board_state`.
 
 ```json
 {
@@ -39,15 +114,15 @@
 }
 ```
 
-預期結果：
+Expected result:
 
-- Python 執行 `GameState.end_turn()`
-- `turn`、`active_player`、`move_countdown` 等結果由 Python 更新
-- 新 `board_state` 廣播給 React
+- Python performs authoritative turn progression.
+- `turn`, `active_player`, `move_countdown`, and related state are updated in Python.
+- The new `board_state` is broadcast to the browser frontend.
 
 ### `move_unit`
 
-用途：送出 unit 的目標格位，由 Python rules 驗證是否合法並更新 `board_state`。
+Purpose: submit a unit destination and let Python validate and apply the move.
 
 ```json
 {
@@ -57,22 +132,22 @@
 }
 ```
 
-目前狀態：
+Current status:
 
-- 已由 Python backend 實作
-- 可由 tracker flow 產生 move intent
-- React validation layer 也可手動送出 move intent
+- Implemented in the Python backend.
+- May be produced by tracker-derived move intent.
+- May also be sent directly by the browser frontend.
 
-Python 端行為：
+Python behavior:
 
-- 驗證 `unit_id` 與 `position`
-- 呼叫 `GameState.move_unit_to(...)`
-- 成功時更新狀態並廣播新 `board_state`
-- 失敗時更新 `last_action`
+- Validates `unit_id` and `position`.
+- Applies the movement through the authoritative live rules.
+- Broadcasts an updated `board_state` on success.
+- Updates `last_action` on failure.
 
 ### `attack_in_direction`
 
-用途：讓攻擊單位沿 8 個方向之一做直線攻擊，由 Python rules 判定第一個合法目標以及硬地形擋線。
+Purpose: perform a straight-line attack in one of eight directions, letting Python resolve the first valid target and terrain blocking.
 
 ```json
 {
@@ -82,17 +157,14 @@ Python 端行為：
 }
 ```
 
-Python 端行為：
+Python behavior:
 
-- 驗證 `unit_id` 與 `direction`
-- 呼叫 `GameState.attack_in_direction(...)`
-- 沿指定方向搜尋第一個合法敵方目標
-- 若先遇到硬地形則攻擊失敗
-- 成功時更新 HQ / resource tile 狀態與 `last_action`
+- Validates `unit_id` and `direction`.
+- Applies the attack through the authoritative live rules.
+- Searches for the first valid enemy target along the chosen direction.
+- Stops if terrain blocks the line first. Soft terrain is destroyed after 2 hits; hard terrain is destroyed after 5 hits.
+- Updates HQ or resource-tile state and `last_action` on success.
 
-<<<<<<< Updated upstream
-## 暫不納入 v1 的 action
-=======
 ### `trigger_nuke`
 
 Purpose: submit a one-use nuke target for the active side.
@@ -115,35 +187,32 @@ Python behavior:
 - The nuke resolves when `ID4` confirms the active side's turn. It affects the `3x3` area centered on the pending target, destroys terrain in that area, randomly destroys up to 5 resource cells, bypasses DEF protection, and does not destroy HQs.
 
 ## Actions excluded from v1
->>>>>>> Stashed changes
 
 ### `upgrade_unit`
 
-原因：目前 prototype 優先目標是完成 authoritative 整合主線，不先搬移 upgrade 規則。
+Reason:
 
-目前策略：
+- The current prototype is focused on completing the authoritative integration path first.
+- Upgrade rules are intentionally deferred.
 
-- backend 模式下 UI 停用 upgrade
-- Python 不提供 upgrade 規則實作
+Current policy:
 
-## 下一個建議切入的 action
+- The UI does not expose upgrade in the backend-driven path.
+- Python does not currently implement upgrade rules.
 
-目前 `move_unit` 與 `attack_in_direction` 已切入。下一個 action 是否需要新增，取決於後續 prototype 是否擴充 upgrade、special attack、或 hidden-information flow。
+## Tracker relationship
 
-## 與 tracker 的關係
+The tracker should produce gameplay intent, not directly overwrite authoritative state.
 
-目前 tracker 會先產生 `move_unit` intent，再交由 Python authoritative model 驗證。
+Target flow:
 
-Step 6 下一階段應改成：
+1. `tracker snapshot`
+2. derive `move_unit` or other action intent
+3. Python validates and applies the action
+4. Python emits a new `board_state`
 
-- `tracker snapshot`
-- 推導為 `move_unit` / 其他 action intent
-- Python model 驗證並套用
-- 輸出新 `board_state`
+## Live marker battle flow
 
-<<<<<<< Updated upstream
-也就是 tracker 不應直接覆寫 authoritative model，而應只提供 intent。
-=======
 The current live battle path does not primarily use browser-sent `end_turn` actions.
 
 - `ID10` and `ID20` open positioning for `p1` or `p2`.
@@ -165,4 +234,3 @@ Pre-game setup and the live tracker flow currently use a backend-first session s
 - `game`
 
 During `game`, inactive-side token movement is ignored and surfaced as `inactive_side_token_changed` rather than mutating the authoritative state.
->>>>>>> Stashed changes

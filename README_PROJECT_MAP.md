@@ -12,13 +12,13 @@ The system uses a camera to detect board markers and tokens, converts those dete
 1. Camera captures frames.
 2. Vision module detects ArUco markers.
 3. Tracker maps marker positions to board/grid coordinates.
-4. Backend game model applies actions and updates authoritative state.
-5. Bridge sends tracker and board state over WebSocket.
-6. Frontend receives messages and renders the game.
+4. Runtime game model updates authoritative state.
+5. Bridge sends live state over WebSocket.
+6. `frontend/index.html` receives messages and renders the game.
 
 ## Current top-level folders
 
-### `python_tracker`
+### `backend/python_tracker`
 Purpose: computer vision pipeline.
 
 Includes:
@@ -29,72 +29,67 @@ Includes:
 
 Use this when you need to work on camera input, marker detection, or coordinate mapping.
 
-### `model_backend`
-Purpose: game rules and authoritative state management.
-
-Includes:
-- Board state model
-- Rule handling and actions
-- Serialization of game state for transport
-
-Use this when you need to change game logic (movement, turns, actions, captures).
-
-### `bridge`
-Purpose: connect tracker + model + frontend.
+### `backend/bridge`
+Purpose: connect tracker + runtime model + frontend.
 
 Includes:
 - WebSocket transport
-- Message schemas/contracts
-- Adapters that convert tracker events into model actions
+- Inbound browser action handling
+- Runtime broadcast helpers
 
 Use this when you need to change real-time communication or message formats.
 
-### `react_frontend`
-Purpose: user interface for the game.
+### `protocol`
+Purpose: shared frontend/backend integration contract and browser-side protocol helpers.
 
 Includes:
-- React app and components
-- WebSocket hook/client
-- Board state adapters for UI rendering
+- `websocket/browser_client.js` browser WebSocket client used by frontend UIs
+- `websocket/contract.md` current WebSocket payload and action-envelope notes
 
-Use this when you need to change what users see or how UI updates.
+Use this when a frontend needs to connect to the Python live runtime without depending on a specific UI implementation.
+
+### `backend/live_rules`
+Purpose: authoritative live rules and terrain generation shared by the current runtimes.
+
+Includes:
+- `game_model.py` authoritative live rules
+- `terrain_gen.py` shared live map generation
+
+Use this when you need to change live gameplay rules or the shared terrain generator.
+
+### `frontend`
+Purpose: the primary live browser frontend.
+
+Includes:
+- `index.html` main browser entrypoint
+- `src/` modular Phaser scenes, HUD, and audio
+- `assets/` browser-loaded images and tutorial GIFs
+
+Use this when you need to change the shipped live UI or frontend flow.
 
 ### `runner`
 Purpose: clean startup scripts for runtime modes.
 
 Important scripts:
-- `run_camera_preview.py`: camera feed debug only
-- `run_marker_preview.py`: marker detection debug only
 - `run_live_tracker.py`: integrated runtime path
+- `run_manual_play.py`: no-camera manual runtime for local frontend and rules testing
 
 Use this folder first when running demos and checks.
-
-### `prototype_pygame`
-Purpose: local gameplay prototype in Pygame.
-
-Use this for rapid gameplay experiments independent from React UI.
 
 ### `docs`
 Purpose: project documentation and integration notes.
 
 Includes protocol documents and architecture references.
 
-### `archive` / `game-logic` / `dyp` (context)
-- `archive`: older or reference material
-- `game-logic`: legacy/experimental logic area
-- `dyp`: local environment package directory
-
-These are not primary runtime entrypoints for the current architecture.
-
 ## Recommended "where to start" order
 
 1. Root `README.md`
 2. `runner/README.md`
-3. Run `runner/run_marker_preview.py`
-4. Read `python_tracker` basics
-5. Read `bridge` flow
-6. Read `model_backend` state/actions
-7. Read frontend socket hook and board adapter
+3. Run `runner/run_live_tracker.py` or `runner/run_manual_play.py`
+4. Read `backend/python_tracker` basics
+5. Read `backend/bridge` flow
+6. Read `backend/live_rules` rules code
+7. Read `frontend/src/`
 
 ## Quick glossary
 
@@ -102,4 +97,3 @@ These are not primary runtime entrypoints for the current architecture.
 - **Tracker frame**: latest camera-derived board/token info.
 - **Board state**: serialized game state sent to frontend.
 - **Bridge**: transport and synchronization layer between modules.
-
