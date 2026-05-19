@@ -4,9 +4,17 @@
 
 ## 目前狀態
 
+<<<<<<< Updated upstream
 - 目前已實作並 authoritative 生效的 action 是 `end_turn`、`move_unit`、`attack_in_direction`。
 - `upgrade_unit` 已退出目前 integration prototype 範圍；UI 在 backend 模式下停用。
 - `move_unit` 目前同時可由 tracker flow 與 React validation layer 送出。
+=======
+- The currently implemented authoritative gameplay actions are `end_turn`, `move_unit`, `attack_in_direction`, and `trigger_nuke`.
+- The live Old Mick setup flow also accepts `choose_side`, `set_hq_candidate`, `confirm_hq`, and the optional setup reset aliases `reset_setup` and `cancel_hq`.
+- The live path is primarily marker-driven during setup and battle.
+- `upgrade_unit` is out of scope for the current integration prototype.
+- `move_unit` intents may currently come from either the tracker flow or the browser frontend.
+>>>>>>> Stashed changes
 
 ## WebSocket 訊息
 
@@ -82,7 +90,32 @@ Python 端行為：
 - 若先遇到硬地形則攻擊失敗
 - 成功時更新 HQ / resource tile 狀態與 `last_action`
 
+<<<<<<< Updated upstream
 ## 暫不納入 v1 的 action
+=======
+### `trigger_nuke`
+
+Purpose: submit a one-use nuke target for the active side.
+
+```json
+{
+  "action": "trigger_nuke",
+  "side": "p1",
+  "position": { "x": 8, "y": 6 }
+}
+```
+
+Python behavior:
+
+- Accepted only during `game`, only for the current `battle.active_side`, and only if that side's nuke is available.
+- The target must be in enemy territory.
+- Browser/manual commands set the pending nuke target for the active side.
+- In the live marker path, `ID19` for `p1` and `ID29` for `p2` set the same pending target from camera marker position.
+- The pending target is exposed to the frontend as `battle.pending_nuke` so the browser can render the nuke icon and `3x3` target preview.
+- The nuke resolves when `ID4` confirms the active side's turn. It affects the `3x3` area centered on the pending target, destroys terrain in that area, randomly destroys up to 5 resource cells, bypasses DEF protection, and does not destroy HQs.
+
+## Actions excluded from v1
+>>>>>>> Stashed changes
 
 ### `upgrade_unit`
 
@@ -108,4 +141,28 @@ Step 6 下一階段應改成：
 - Python model 驗證並套用
 - 輸出新 `board_state`
 
+<<<<<<< Updated upstream
 也就是 tracker 不應直接覆寫 authoritative model，而應只提供 intent。
+=======
+The current live battle path does not primarily use browser-sent `end_turn` actions.
+
+- `ID10` and `ID20` open positioning for `p1` or `p2`.
+- The active side's token-marker positions and rotations become that turn's candidate state.
+- `ID19` and `ID29` optionally set a pending nuke target for the active side when the nuke is unlocked and the marker is in enemy territory.
+- `ID4` submits the active side and triggers authoritative attack resolution immediately.
+- If a pending nuke target exists, `ID4` also resolves the nuke after the active side's normal attacks.
+- After resolution, the runtime waits for the opposing side's `ID10` or `ID20`.
+
+In other words, the live marker path is currently marker-driven rather than explicit action-driven for turn submission.
+
+## Setup flow note
+
+Pre-game setup and the live tracker flow currently use a backend-first session state machine:
+
+- `scan`
+- `side_selection` for fallback or debug paths
+- `hq_placement`
+- `game`
+
+During `game`, inactive-side token movement is ignored and surfaced as `inactive_side_token_changed` rather than mutating the authoritative state.
+>>>>>>> Stashed changes

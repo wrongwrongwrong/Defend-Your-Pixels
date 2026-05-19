@@ -1,11 +1,15 @@
 import { BootScene } from "./scenes/BootScene.js";
 import { GameScene } from "./scenes/GameScene.js";
+<<<<<<< Updated upstream:yu_pat_test4/frontend/src/main.js
 import { WSClient }  from "./WSClient.js";
+=======
+import { WSClient, resolveWsUrl } from "/protocol/websocket/browser_client.js";
+>>>>>>> Stashed changes:frontend/src/main.js
 import { initUI }    from "./ui.js";
 import { CANVAS_W, CANVAS_H } from "./constants.js";
 
 // WebSocket — created once, shared between HTML panels (ui.js) and Phaser (GameScene)
-const ws = new WSClient();
+const ws = new WSClient(resolveWsUrl());
 initUI(ws);
 
 const game = new Phaser.Game({

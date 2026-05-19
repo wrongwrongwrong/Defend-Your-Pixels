@@ -1,0 +1,264 @@
+@import url('https://fonts.googleapis.com/css2?family=Rye&family=Barlow:wght@400;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1a1208;
+  --surface: rgba(240,232,208,0.06);
+  --border: rgba(240,232,208,0.08);
+  --text: #c8b898;
+  --text-bright: #f0e8d0;
+  --gold: #d4a84a;
+  --farmer: #c8980a;
+  --farmer-bg: rgba(200,152,10,0.08);
+  --farmer-border: rgba(200,152,10,0.2);
+  --emu: #6a9a30;
+  --emu-bg: rgba(106,154,48,0.08);
+  --emu-border: rgba(106,154,48,0.2);
+  --muted: #5a4a30;
+  --placeholder-bg: #0f0a04;
+  --placeholder-border: #2a1e0e;
+  /* Scale type with viewport so full-screen rows stay readable (download used compact rows) */
+  --fs-xs: clamp(12px, 1.35vmin, 16px);
+  --fs-sm: clamp(14px, 1.55vmin, 19px);
+  --fs-md: clamp(16px, 1.75vmin, 22px);
+  --fs-lg: clamp(18px, 2vmin, 26px);
+  --fs-xl: clamp(22px, 2.4vmin, 32px);
+  --thumb-size: clamp(52px, 5.5vmin, 72px);
+}
+
+html, body {
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Barlow', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* FULL-SCREEN LAYOUT */
+.screen {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* HEADER BAR — thin, stays put */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.topbar-title {
+  font-family: 'Rye', serif;
+  font-size: var(--fs-xl);
+  color: var(--gold);
+}
+
+.topbar-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.topbar-close:hover { opacity: 1; }
+.topbar-close svg { width: 12px; height: 12px; }
+
+/* ROWS CONTAINER — scrolls if needed */
+.rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rows::-webkit-scrollbar { width: 3px; }
+.rows::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+
+/* EACH ROW */
+.row {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 2.4fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* SIDE CARDS — like the game sidebar cards */
+.card {
+  height: 100%;
+  min-height: 0;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card.farmer {
+  background: var(--farmer-bg);
+  border: 1px solid var(--farmer-border);
+}
+
+.card.emu {
+  background: var(--emu-bg);
+  border: 1px solid var(--emu-border);
+}
+
+.card-name {
+  font-family: 'Rye', serif;
+  font-size: var(--fs-lg);
+  color: var(--text-bright);
+  line-height: 1.2;
+}
+
+.card-sub {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.card-thumb {
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  image-rendering: pixelated;
+}
+.card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* CENTER — mechanic + gif */
+.center {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.mechanic {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mechanic-title {
+  font-family: 'Rye', serif;
+  font-size: var(--fs-lg);
+  color: var(--gold);
+}
+
+.mechanic-text {
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.mechanic-text strong {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.mechanic-list {
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  color: var(--text);
+  padding-left: 16px;
+}
+.mechanic-list li { margin-bottom: 2px; }
+.mechanic-list strong { color: var(--text-bright); font-weight: 700; }
+
+/* UPGRADE PILLS */
+.pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 8px;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.pill-arrow {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.upgrade-note {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+/* GIF PLACEHOLDER */
+.gif {
+  flex: 1.2;
+  min-width: 0;
+  background: var(--placeholder-bg);
+  border: 1px dashed var(--placeholder-border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.gif-label {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* NO GIF VARIANT */
+.center.no-gif {
+  /* mechanic takes full width */
+}
+.center.no-gif .mechanic { flex: 1; }
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .center { flex-direction: column; }
+  .card { flex-direction: row; align-items: center; gap: 10px; }
+  .rows { padding: 10px; }
+}

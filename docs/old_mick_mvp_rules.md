@@ -105,8 +105,8 @@ Each side has one DEF token that acts as a defensive anchor.
 - In practice, a tile that normally takes 1 hit now takes 2 hits.
 - No stacking.
 - No special exceptions.
-- Current backend implementation applies this as a passive aura. Protected tiles gain one
-  guard layer automatically while they remain inside the defender zone.
+- Current backend implementation treats the guard layer as per-cell protection tied to the current DEF anchor. The first hit against a protected cell consumes that cell's DEF layer. That cell is no longer protected while the DEF token remains at the same anchor.
+- Moving the DEF token changes the anchor and resets the consumed protection cells for that side.
 
 For the first MVP pass, DEF protection only needs to apply to friendly destructible
 resource tiles. HQ protection can be added later if desired, but is not required for
@@ -126,7 +126,46 @@ Rules:
 - Default HP = 1
 - If protected by DEF, HP = 2
 - They can be destroyed by ATK line attacks
+<<<<<<< Updated upstream
 - They do not need to generate resources yet
+=======
+- Each cell is worth 1 unit.
+- The scoreboard counts down from 24 remaining cells.
+- There are no hidden bonus-value cells.
+
+Reserved cells:
+
+- `A1`, `A2`, `B1`, `K12`, `L11`, and `L12` stay empty.
+- Those cells cannot hold HQs, terrain, or destructible resource cells.
+
+DEF progression:
+
+- DEF starts with a `3x3` protection zone.
+- When a side has 12 or fewer resource cells remaining, that side's DEF zone expands to `5x5`.
+- The frontend draws the DEF area cell-by-cell. Consumed protection cells appear as holes with a broken-protection marker, while destroyed cells use the normal destroyed-cell treatment.
+
+ATK progression:
+
+- ATK A and ATK B track destroyed resource cells separately.
+- Destroying 4 resource cells with one ATK token upgrades that token to ATK tier 1.
+- Destroying 8 resource cells with one ATK token upgrades that token to ATK tier 2.
+- ATK tier 1 randomly destroys 1 extra enemy resource cell in the `3x3` area around the primary target.
+- ATK tier 2 randomly destroys up to 2 extra enemy resource cells in the `3x3` area around the primary target.
+- Extra destroyed cells from this splash count toward that same ATK token's progression.
+- Terrain, HQs, and nuke-destroyed resources do not count toward ATK progression.
+
+Nuke progression:
+
+- When a side has 8 or fewer resource cells remaining, that side's one-use nuke unlocks.
+- P1 triggers nuke with marker `ID19`; P2 triggers nuke with marker `ID29`.
+- The nuke marker only works during that side's active turn and must be placed in enemy territory.
+- A valid marker creates a pending nuke target that is previewed on the frontend with the nuke icon and `3x3` area.
+- The pending nuke resolves when `ID4` confirms the active side's turn.
+- Nuke affects a `3x3` area centered on the marker.
+- All terrain in the area is destroyed.
+- Up to 5 resource cells in the area are randomly destroyed.
+- HQs are not destroyed by nuke.
+>>>>>>> Stashed changes
 
 ## MVP interaction assumptions
 

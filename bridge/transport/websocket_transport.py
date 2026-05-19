@@ -10,6 +10,7 @@ import asyncio
 import json
 from typing import Any
 
+from websockets.exceptions import ConnectionClosed
 from websockets.server import serve
 
 # Default dev host/port (React connects to ws://localhost:8765 by convention).
@@ -36,6 +37,8 @@ async def ws_handler(websocket: Any) -> None:
     addr = websocket.remote_address
     print(f"[WS] Client connected: {addr}  (total: {len(connected_clients)})")
 
+    close_code: int | None = None
+    close_reason: str | None = None
     try:
         # Read messages until the client disconnects.
         async for message in websocket:
@@ -46,11 +49,24 @@ async def ws_handler(websocket: Any) -> None:
                 continue
 
             # Push into the queue; game loop will validate and apply via dispatcher.
+<<<<<<< Updated upstream:bridge/transport/websocket_transport.py
             await incoming_actions.put(action)
+=======
+            await incoming_actions.put(command)
+    except ConnectionClosed as exc:
+        close_code = exc.code
+        close_reason = exc.reason
+>>>>>>> Stashed changes:backend/bridge/transport/websocket_transport.py
     finally:
         # Ensure we always remove the client, even if handler errors.
         connected_clients.discard(websocket)
-        print(f"[WS] Client disconnected: {addr}  (total: {len(connected_clients)})")
+        if close_code is not None:
+            print(
+                f"[WS] Client disconnected: {addr} code={close_code} "
+                f"reason={close_reason!r}  (total: {len(connected_clients)})"
+            )
+        else:
+            print(f"[WS] Client disconnected: {addr}  (total: {len(connected_clients)})")
 
 
 def _extract_action(message: str) -> ActionPayload | None:

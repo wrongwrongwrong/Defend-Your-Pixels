@@ -62,8 +62,75 @@ Note: the broader Old Mick frontend/backend contract is now documented in
 
 與 [`createInitialGameState`](../react_frontend/src/game/turns.js) 對齊，精簡列出：
 
+<<<<<<< Updated upstream
 | UI 欄位 | 說明 |
 |---------|------|
+=======
+- `phase`
+- `setup`
+- `battle`
+- `errors`
+
+`setup` carries safe setup progress only. Confirmed HQ coordinates must not be exposed during normal play.
+
+Example:
+
+```json
+{
+  "phase": "hq_placement",
+  "setup": {
+    "board_scan_ready": true,
+    "side_selection_complete": true,
+    "first_player_side": "old_mick",
+    "active_setup_side": "p2",
+    "hq": {
+      "p1": { "has_candidate": true, "confirmed": true },
+      "p2": { "has_candidate": false, "confirmed": false }
+    },
+    "status_code": "waiting_for_hq_confirmation",
+    "status_message": "The Mob must choose and confirm an HQ location."
+  },
+  "errors": []
+}
+```
+
+- `phase`: the live path primarily uses `scan`, `hq_placement`, and `game`. `side_selection` remains available for fallback or debug paths.
+- `errors[]`: stable `{ "code", "message" }` objects for recoverable validation or tracker issues.
+- `setup.hq.*`: exposes candidate and confirmed flags only, never hidden HQ coordinates.
+- `battle.active_side`: the side currently allowed to position and submit tokens. `null` means the runtime is waiting for the next `ID10` or `ID20`.
+- `battle.waiting_for_side`: if present, indicates which side's turn marker must be scanned next.
+- `battle.pending_nuke`: `null` or `{ "side", "col", "row", "marker_id" }` while the active side has a valid nuke marker target waiting for `ID4` confirmation.
+- `help_visible`: `true` only while `ID5` is currently visible; the frontend uses it to show the help overlay.
+- `game.hq_revealed`: the only public path for exposing an HQ coordinate after it has been destroyed.
+- `game.def_anchor_cells`: current DEF anchor cell per side, used to detect whether consumed DEF cells still belong to the current DEF position.
+- `game.def_consumed_cells`: per-side cells whose current DEF protection layer has already been consumed. These cells remain alive unless also present in `game.destroyed`.
+
+## Current frontend usage
+
+`frontend/index.html` currently consumes these fields as follows:
+
+- When `phase !== "game"`, it shows setup state through the top bar, bottom warning bar, board overlays, and side panels.
+- During `side_selection` and `hq_placement`, it overlays territory and fence guides on the board.
+- It shows `setup.status_message` and safe HQ progress directly to players.
+- It uses `setup.hq.*` only for `has_candidate` and `confirmed` state, never for exact HQ coordinates.
+- `side_selection` remains a fallback or debug path. The live marker path chooses the active setup side through `ID10` and `ID20`.
+- During `hq_placement`, `ID11` and `ID21` provide the live HQ candidate, and `ID4` confirms it.
+- `ID5` drives a marker-presence help overlay without changing authoritative game state.
+- The frontend may highlight the active setup side's current HQ candidate cell, but the side panel does not show exact coordinates and confirmed HQs are hidden immediately after confirmation.
+- During `game`, the battle flow is primarily described by `battle.*`: `ID10` and `ID20` open positioning for one side, and `ID4` submits and resolves that side's attack.
+- During `game`, `ID19` and `ID29` set a pending nuke target for the active side when available; the frontend renders the nuke icon and `3x3` target preview from `battle.pending_nuke`.
+- During `game`, the frontend renders DEF zones from token positions and DEF tier, skips cells listed in `game.def_consumed_cells`, and marks consumed cells as broken protection rather than destroyed resources.
+- `errors[]` are rendered through the bottom warning bar and related board-side UI cues.
+- `inactive_side_token_changed` is treated as a recoverable warning that explains the opponent movement was ignored.
+- `hq_setup_complete` is rendered as a success-style alert instead of a warning.
+
+## Legacy UI reference
+
+The following shape is an older UI-facing reference that may still be useful when reading older frontend code:
+
+| UI field | Meaning |
+|----------|---------|
+>>>>>>> Stashed changes
 | `turn` | number |
 | `activePlayer` | `1` \| `2` |
 | `gameOver` | boolean |

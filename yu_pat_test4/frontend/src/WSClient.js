@@ -16,20 +16,38 @@
  * - `new_map` / `tier` stay as top-level transport commands
  * - everything else is wrapped in the FW2 action envelope:
  *   `{type:"action", data:{action:type, ...payload}}`
+ *
+ * URL: `ws://<hostname>:<port>` where port defaults to 8765 and can be set
+ * via `?ws_port=` to match `run_live_tracker --ws-port`.
  */
+export function resolveWsUrl(defaultPort = "8765") {
+  const params = new URLSearchParams(location.search);
+  const port = params.get("ws_port") || defaultPort;
+  const host = location.hostname || "localhost";
+  return `ws://${host}:${port}`;
+}
+
 export class WSClient {
-  constructor(url = "ws://localhost:8765") {
+  constructor(url = resolveWsUrl()) {
     this.url = url;
     this._listeners = {};
     this._ws = null;
     this._reconnectDelay = 1500;
+    this._reconnectTimer = null;
+    this._outbox = [];
     this._connect();
   }
 
   _connect() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     this._ws = new WebSocket(this.url);
     this._ws.onopen = () => {
-      console.log("[WS] Connected");
+      console.log(`[WS] Connected to ${this.url}`);
+      this._flushOutbox();
       this._emit("connected", {});
     };
     this._ws.onmessage = (e) => {
@@ -42,10 +60,11 @@ export class WSClient {
         console.warn("[WS] Bad message:", err);
       }
     };
-    this._ws.onclose = () => {
-      console.warn(`[WS] Disconnected — retry in ${this._reconnectDelay}ms`);
-      this._emit("disconnected", {});
-      setTimeout(() => this._connect(), this._reconnectDelay);
+    this._ws.onclose = (ev) => {
+      const detail = `code=${ev.code} reason=${ev.reason || "(none)"} wasClean=${ev.wasClean}`;
+      console.warn(`[WS] Disconnected (${detail}) — retry in ${this._reconnectDelay}ms`);
+      this._emit("disconnected", { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
+      this._reconnectTimer = setTimeout(() => this._connect(), this._reconnectDelay);
     };
     this._ws.onerror = () => this._ws?.close();
   }
@@ -56,13 +75,27 @@ export class WSClient {
       this._listeners[event] = this._listeners[event].filter(f => f !== fn);
   }
   send(type, payload = {}) {
+<<<<<<< Updated upstream:yu_pat_test4/frontend/src/WSClient.js
     if (this._ws?.readyState !== WebSocket.OPEN) return;
     // Top-level transport commands (not wrapped in action envelope)
     const isTopLevel = type === "new_map" || type === "tier" || type === "tutorial_dismiss" || type === "demo_next";
+=======
+    const isTopLevel = type === "new_map" || type === "tier" || type === "demo_next";
+>>>>>>> Stashed changes:protocol/websocket/browser_client.js
     const message = isTopLevel
       ? { type, ...payload }
       : { type: "action", data: { action: type, ...payload } };
-    this._ws.send(JSON.stringify(message));
+    const json = JSON.stringify(message);
+    if (this._ws?.readyState === WebSocket.OPEN) {
+      this._ws.send(json);
+      return;
+    }
+    this._outbox.push(json);
+    if (this._outbox.length > 32) this._outbox.shift();
+  }
+  _flushOutbox() {
+    if (this._ws?.readyState !== WebSocket.OPEN) return;
+    while (this._outbox.length) this._ws.send(this._outbox.shift());
   }
   _emit(event, data) {
     (this._listeners[event] || []).forEach(fn => fn(data));
