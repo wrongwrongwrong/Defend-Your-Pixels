@@ -295,10 +295,24 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   background: #c8a870;    /* sand/tan — matches screenshot */
   border-top: 3px solid #8a6830;
   padding: 0 24px;
   transition: background 0.4s, border-top-color 0.4s;
+}
+
+.notif-icon {
+  display: none;
+  flex: 0 0 auto;
+  font-family: 'Press Start 2P', system-ui;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #ff5040;
+}
+
+.notif-bar.notif-warning .notif-icon {
+  display: inline-block;
 }
 
 /* Turn colour variants */
