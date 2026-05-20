@@ -19,88 +19,123 @@ STEPS = [
     {
         "id": "scan_board_corners",
         "title": "Scan the Board Corners",
-        "text": "Show all four corner markers to the camera.\nWhen the board outline appears, continue.",
+        "text": "Scan all four corner markers.\nWhen the board outline appears, continue.",
         "condition": "dismiss",
         "tutorial_gif": "assets/gif/scan_board_corners.gif",
     },
     {
         "id": "explain_tokens",
         "title": "Your Units",
-        "text": "Two attackers: Keith A and B.\nOne defender: Old Mick.\nOne HQ — keep it hidden.",
+        "text": "Two attackers: Rifleman A and B.\nOne defender: Old Mick.\nOne HQ — keep it hidden.",
         "condition": "dismiss",
     },
     {
         "id": "explain_sides_alternate",
         "title": "Who Owns Which Side?",
-        "text": "A diagonal fence splits the board.\nOld Mick: bottom-left (orange).\nThe Mob: top-right (green).\nStay on your own side.",
+        "text": "A diagonal fence splits the board.\nOld Mick: bottom-left (orange).\nThe Mob: top-right (green).",
         "condition": "dismiss",
-        "highlight_alternate_sides": True,
+        "highlight_side": "p1",
     },
     {
-        "id": "explain_hq",
-        "title": "Headquarters (HQ)",
-        "text": "Each player hides one HQ.\nLose if yours is destroyed.\nPlace it secretly before battle.",
+        "id": "explain_win",
+        "title": "How to Win",
+        "text": "Destroy the enemy HQ, or wipe out their resources.\nProtect your own HQ.",
         "condition": "dismiss",
     },
     {
-        "id": "place_hq_p1",
-        "title": "Place Old Mick's HQ",
-        "text": "Place hq_mick on cell B3.\nDo not reveal it to your opponent.",
-        "highlight": {"col": 1, "row": 2},
+        "id": "explain_turn_markers",
+        "title": "Turn Control",
+        "text": "Scan turn markers to set whose turn it is.\nOld Mick marker → your turn.\nMob marker → opponent's turn.",
         "condition": "dismiss",
-        "tutorial_gif": "assets/gif/Tutorial_HQsetup_Placeholder.gif",
+        "tutorial_gif": "assets/gif/End_turn_explain-ezgif.com-video-to-gif-converter.gif",
     },
     {
-        "id": "explain_turn_marker",
-        "title": "The Turn Marker",
-        "text": "Turns follow scanned markers:\n#10 → Old Mick\n#20 → The Mob\n#4 → end your turn",
+        "id": "explain_confirm_marker",
+        "title": "Confirm Marker",
+        "text": "Scan the confirm marker to lock choices.\nUse it to finish HQ setup or end your turn.",
         "condition": "dismiss",
         "tutorial_gif": "assets/gif/turn_marker.gif",
     },
     {
         "id": "set_turn_p1",
-        "title": "Set Turn to Old Mick",
-        "text": "Scan marker #10 now.\nThe camera should detect Old Mick's turn.",
+        "title": "Set Old Mick's Turn",
+        "text": "Set the turn marker to Old Mick's side.",
+        "condition": "turn_change",
+        "wait_turn": 1,
+        "tutorial_gif": "assets/gif/turn_marker.gif",
+    },
+    {
+        "id": "explain_hq",
+        "title": "Headquarters (HQ)",
+        "text": "Each player has one HQ.\nLose if yours is destroyed.\nPlace it secretly before battle.",
+        "condition": "dismiss",
+    },
+    {
+        "id": "place_hq_p1",
+        "title": "Place Old Mick's HQ",
+        "text": "Place your HQ on cell B10.\nIn real game, when one side is placing, the other must look away.",
+        "highlight": {"col": 1, "row": 9},
+        "condition": "dismiss",
+        "tutorial_layout": "with_pic",
+        "tutorial_image": "assets/images/hq_mick.png",
+    },
+    {
+        "id": "hq_confirm_scan",
+        "title": "Confirm HQ Placement",
+        "text": "Slide to the confirm marker.\nScan confirm to finish HQ placement.",
+        "highlight": {"col": 1, "row": 9},
+        "condition": "confirm_present",
+        "tutorial_gif": "assets/gif/turn_marker.gif",
+    },
+    {
+        "id": "notify_tutorial_skip",
+        "title": "Tutorial Pace",
+        "text": "Token placement and Mob's turn are skipped in this tutorial.",
+        "condition": "dismiss",
+        "runner_effect": "skip_p2_setup",
+    },
+    {
+        "id": "resume_p1_turn",
+        "title": "Old Mick's Turn Again",
+        "text": "Slide back to Old Mick's turn marker.",
         "condition": "turn_change",
         "wait_turn": 1,
         "tutorial_gif": "assets/gif/turn_marker.gif",
     },
     {
         "id": "place_atk_a",
-        "title": "Place Your First Attacker",
-        "text": "Place Keith A on cell D4.\nMove the marker onto the board.",
+        "title": "Place Rifleman A",
+        "text": "Place Rifleman A on cell D4.\nMove the marker onto the board.",
         "highlight": {"col": 3, "row": 3},
         "condition": "dismiss",
         "tutorial_gif": "assets/gif/defense_placement_rotated.gif",
     },
     {
-        "id": "aim_atk_a",
-        "title": "Aim Your Attack",
-        "text": "Rotate Keith A to face EAST.\nThe ray fires in that direction.",
-        "highlight": {"col": 3, "row": 3},
+        "id": "place_atk_b",
+        "title": "Place Rifleman B",
+        "text": "Place Rifleman B on cell C6.\nMove the marker onto the board.",
+        "highlight": {"col": 2, "row": 5},
         "condition": "dismiss",
-        "tutorial_gif": "assets/gif/aim_atk_a.gif",
+        "tutorial_gif": "assets/gif/defense_placement_rotated.gif",
+    },
+    {
+        "id": "aim_atk_a",
+        "title": "Aim Rifleman A",
+        "text": "Place Rifleman A on cell D5.\nPoint the angle toward south.",
+        "highlight": {"col": 3, "row": 4},
+        "condition": {
+            "token": "p1.atk_a",
+            "col": 3,
+            "row": 4,
+            "direction": "S",
+        },
+        "tutorial_gif": "assets/gif/attacker_rotation_rotate.gif",
     },
     {
         "id": "explain_ray",
         "title": "Attack Rays",
         "text": "The green line is your attack ray.\nIt stops at the first enemy resource.",
         "condition": "dismiss",
-    },
-    {
-        "id": "place_atk_b",
-        "title": "Place Second Attacker",
-        "text": "Place Keith B on cell C6.",
-        "highlight": {"col": 2, "row": 5},
-        "condition": "dismiss",
-    },
-    {
-        "id": "aim_atk_b",
-        "title": "Aim Second Attacker",
-        "text": "Rotate Keith B to face south-east.",
-        "highlight": {"col": 2, "row": 5},
-        "condition": "dismiss",
-        "tutorial_gif": "assets/gif/attacker_rotation_rotate.gif",
     },
     {
         "id": "place_def",
@@ -119,40 +154,40 @@ STEPS = [
     {
         "id": "end_turn",
         "title": "End Your Turn",
-        "text": "Scan marker #4 to end your turn.",
+        "text": "Scan the confirm marker to end your turn.",
         "condition": "confirm_present",
         "tutorial_gif": "assets/gif/turn_marker.gif",
     },
     {
-        "id": "wait_opponent",
-        "title": "Opponent's Turn",
-        "text": "Scan marker #20 for The Mob's turn.",
-        "condition": "turn_change",
-        "wait_turn": 2,
-        "tutorial_gif": "assets/gif/turn_marker.gif",
-    },
-    {
-        "id": "explain_tiers",
-        "title": "Tier System",
-        "text": "Destroy resources to earn tiers.\n6, 14, 22, 32 points unlock upgrades.\nTier 1: splash. Tier 2: bigger defense.\nTier 4 unlocks the Nuke.",
+        "id": "explain_upgrade_sidebar",
+        "title": "Upgrades & Side Panel",
+        "text": "Destroy enemy resources to earn tiers.\nTier two upgrades attackers and defense.\nWatch the left sidebar fill in.",
         "condition": "dismiss",
+        "highlight_sidebar": "left",
+        "runner_effect": "p1_tier2",
     },
     {
         "id": "explain_nuke",
         "title": "The Nuke",
-        "text": "At 8 or fewer enemy cells, Nuke unlocks.\nScan #19 (Mick) or #29 (Mob) on an enemy cell.\nScan #4 to launch a 3×3 blast.\nHQs are never damaged.",
+        "text": "At eight or fewer of your cells left, Nuke unlocks.\nPlace your nuke marker on enemy territory.\nScan confirm to launch a three-by-three blast.",
         "condition": "dismiss",
+        "tutorial_layout": "with_pic",
+        "tutorial_images": [
+            "assets/images/nuke-mick-keith.png",
+            "assets/images/nuke-emu-ancestors.png",
+        ],
+        "runner_effect": "p1_nuke_unlock",
     },
     {
-        "id": "explain_nuke_confirm",
-        "title": "Launching the Nuke",
-        "text": "With the nuke marker on target, the cell locks.\nScan #4 to fire — same as ending your turn.",
-        "condition": "dismiss",
+        "id": "explain_nuke_launch",
+        "title": "Launch the Nuke",
+        "text": "With the nuke marker on target, scan confirm to fire.",
+        "condition": "confirm_present",
     },
     {
-        "id": "explain_win",
-        "title": "How to Win",
-        "text": "Destroy the enemy HQ, or reach 40 attrition.\nProtect your own HQ.",
+        "id": "explain_help_guide",
+        "title": "Help Guide Marker",
+        "text": "During a game, scan the help guide marker anytime.\nIt reopens the rules while the marker stays visible.",
         "condition": "dismiss",
     },
     {
@@ -163,6 +198,17 @@ STEPS = [
         "final": True,
     },
 ]
+
+
+def _resolve_layout(step: dict) -> str:
+    layout = step.get("tutorial_layout")
+    if layout in {"text", "gif", "with_pic"}:
+        return layout
+    if step.get("tutorial_image") or step.get("tutorial_images"):
+        return "with_pic"
+    if step.get("tutorial_gif"):
+        return "gif"
+    return "text"
 
 
 @dataclass
@@ -178,7 +224,9 @@ class TutorialController:
             return
         step = STEPS[self.step_index]
         cond = step.get("condition")
-        if cond == "dismiss" or cond in ("confirm_present", "turn_change"):
+        if cond == "dismiss":
+            self._advance()
+        elif cond == "turn_change":
             self._advance()
 
     def undo(self) -> None:
@@ -278,9 +326,17 @@ class TutorialController:
             "text": step.get("text", ""),
             "highlight": step.get("highlight"),
             "highlight_alternate_sides": bool(step.get("highlight_alternate_sides")),
+            "highlight_side": step.get("highlight_side"),
+            "highlight_sidebar": step.get("highlight_sidebar"),
+            "tutorial_layout": _resolve_layout(step),
             "tutorial_gif": step.get("tutorial_gif"),
+            "tutorial_image": step.get("tutorial_image"),
+            "tutorial_images": step.get("tutorial_images"),
+            "runner_effect": step.get("runner_effect"),
             "needs_dismiss": cond == "dismiss",
-            "allow_skip": cond in ("confirm_present", "turn_change"),
+            "needs_confirm": cond == "confirm_present",
+            "needs_token": isinstance(cond, dict),
+            "allow_skip": cond == "turn_change",
             "can_undo": self.step_index > 0 and not self.finished,
             "completed": self.completed,
         }

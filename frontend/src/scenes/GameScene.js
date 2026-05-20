@@ -291,8 +291,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   _buildTutorialOverlay() {
-    const tutPad   = 12;
-    const maxPanelW = CANVAS_W - tutPad * 2;
+    const tutPad    = 8;
+    const maxPanelW = CANVAS_W - tutPad;
+    const headerY   = tutPad;
 
     this.tutorialContainer = this.add
       .container(CANVAS_W / 2, BOARD_OFF_Y + 100)
@@ -300,35 +301,48 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
 
     this._tutLayoutTextOnly = {
-      panelW: maxPanelW, panelH: 168, pad: tutPad,
-      titleSize: 26, bodySize: 18, stepSize: 14, hintSize: 12,
+      panelW: maxPanelW, panelH: 252, pad: tutPad,
+      titleSize: 52, bodySize: 36, stepSize: 28, hintSize: 24,
+      headerY, bodyY: headerY + 62, hintBottomPad: 28, bodyLineSpacing: 12,
       gifW: 0, gifH: 0,
     };
     this._tutLayoutWithGif = {
-      panelW: maxPanelW, panelH: 186, pad: tutPad,
-      gifW: 188, gifH: 140,
+      panelW: maxPanelW, panelH: 220, panelHBase: 220, pad: tutPad,
+      gifW: 188, gifH: 132,
       gifInsetRight: 0,
       gifDomNudgeX: 14,
-      gifDomNudgeY: 28,
-      textGifGap: 20,
-      titleSize: 26, bodySize: 18, stepSize: 14, hintSize: 12,
+      gifDomNudgeY: 20,
+      textGifGap: 16,
+      titleSize: 44, bodySize: 32, stepSize: 24, hintSize: 18,
+      headerY, bodyY: headerY + 54, hintBottomPad: 24, bodyLineSpacing: 12,
+    };
+    this._tutLayoutWithPic = {
+      panelW: maxPanelW, panelH: 236, pad: tutPad,
+      picW: 200, picH: 132,
+      picInsetRight: 0,
+      picDomNudgeX: 14,
+      picDomNudgeY: 20,
+      textPicGap: 16,
+      titleSize: 44, bodySize: 32, stepSize: 24, hintSize: 18,
+      headerY, bodyY: headerY + 54, hintBottomPad: 24, bodyLineSpacing: 12,
     };
 
     const L = this._tutLayoutTextOnly;
     this._tutBg = this.add.rectangle(0, 0, L.panelW, L.panelH, 0x1a1008, 0.95)
       .setStrokeStyle(2, 0xffd060);
 
-    this._tutStepTxt = this.add.text(-L.panelW / 2 + L.pad, -L.panelH / 2 + L.pad, "", {
+    this._tutStepTxt = this.add.text(L.panelW / 2 - L.pad, -L.panelH / 2 + L.pad, "", {
       fontFamily: FONT_MONO, fontSize: `${L.stepSize}px`, color: "#8a7060",
-    }).setOrigin(0, 0);
+    }).setOrigin(1, 0);
 
-    this._tutTitleTxt = this.add.text(0, -L.panelH / 2 + 36, "", {
+    this._tutTitleTxt = this.add.text(0, -L.panelH / 2 + L.headerY, "", {
       fontFamily: FONT_TITLE, fontSize: `${L.titleSize}px`, fontStyle: "bold", color: "#ffd060",
     }).setOrigin(0.5, 0);
 
     this._tutTextTxt = this.add.text(0, -L.panelH / 2 + 78, "", {
       fontFamily: FONT_LABEL, fontSize: `${L.bodySize}px`, color: "#d0c0a0",
-      align: "center", wordWrap: { width: L.panelW - L.pad * 2 }, lineSpacing: 6,
+      align: "center", wordWrap: { width: L.panelW - L.pad * 2 },
+      lineSpacing: L.bodyLineSpacing ?? 12,
     }).setOrigin(0.5, 0);
 
     this._tutHintTxt = this.add.text(0, L.panelH / 2 - 22, "", {
@@ -346,6 +360,16 @@ export class GameScene extends Phaser.Scene {
     this._tutGifDom.setOrigin(0.5, 0.5).setDepth(51).setVisible(false);
     this._tutGifLayout = null;
     this._tutGifWorld  = new Phaser.Math.Vector2();
+
+    const picHtml = [
+      '<div class="tut-pic-wrap" style="display:flex;gap:8px;align-items:center;justify-content:center;',
+      'width:200px;height:148px;overflow:hidden;border:2px solid #5a4020;border-radius:8px;background:#0d0804;padding:6px;box-sizing:border-box;">',
+      "</div>",
+    ].join("");
+    this._tutPicDom = this.add.dom(0, 0).createFromHTML(picHtml);
+    this._tutPicDom.setOrigin(0.5, 0.5).setDepth(51).setVisible(false);
+    this._tutPicLayout = null;
+    this._tutPicWorld  = new Phaser.Math.Vector2();
 
     this.tutorialContainer.add([
       this._tutBg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt,
@@ -376,52 +400,95 @@ export class GameScene extends Phaser.Scene {
   }
 
   _applyTutorialLayout(mode) {
-    const L = mode === "gif" ? this._tutLayoutWithGif : this._tutLayoutTextOnly;
-    const { panelW, panelH, pad, gifW, gifH } = L;
-    const hasGif = mode === "gif";
+    const L = mode === "gif"
+      ? this._tutLayoutWithGif
+      : mode === "pic"
+        ? this._tutLayoutWithPic
+        : this._tutLayoutTextOnly;
+    const { panelW, panelH, pad } = L;
+    const mediaW = mode === "pic" ? (L.picW ?? 0) : (L.gifW ?? 0);
+    const mediaH = mode === "pic" ? (L.picH ?? 0) : (L.gifH ?? 0);
+    const hasMedia = mode === "gif" || mode === "pic";
 
     this._tutBg.setSize(panelW, panelH);
 
-    // Keep the whole panel inside the Phaser canvas (over the top of the board).
     const centerY = BOARD_OFF_Y + 20 + panelH / 2;
     this.tutorialContainer.setPosition(CANVAS_W / 2, centerY);
 
-    const gifInsetRight = L.gifInsetRight ?? 0;
-    const textGifGap    = L.textGifGap ?? 16;
+    const mediaInsetRight = L.gifInsetRight ?? L.picInsetRight ?? 0;
+    const textMediaGap    = L.textGifGap ?? L.textPicGap ?? 16;
     const leftMinX = -panelW / 2 + pad;
-    const leftMaxX = hasGif
-      ? panelW / 2 - gifW - pad - gifInsetRight - textGifGap
+    const leftMaxX = hasMedia
+      ? panelW / 2 - mediaW - pad - mediaInsetRight - textMediaGap
       : panelW / 2 - pad;
     const leftCx   = (leftMinX + leftMaxX) / 2;
     const textW    = Math.max(120, leftMaxX - leftMinX);
 
-    this._tutStepTxt.setPosition(-panelW / 2 + pad, -panelH / 2 + pad);
-    this._tutTitleTxt.setPosition(leftCx, -panelH / 2 + 30);
-    this._tutTextTxt
-      .setPosition(leftCx, -panelH / 2 + 62)
-      .setWordWrapWidth(textW, true);
-    this._tutHintTxt.setPosition(leftCx, panelH / 2 - 18);
+    const headerY = L.headerY ?? L.titleY ?? pad;
+    const bodyY   = L.bodyY ?? headerY + 56;
+    const hintBottomPad = L.hintBottomPad ?? 18;
 
-    if (hasGif) {
-      // Bottom-align GIF inside panel (below step counter row).
-      const gifTop = panelH - pad - gifH;
+    this._tutStepTxt
+      .setPosition(panelW / 2 - pad, -panelH / 2 + headerY)
+      .setOrigin(1, 0)
+      .setFontSize(L.stepSize);
+    this._tutTitleTxt
+      .setPosition(leftMinX, -panelH / 2 + headerY)
+      .setOrigin(0, 0)
+      .setFontSize(L.titleSize);
+    this._tutTextTxt
+      .setPosition(leftCx, -panelH / 2 + bodyY)
+      .setFontSize(L.bodySize)
+      .setWordWrapWidth(textW, true)
+      .setStyle({ lineSpacing: L.bodyLineSpacing ?? 12 });
+    this._tutHintTxt
+      .setPosition(leftCx, panelH / 2 - hintBottomPad)
+      .setFontSize(L.hintSize);
+
+    if (mode === "gif") {
+      const gifTop = panelH - pad - mediaH;
       this._tutGifLayout = {
-        x: panelW / 2 - gifInsetRight - gifW,
+        x: panelW / 2 - mediaInsetRight - mediaW,
         y: -panelH / 2 + gifTop,
-        w: gifW,
-        h: gifH,
+        w: mediaW,
+        h: mediaH,
         domNudgeX: L.gifDomNudgeX ?? 0,
         domNudgeY: L.gifDomNudgeY ?? 0,
       };
       const wrap = this._tutGifDom.node?.querySelector(".tut-gif-wrap");
       if (wrap) {
-        wrap.style.width  = `${gifW}px`;
-        wrap.style.height = `${gifH}px`;
+        wrap.style.width  = `${mediaW}px`;
+        wrap.style.height = `${mediaH}px`;
       }
+      this._tutPicLayout = null;
+      this._tutPicDom?.setVisible(false);
       this._syncTutorialGifDomPosition();
     } else {
       this._tutGifLayout = null;
-      this._tutGifDom.setVisible(false);
+      this._tutGifDom?.setVisible(false);
+    }
+
+    if (mode === "pic") {
+      const picTop = panelH - pad - mediaH;
+      this._tutPicLayout = {
+        x: panelW / 2 - mediaInsetRight - mediaW,
+        y: -panelH / 2 + picTop,
+        w: mediaW,
+        h: mediaH,
+        domNudgeX: L.picDomNudgeX ?? 0,
+        domNudgeY: L.picDomNudgeY ?? 0,
+      };
+      const wrap = this._tutPicDom.node?.querySelector(".tut-pic-wrap");
+      if (wrap) {
+        wrap.style.width  = `${mediaW}px`;
+        wrap.style.height = `${mediaH}px`;
+      }
+      this._tutGifLayout = null;
+      this._tutGifDom?.setVisible(false);
+      this._syncTutorialPicDomPosition();
+    } else if (mode !== "gif") {
+      this._tutPicLayout = null;
+      this._tutPicDom?.setVisible(false);
     }
 
     if (this._tutHitArea) this._tutHitArea.setSize(panelW, panelH);
@@ -452,18 +519,50 @@ export class GameScene extends Phaser.Scene {
     img.dataset.tutSrc = url;
   }
 
+  _syncTutorialPicDomPosition() {
+    const lay = this._tutPicLayout;
+    if (!lay || !this._tutPicDom || !this.tutorialContainer.visible) return;
+
+    this._tutPicDom.setOrigin(0, 0);
+    const mat = this.tutorialContainer.getWorldTransformMatrix();
+    mat.transformPoint(lay.x, lay.y, this._tutPicWorld);
+    const nudgeX = lay.domNudgeX ?? 0;
+    const nudgeY = lay.domNudgeY ?? 0;
+    this._tutPicDom.setPosition(this._tutPicWorld.x + nudgeX, this._tutPicWorld.y + nudgeY);
+    if (typeof this._tutPicDom.setSize === "function") {
+      this._tutPicDom.setSize(lay.w, lay.h);
+    }
+  }
+
+  _setTutorialPicSrcs(urls) {
+    const wrap = this._tutPicDom?.node?.querySelector(".tut-pic-wrap");
+    if (!wrap || !urls?.length) return;
+    const key = urls.join("|");
+    if (wrap.dataset.tutSrc === key) return;
+    wrap.dataset.tutSrc = key;
+    wrap.innerHTML = urls.map((url) => (
+      `<img class="tut-pic-img" src="${url}" alt="" `
+      + 'style="flex:1;min-width:0;height:100%;object-fit:contain;" />'
+    )).join("");
+  }
+
   _drawTutorialAlternateSides() {
+    this._drawTutorialSideCells("p1");
+    this._drawTutorialSideCells("p2");
+  }
+
+  /** Pulse-highlight all cells on one side (e.g. Mob / Emu territory for explain_win). */
+  _drawTutorialSideCells(side) {
     const cw = GRID_DRAW_W / GRID_SIZE;
     const ch = GRID_DRAW_H / GRID_SIZE;
     const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
+    const color = side === "p1" ? 0xe8a030 : 0x60e8a0;
 
     for (let col = 0; col < GRID_SIZE; col++) {
       for (let row = 0; row < GRID_SIZE; row++) {
-        const side = sideOfTutorialCell(col, row);
-        if (!side) continue;
+        if (sideOfTutorialCell(col, row) !== side) continue;
         const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
         const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
-        const color = side === "p1" ? 0xe8a030 : 0x60e8a0;
         const alpha = 0.08 + 0.10 * pulse;
         this.tutHighlightGfx.fillStyle(color, alpha);
         this.tutHighlightGfx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
@@ -491,6 +590,9 @@ export class GameScene extends Phaser.Scene {
     const parts = [];
     if (tut.needs_dismiss || tut.allow_skip) parts.push("SPACE or click to continue");
     if (tut.allow_skip && !tut.needs_dismiss) parts.push("SPACE to skip");
+    if (tut.needs_confirm) parts.push("Scan the confirm marker to continue");
+    else if (tut.needs_token) parts.push("Place and aim the token as shown");
+    else if (tut.allow_skip && !tut.needs_dismiss) parts.push("Scan the correct turn marker to continue");
     if (tut.can_undo) parts.push("W to undo");
     if (parts.length) {
       this._tutHintTxt.setText(parts.join(" · ")).setVisible(true);
@@ -914,6 +1016,7 @@ export class GameScene extends Phaser.Scene {
     this._updateNukeUi(s);
     this._renderTutorial(s.tutorial);
     if (this._tutGifDom?.visible) this._syncTutorialGifDomPosition();
+    if (this._tutPicDom?.visible) this._syncTutorialPicDomPosition();
     this._updateEndTurnBtn();
   }
 
@@ -1347,30 +1450,46 @@ export class GameScene extends Phaser.Scene {
     if (!tut?.active) {
       this.tutorialContainer.setVisible(false);
       this._tutGifDom?.setVisible(false);
+      this._tutPicDom?.setVisible(false);
       this._tutCellLabel?.setVisible(false);
       return;
     }
 
-    const gifUrl = tut.tutorial_gif || null;
-    this._applyTutorialLayout(gifUrl ? "gif" : "text");
+    const picUrls = [];
+    if (tut.tutorial_image) picUrls.push(tut.tutorial_image);
+    if (Array.isArray(tut.tutorial_images)) picUrls.push(...tut.tutorial_images);
+
+    const layout = tut.tutorial_layout
+      || (picUrls.length ? "with_pic" : tut.tutorial_gif ? "gif" : "text");
+    const layoutMode = layout === "with_pic" ? "pic" : layout === "gif" ? "gif" : "text";
 
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
     this._tutTextTxt.setText(tut.text || "");
+    this._applyTutorialLayout(layoutMode, tut);
     this._updateTutorialHint(tut);
     this.tutorialContainer.setVisible(true);
 
-    if (gifUrl) {
-      this._setTutorialGifSrc(gifUrl);
+    if (layoutMode === "pic" && picUrls.length) {
+      this._setTutorialPicSrcs(picUrls);
+      this._tutPicDom?.setVisible(true);
+      this._syncTutorialPicDomPosition();
+    } else if (layoutMode === "gif" && tut.tutorial_gif) {
+      this._setTutorialGifSrc(tut.tutorial_gif);
       this._tutGifDom?.setVisible(true);
       this._syncTutorialGifDomPosition();
     } else {
       this._tutGifLayout = null;
+      this._tutPicLayout = null;
       this._tutGifDom?.setVisible(false);
+      this._tutPicDom?.setVisible(false);
     }
 
     if (tut.highlight_alternate_sides) {
       this._drawTutorialAlternateSides();
+      this._tutCellLabel?.setVisible(false);
+    } else if (tut.highlight_side === "p1" || tut.highlight_side === "p2") {
+      this._drawTutorialSideCells(tut.highlight_side);
       this._tutCellLabel?.setVisible(false);
     } else if (tut.highlight) {
       const { col, row } = tut.highlight;
@@ -1386,8 +1505,8 @@ export class GameScene extends Phaser.Scene {
 
       if (!this._tutCellLabel) {
         this._tutCellLabel = this.add.text(0, 0, "", {
-          fontFamily: FONT_MONO, fontSize: "14px", fontStyle: "bold",
-          color: "#ffd060", stroke: "#000000", strokeThickness: 3,
+          fontFamily: FONT_MONO, fontSize: "28px", fontStyle: "bold",
+          color: "#ffd060", stroke: "#000000", strokeThickness: 4,
         }).setOrigin(0.5).setDepth(46);
       }
       this._tutCellLabel.setText(`${colLabel(col)}${row + 1}`)

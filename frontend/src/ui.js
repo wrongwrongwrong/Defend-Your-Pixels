@@ -69,11 +69,13 @@ function onState(s) {
   _setDefCard("p1", p1.def, rem1, total, game.def_tier_p1 ?? 0, s);
   _setDefCard("p2", p2.def, rem2, total, game.def_tier_p2 ?? 0, s);
 
-  _setNukeCard("p1", game, activeSide === "p1", s);
-  _setNukeCard("p2", game, activeSide === "p2", s);
+  _setNukeCard("p1", game.nuke_available_p1 ?? false, game.nuke_used_p1 ?? false, activeSide === "p1");
+  _setNukeCard("p2", game.nuke_available_p2 ?? false, game.nuke_used_p2 ?? false, activeSide === "p2");
 
   el("panel-left") ?.classList.toggle("active-p1", activeSide === "p1");
   el("panel-right")?.classList.toggle("active-p2", activeSide === "p2");
+  el("panel-left") ?.classList.toggle("tutorial-highlight", s.tutorial?.highlight_sidebar === "left");
+  el("panel-right")?.classList.toggle("tutorial-highlight", s.tutorial?.highlight_sidebar === "right");
 
   if (!_resultTimerActive) {
     _updateStatus(s, activeSide, game);
