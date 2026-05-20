@@ -45,6 +45,7 @@ ALLOWED_DIRECTIONS_BY_SIDE = {
 ERROR_MESSAGES = {
     "camera_unavailable": "Cannot detect the camera. Check the camera connection and configured camera index.",
     "marker_map_scan_failed": "Cannot locate the board markers. Make sure all four board corner markers are visible and readable.",
+    "board_not_scanned": "Board not scanned. Show all 4 corner markers to continue.",
     "token_detection_failed": "Cannot detect one or more attack or defence tokens. Reposition the markers and try again.",
     "hq_wrong_side": "HQ must be placed on that side's own territory and not on the fence.",
     "hq_setup_complete": "Both HQ locations are confirmed. Starting the game.",

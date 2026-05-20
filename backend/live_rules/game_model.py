@@ -59,6 +59,7 @@ class GameModel:
     hq_reveal: dict = field(default_factory=dict)
     nuke_used_p1: bool = False
     nuke_used_p2: bool = False
+    tutorial_nuke_unlock_p1: bool = False
     def_anchor_cells: dict = field(default_factory=lambda: {"p1": None, "p2": None})
     def_consumed_cells: dict = field(default_factory=lambda: {"p1": set(), "p2": set()})
 
@@ -209,7 +210,15 @@ class GameModel:
         return self.nuke_used_p1 if player == "p1" else self.nuke_used_p2
 
     def _nuke_available(self, player: str) -> bool:
+        if player == "p1" and self.tutorial_nuke_unlock_p1:
+            return not self._nuke_used(player)
         return self._remaining_resource_cells(player) <= NUKE_UNLOCK_REMAINING_CELLS and not self._nuke_used(player)
+
+    def apply_tutorial_preset(self, preset: str) -> None:
+        if preset == "p1_tier2":
+            self.tier_p1 = max(self.tier_p1, 2)
+        elif preset == "p1_nuke_unlock":
+            self.tutorial_nuke_unlock_p1 = True
 
     def _set_nuke_used(self, player: str) -> None:
         if player == "p1":

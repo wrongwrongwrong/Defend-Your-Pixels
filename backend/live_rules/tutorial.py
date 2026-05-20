@@ -12,7 +12,7 @@ MAX_WORDS_PER_TUTORIAL_LINE = 10
 STEPS = [
     {
         "id": "intro",
-        "title": "Welcome to Old Mick Against the Mob",
+        "title": "Welcome to Old Mick vs the Mob",
         "text": "In 1932, emus invaded the outback.\nYou are Old Mick.\nDefend your homestead.",
         "condition": "dismiss",
     },
@@ -21,6 +21,7 @@ STEPS = [
         "title": "Scan the Board Corners",
         "text": "Scan all four corner markers.\nWhen the board outline appears, continue.",
         "condition": "dismiss",
+        "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/scan_board_corners.gif",
     },
     {
@@ -41,20 +42,24 @@ STEPS = [
         "title": "How to Win",
         "text": "Destroy the enemy HQ, or wipe out their resources.\nProtect your own HQ.",
         "condition": "dismiss",
+        "tutorial_layout": "with_pic",
+        "tutorial_image": "assets/images/cell-emu-feeding grounds.png",
     },
     {
         "id": "explain_turn_markers",
         "title": "Turn Control",
-        "text": "Scan turn markers to set whose turn it is.\nOld Mick marker → your turn.\nMob marker → opponent's turn.",
+        "text": "Scan markers to set whose turn it is. Old Mick marker → your turn.\nMob marker → their turn.",
         "condition": "dismiss",
-        "tutorial_gif": "assets/gif/End_turn_explain-ezgif.com-video-to-gif-converter.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/End_turn_explain.gif",
     },
     {
         "id": "explain_confirm_marker",
         "title": "Confirm Marker",
-        "text": "Scan the confirm marker to lock choices.\nUse it to finish HQ setup or end your turn.",
+        "text": "Scan the confirm marker to lock choices. Use it to finish HQ setup or end your turn.",
         "condition": "dismiss",
-        "tutorial_gif": "assets/gif/turn_marker.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/p1_to_confirm.gif",
     },
     {
         "id": "set_turn_p1",
@@ -62,7 +67,8 @@ STEPS = [
         "text": "Set the turn marker to Old Mick's side.",
         "condition": "turn_change",
         "wait_turn": 1,
-        "tutorial_gif": "assets/gif/turn_marker.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/confirm_to_p1.gif",
     },
     {
         "id": "explain_hq",
@@ -85,7 +91,8 @@ STEPS = [
         "text": "Slide to the confirm marker.\nScan confirm to finish HQ placement.",
         "highlight": {"col": 1, "row": 9},
         "condition": "confirm_present",
-        "tutorial_gif": "assets/gif/turn_marker.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/p1_to_confirm.gif",
     },
     {
         "id": "notify_tutorial_skip",
@@ -100,7 +107,8 @@ STEPS = [
         "text": "Slide back to Old Mick's turn marker.",
         "condition": "turn_change",
         "wait_turn": 1,
-        "tutorial_gif": "assets/gif/turn_marker.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/confirm_to_p1.gif",
     },
     {
         "id": "place_atk_a",
@@ -108,6 +116,7 @@ STEPS = [
         "text": "Place Rifleman A on cell D4.\nMove the marker onto the board.",
         "highlight": {"col": 3, "row": 3},
         "condition": "dismiss",
+        "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/defense_placement_rotated.gif",
     },
     {
@@ -116,6 +125,7 @@ STEPS = [
         "text": "Place Rifleman B on cell C6.\nMove the marker onto the board.",
         "highlight": {"col": 2, "row": 5},
         "condition": "dismiss",
+        "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/defense_placement_rotated.gif",
     },
     {
@@ -129,6 +139,7 @@ STEPS = [
             "row": 4,
             "direction": "S",
         },
+        "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/attacker_rotation_rotate.gif",
     },
     {
@@ -143,6 +154,7 @@ STEPS = [
         "text": "Place Old Mick on cell B5.",
         "highlight": {"col": 1, "row": 4},
         "condition": "dismiss",
+        "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/defense_placement_rotated.gif",
     },
     {
@@ -156,7 +168,8 @@ STEPS = [
         "title": "End Your Turn",
         "text": "Scan the confirm marker to end your turn.",
         "condition": "confirm_present",
-        "tutorial_gif": "assets/gif/turn_marker.gif",
+        "tutorial_layout": "gif",
+        "tutorial_gif": "assets/gif/p1_to_confirm.gif",
     },
     {
         "id": "explain_upgrade_sidebar",
@@ -169,8 +182,13 @@ STEPS = [
     {
         "id": "explain_nuke",
         "title": "The Nuke",
-        "text": "At eight or fewer of your cells left, Nuke unlocks.\nPlace your nuke marker on enemy territory.\nScan confirm to launch a three-by-three blast.",
-        "condition": "dismiss",
+        "text": "At eight or fewer cells left, Nuke unlocks.Place your nuke marker on cell K10.",
+        "highlight": {"col": 10, "row": 9},
+        "condition": {
+            "token": "p1.nuke",
+            "col": 10,
+            "row": 9,
+        },
         "tutorial_layout": "with_pic",
         "tutorial_images": [
             "assets/images/nuke-mick-keith.png",
@@ -179,16 +197,12 @@ STEPS = [
         "runner_effect": "p1_nuke_unlock",
     },
     {
-        "id": "explain_nuke_launch",
-        "title": "Launch the Nuke",
-        "text": "With the nuke marker on target, scan confirm to fire.",
-        "condition": "confirm_present",
-    },
-    {
         "id": "explain_help_guide",
         "title": "Help Guide Marker",
-        "text": "During a game, scan the help guide marker anytime.\nIt reopens the rules while the marker stays visible.",
+        "text": "During a game, scan the help guide marker anytime.",
         "condition": "dismiss",
+        "tutorial_layout": "with_pic",
+        "tutorial_image": "assets/images/quick_guide.png",
     },
     {
         "id": "complete",
@@ -218,6 +232,7 @@ class TutorialController:
     finished: bool = False
     _prev_turn_signal: int | None = None
     _confirm_prev: bool = False
+    _token_undo_armed: bool = False
 
     def dismiss(self) -> None:
         if self.finished:
@@ -229,13 +244,20 @@ class TutorialController:
         elif cond == "turn_change":
             self._advance()
 
-    def undo(self) -> None:
+    def undo(
+        self,
+        *,
+        confirm_present: bool = False,
+        current_turn: int | None = None,
+    ) -> None:
         if self.finished or self.step_index <= 0:
             return
         self.step_index -= 1
-        self._prev_turn_signal = None
-        self._confirm_prev = False
         step = STEPS[self.step_index]
+        # Match current markers so tick() does not instantly re-advance this step.
+        self._confirm_prev = confirm_present
+        self._prev_turn_signal = current_turn
+        self._token_undo_armed = isinstance(step.get("condition"), dict)
         self.completed = bool(step.get("final"))
         print(f"[TUTORIAL] Undo → step {self.step_index}: {step['id']}")
 
@@ -246,6 +268,7 @@ class TutorialController:
         current_turn: int | None,
         hq_markers: dict | None = None,
         confirm_present: bool = False,
+        nuke_cells: dict | None = None,
     ) -> dict:
         if self.finished:
             return self.snapshot()
@@ -269,7 +292,14 @@ class TutorialController:
             return self.snapshot()
 
         if isinstance(condition, dict):
-            if self._check_token_condition(condition, p1_tokens, p2_tokens, hq_markers):
+            met = self._check_token_condition(
+                condition, p1_tokens, p2_tokens, hq_markers, nuke_cells
+            )
+            if self._token_undo_armed:
+                if not met:
+                    self._token_undo_armed = False
+                return self.snapshot()
+            if met:
                 self._advance()
 
         return self.snapshot()
@@ -280,6 +310,7 @@ class TutorialController:
         p1_tokens: dict,
         p2_tokens: dict,
         hq_markers: dict | None = None,
+        nuke_cells: dict | None = None,
     ) -> bool:
         token_path = condition.get("token", "")
         side, _, role = token_path.partition(".")
@@ -288,6 +319,12 @@ class TutorialController:
 
         if role == "hq":
             tok = (hq_markers or {}).get(side, {})
+        elif role == "nuke":
+            cell = (nuke_cells or {}).get(side)
+            if cell is None:
+                return False
+            col, row = cell
+            tok = {"col": col, "row": row}
         else:
             tokens = p1_tokens if side == "p1" else p2_tokens
             tok = tokens.get(role, {}) if tokens else {}

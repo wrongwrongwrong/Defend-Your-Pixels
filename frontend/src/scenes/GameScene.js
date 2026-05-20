@@ -46,6 +46,13 @@ function sideOfTutorialCell(col, row) {
   return null;
 }
 
+/** DOM tutorial media paths are served from the frontend HTTP root. */
+function resolveTutorialAssetUrl(url) {
+  if (!url || typeof url !== "string") return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+  return url.startsWith("assets/") ? `/${url}` : url;
+}
+
 function isWrongSideDir(side, dir) {
   if (!dir || !DIR_VEC[dir]) return false;
   const [dc, dr] = DIR_VEC[dir];
@@ -150,6 +157,11 @@ export class GameScene extends Phaser.Scene {
     // silently ignored. First pointerdown is the guaranteed safe moment.
 
     this.time.addEvent({ delay: 33, loop: true, callback: () => this._render() });
+
+    this.scale.on("resize", () => {
+      if (this._tutGifDom?.visible) this._syncTutorialGifDomPosition();
+      if (this._tutPicDom?.visible) this._syncTutorialPicDomPosition();
+    });
 
     // ── Nuke bridge: HTML card click → Phaser ────────────────────────────────
     window._nukeArm = (side) => {
@@ -317,8 +329,9 @@ export class GameScene extends Phaser.Scene {
       headerY, bodyY: headerY + 54, hintBottomPad: 24, bodyLineSpacing: 12,
     };
     this._tutLayoutWithPic = {
-      panelW: maxPanelW, panelH: 236, pad: tutPad,
-      picW: 200, picH: 132,
+      panelW: maxPanelW, panelH: 236, panelHMulti: 280, pad: tutPad,
+      picW: 200, picH: 148,
+      picWMulti: 300, picHMulti: 200,
       picInsetRight: 0,
       picDomNudgeX: 14,
       picDomNudgeY: 20,
@@ -399,15 +412,51 @@ export class GameScene extends Phaser.Scene {
     this._applyTutorialLayout("text");
   }
 
-  _applyTutorialLayout(mode) {
+  _tutorialBodyLineCount(text) {
+    const raw = (text || "").trim();
+    if (!raw) return 1;
+    return raw.split("\n").length;
+  }
+
+  _tutorialGifPanelHeight(L, bodyText) {
+    const base = L.panelHBase ?? L.panelH;
+    const lines = this._tutorialBodyLineCount(bodyText);
+    if (lines < 4) return base;
+    const lineStep = L.bodySize + (L.bodyLineSpacing ?? 12);
+    return base + (lines - 3) * lineStep;
+  }
+
+  _syncTutorialMediaDom(dom, lay, worldVec) {
+    if (!lay || !dom) return;
+    dom.setOrigin(0, 0);
+    const mat = this.tutorialContainer.getWorldTransformMatrix();
+    mat.transformPoint(lay.x, lay.y, worldVec);
+    const nudgeX = lay.domNudgeX ?? 0;
+    const nudgeY = lay.domNudgeY ?? 0;
+    dom.setPosition(worldVec.x + nudgeX, worldVec.y + nudgeY);
+    if (typeof dom.setSize === "function") {
+      dom.setSize(lay.w, lay.h);
+    }
+  }
+
+  _applyTutorialLayout(mode, { picCount = 1, bodyText = "" } = {}) {
     const L = mode === "gif"
       ? this._tutLayoutWithGif
       : mode === "pic"
         ? this._tutLayoutWithPic
         : this._tutLayoutTextOnly;
-    const { panelW, panelH, pad } = L;
-    const mediaW = mode === "pic" ? (L.picW ?? 0) : (L.gifW ?? 0);
-    const mediaH = mode === "pic" ? (L.picH ?? 0) : (L.gifH ?? 0);
+    const multiPic = mode === "pic" && picCount > 1;
+    let panelH = multiPic ? (L.panelHMulti ?? L.panelH) : L.panelH;
+    if (mode === "gif") {
+      panelH = this._tutorialGifPanelHeight(L, bodyText);
+    }
+    const { panelW, pad } = L;
+    const mediaW = mode === "pic"
+      ? (multiPic ? (L.picWMulti ?? L.picW) : (L.picW ?? 0))
+      : (L.gifW ?? 0);
+    const mediaH = mode === "pic"
+      ? (multiPic ? (L.picHMulti ?? L.picH) : (L.picH ?? 0))
+      : (L.gifH ?? 0);
     const hasMedia = mode === "gif" || mode === "pic";
 
     this._tutBg.setSize(panelW, panelH);
@@ -425,7 +474,10 @@ export class GameScene extends Phaser.Scene {
     const textW    = Math.max(120, leftMaxX - leftMinX);
 
     const headerY = L.headerY ?? L.titleY ?? pad;
-    const bodyY   = L.bodyY ?? headerY + 56;
+    const headerBlockH = Math.max(L.titleSize, L.stepSize) + 6;
+    const bodyY = mode === "gif"
+      ? headerY + headerBlockH
+      : (L.bodyY ?? headerY + 56);
     const hintBottomPad = L.hintBottomPad ?? 18;
 
     this._tutStepTxt
@@ -433,8 +485,8 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setFontSize(L.stepSize);
     this._tutTitleTxt
-      .setPosition(leftMinX, -panelH / 2 + headerY)
-      .setOrigin(0, 0)
+      .setPosition(leftCx, -panelH / 2 + headerY)
+      .setOrigin(0.5, 0)
       .setFontSize(L.titleSize);
     this._tutTextTxt
       .setPosition(leftCx, -panelH / 2 + bodyY)
@@ -497,52 +549,48 @@ export class GameScene extends Phaser.Scene {
   /** Position tutorial GIF in canvas space (DOM ignores container parent transform). */
   _syncTutorialGifDomPosition() {
     const lay = this._tutGifLayout;
-    if (!lay || !this._tutGifDom || !this.tutorialContainer.visible) return;
-
-    this._tutGifDom.setOrigin(0, 0);
-    const mat = this.tutorialContainer.getWorldTransformMatrix();
-    mat.transformPoint(lay.x, lay.y, this._tutGifWorld);
-    const nudgeX = lay.domNudgeX ?? 0;
-    const nudgeY = lay.domNudgeY ?? 0;
-    this._tutGifDom.setPosition(this._tutGifWorld.x + nudgeX, this._tutGifWorld.y + nudgeY);
-    if (typeof this._tutGifDom.setSize === "function") {
-      this._tutGifDom.setSize(lay.w, lay.h);
-    }
+    if (!lay || !this._tutGifDom) return;
+    this._syncTutorialMediaDom(this._tutGifDom, lay, this._tutGifWorld);
   }
 
   _setTutorialGifSrc(url) {
-    if (!this._tutGifDom?.node) return;
-    const img = this._tutGifDom.node.querySelector("img.tut-gif-img");
-    if (!img || !url) return;
-    if (img.dataset.tutSrc === url) return;
-    img.src = url;
-    img.dataset.tutSrc = url;
+    const dom = this._tutGifDom;
+    if (!dom?.node || !url) return;
+    const img = dom.node.querySelector?.("img.tut-gif-img")
+      || (dom.node.matches?.("img") ? dom.node : null);
+    if (!img) return;
+    const src = resolveTutorialAssetUrl(url) || url;
+    if (img.dataset.tutSrc === src) return;
+    img.dataset.tutSrc = src;
+    img.src = src;
   }
 
   _syncTutorialPicDomPosition() {
     const lay = this._tutPicLayout;
-    if (!lay || !this._tutPicDom || !this.tutorialContainer.visible) return;
-
-    this._tutPicDom.setOrigin(0, 0);
-    const mat = this.tutorialContainer.getWorldTransformMatrix();
-    mat.transformPoint(lay.x, lay.y, this._tutPicWorld);
-    const nudgeX = lay.domNudgeX ?? 0;
-    const nudgeY = lay.domNudgeY ?? 0;
-    this._tutPicDom.setPosition(this._tutPicWorld.x + nudgeX, this._tutPicWorld.y + nudgeY);
-    if (typeof this._tutPicDom.setSize === "function") {
-      this._tutPicDom.setSize(lay.w, lay.h);
-    }
+    if (!lay || !this._tutPicDom) return;
+    this._syncTutorialMediaDom(this._tutPicDom, lay, this._tutPicWorld);
   }
 
   _setTutorialPicSrcs(urls) {
     const wrap = this._tutPicDom?.node?.querySelector(".tut-pic-wrap");
     if (!wrap || !urls?.length) return;
-    const key = urls.join("|");
+    const resolved = urls.map(resolveTutorialAssetUrl).filter(Boolean);
+    if (!resolved.length) return;
+    const key = resolved.join("|");
     if (wrap.dataset.tutSrc === key) return;
     wrap.dataset.tutSrc = key;
-    wrap.innerHTML = urls.map((url) => (
-      `<img class="tut-pic-img" src="${url}" alt="" `
-      + 'style="flex:1;min-width:0;height:100%;object-fit:contain;" />'
+    const multi = resolved.length > 1;
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "row";
+    wrap.style.alignItems = "center";
+    wrap.style.justifyContent = "center";
+    wrap.style.gap = multi ? "8px" : "0";
+    wrap.innerHTML = resolved.map((url) => (
+      `<img class="tut-pic-img" src="${url}" alt="" style="${
+        multi
+          ? "flex:1 1 0;min-width:0;max-width:calc(50% - 4px);height:100%;object-fit:contain;display:block;"
+          : "width:100%;height:100%;object-fit:contain;display:block;"
+      }" />`
     )).join("");
   }
 
@@ -1382,10 +1430,12 @@ export class GameScene extends Phaser.Scene {
     this._ensureNukeHint();
     const battle     = s?.battle || {};
     const game       = s?.game   || {};
-    const activeSide = battle.active_side ?? null;
+    const tut        = s?.tutorial;
+    const tutNukeStep = tut?.active && (tut.step_id === "explain_nuke" || tut.step_id === "explain_nuke_launch");
+    const activeSide = battle.active_side ?? (tutNukeStep ? "p1" : null);
     const manual     = !!s?.manual_controls;
 
-    if (!activeSide || s?.phase !== "game") {
+    if (!activeSide || (s?.phase !== "game" && !tutNukeStep)) {
       this._nukeArmingSide = null;
       this._nukeHintTxt?.setVisible(false);
       return;
@@ -1459,14 +1509,14 @@ export class GameScene extends Phaser.Scene {
     if (tut.tutorial_image) picUrls.push(tut.tutorial_image);
     if (Array.isArray(tut.tutorial_images)) picUrls.push(...tut.tutorial_images);
 
-    const layout = tut.tutorial_layout
-      || (picUrls.length ? "with_pic" : tut.tutorial_gif ? "gif" : "text");
-    const layoutMode = layout === "with_pic" ? "pic" : layout === "gif" ? "gif" : "text";
+    const gifUrl = tut.tutorial_gif || null;
+    const layoutMode = picUrls.length ? "pic" : gifUrl ? "gif" : "text";
 
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
     this._tutTextTxt.setText(tut.text || "");
-    this._applyTutorialLayout(layoutMode, tut);
+    const bodyText = tut.text || "";
+    this._applyTutorialLayout(layoutMode, { picCount: picUrls.length, bodyText });
     this._updateTutorialHint(tut);
     this.tutorialContainer.setVisible(true);
 
@@ -1474,8 +1524,8 @@ export class GameScene extends Phaser.Scene {
       this._setTutorialPicSrcs(picUrls);
       this._tutPicDom?.setVisible(true);
       this._syncTutorialPicDomPosition();
-    } else if (layoutMode === "gif" && tut.tutorial_gif) {
-      this._setTutorialGifSrc(tut.tutorial_gif);
+    } else if (layoutMode === "gif" && gifUrl) {
+      this._setTutorialGifSrc(gifUrl);
       this._tutGifDom?.setVisible(true);
       this._syncTutorialGifDomPosition();
     } else {

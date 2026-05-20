@@ -14,6 +14,8 @@ const game = new Phaser.Game({
   height:          CANVAS_H,
   backgroundColor: "#0f0c08",
   parent:          "game-canvas",
+  // Required for tutorial GIF <img> overlays (add.dom) to align with the scaled canvas.
+  dom:             { createContainer: true },
   scene:           [BootScene, GameScene],
   scale: {
     mode:       Phaser.Scale.FIT,

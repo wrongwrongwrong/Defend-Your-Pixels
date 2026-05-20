@@ -28,7 +28,7 @@ from python_tracker.camera.camera_runtime import configure_camera, open_camera, 
 from python_tracker.marker_detection.aruco_detector import create_detector
 from python_tracker.state_output.tracker_snapshot import annotate_tracker_preview, apply_calibration_fallback, build_tracker_preview
 from python_tracker.tracked_markers import CONFIRM_MARKERS, HELP_MARKERS, HQ_MARKERS, NUKE_MARKERS, TOKEN_MARKERS, TURN_MARKERS
-from runner.setup_flow import FIRST_PLAYER_SIDE_TO_PLAYER, PHASE_GAME, PHASE_HQ_PLACEMENT, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
+from runner.setup_flow import FIRST_PLAYER_SIDE_TO_PLAYER, PHASE_GAME, PHASE_HQ_PLACEMENT, PHASE_SCAN, PLAYERS, SetupState, dedupe_errors, is_valid_hq_position, make_error, new_side_state, sanitize_token_states, side_of_cell
 from live_rules import game_model, terrain_gen, tutorial
 from runner.frontend_static_server import start_frontend_http_server
 from runner.port_check import DEFAULT_HTTP_PORT, ensure_ports_available
@@ -43,6 +43,22 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 PHASE_MODE_SELECT = "mode_select"
 MODE_NORMAL = "normal"
 MODE_TUTORIAL = "tutorial"
+
+_TUTORIAL_P1_BATTLE_STEPS = frozenset({
+    "resume_p1_turn",
+    "place_atk_a",
+    "place_atk_b",
+    "aim_atk_a",
+    "explain_ray",
+    "place_def",
+    "explain_defense",
+    "end_turn",
+    "explain_upgrade_sidebar",
+    "explain_nuke",
+    "explain_nuke_launch",
+})
+_TUTORIAL_STEPS_ALLOW_BATTLE_CONFIRM = frozenset({"end_turn", "explain_nuke_launch"})
+_TUTORIAL_P1_HQ_CELL = (1, 9)  # B10 — matches tutorial place_hq_p1 highlight
 
 ROLE_BY_MARKER_ID = {
     12: ("p1", "atk_a"),
@@ -351,6 +367,9 @@ class Session:
         self.selected_mode: str | None = None
         self.tutorial_ctrl: tutorial.TutorialController | None = None
         self.tutorial_state: dict | None = None
+        self._tutorial_last_confirm = False
+        self._tutorial_last_turn: int | None = None
+        self._tutorial_fx_step_id: str | None = None
         self.board_scan_ready = False
         self.reset(board_scan_ready=False)
 
@@ -363,6 +382,7 @@ class Session:
             self.seed = int(time.time() * 1000) % (2**31)
             self.tutorial_ctrl = None
         self.tutorial_state = None
+        self._tutorial_fx_step_id = None
         self.terrain = terrain_gen.generate(seed=self.seed)
         self.accepted_p1 = new_side_state()
         self.accepted_p2 = new_side_state()
@@ -391,7 +411,93 @@ class Session:
         self.selected_mode = MODE_NORMAL
         self.tutorial_ctrl = None
         self.tutorial_state = None
+        self._tutorial_fx_step_id = None
         print("[MODE] Tutorial complete. Continuing in normal game mode.")
+
+    def _tutorial_step_id(self) -> str | None:
+        if self.tutorial_state is None:
+            return None
+        step_id = self.tutorial_state.get("step_id")
+        return step_id if isinstance(step_id, str) else None
+
+    def _tutorial_is_battle_visual_step(self) -> bool:
+        return (
+            self.selected_mode == MODE_TUTORIAL
+            and self._tutorial_step_id() in _TUTORIAL_P1_BATTLE_STEPS
+        )
+
+    def _tutorial_forces_p1_tokens(self) -> bool:
+        return self._tutorial_is_battle_visual_step() and self.setup.phase == PHASE_GAME
+
+    def _tutorial_suppress_battle_confirm(self) -> bool:
+        if self.selected_mode != MODE_TUTORIAL:
+            return False
+        step_id = self._tutorial_step_id()
+        if step_id is None or step_id not in _TUTORIAL_P1_BATTLE_STEPS:
+            return False
+        return step_id not in _TUTORIAL_STEPS_ALLOW_BATTLE_CONFIRM
+
+    def _tutorial_positioning_side(self) -> str | None:
+        if self.battle_active_side in PLAYERS:
+            return self.battle_active_side
+        if self._tutorial_forces_p1_tokens():
+            return "p1"
+        return None
+
+    def _sync_tutorial_runner_effects(self) -> None:
+        if self.tutorial_ctrl is None or self.tutorial_state is None:
+            return
+
+        step_id = self.tutorial_state.get("step_id")
+        if step_id == self._tutorial_fx_step_id:
+            self._apply_tutorial_battle_posture(step_id)
+            return
+        self._tutorial_fx_step_id = step_id
+
+        effect = self.tutorial_state.get("runner_effect")
+        if effect == "skip_p2_setup":
+            self._tutorial_skip_p2_setup()
+        elif effect == "p1_tier2" and self.model is not None:
+            self.model.apply_tutorial_preset("p1_tier2")
+        elif effect == "p1_nuke_unlock" and self.model is not None:
+            self.model.apply_tutorial_preset("p1_nuke_unlock")
+
+        self._apply_tutorial_battle_posture(step_id)
+
+    def _tutorial_ensure_game_started(self) -> None:
+        if self.setup.phase == PHASE_GAME and self.model is not None:
+            return
+
+        if not self.setup.board_scan_ready:
+            self.board_scan_ready = True
+            self.setup.set_board_scan_ready(True)
+        if self.setup.phase == PHASE_SCAN:
+            self.setup.phase = PHASE_HQ_PLACEMENT
+        if self.setup.first_player_side is None:
+            self.setup.first_player_side = "old_mick"
+
+        if not self.setup.hq_confirmed.get("p1"):
+            self.setup.activate_hq_setup_side("p1")
+            self.setup.hq_candidates["p1"] = _TUTORIAL_P1_HQ_CELL
+            self.setup.lock_hq("p1")
+
+        if not self.setup.hq_confirmed.get("p2"):
+            self.setup.activate_hq_setup_side("p2")
+            col, row = _demo_hq_cell("p2", self.terrain)
+            self.setup.hq_candidates["p2"] = (col, row)
+            self.setup.lock_hq("p2")
+
+        self._ensure_model_started()
+
+    def _tutorial_skip_p2_setup(self) -> None:
+        self._tutorial_ensure_game_started()
+
+    def _apply_tutorial_battle_posture(self, step_id: str | None) -> None:
+        if self.setup.phase != PHASE_GAME or step_id not in _TUTORIAL_P1_BATTLE_STEPS:
+            return
+        self.battle_active_side = "p1"
+        self.battle_waiting_for_side = None
+        self.turn = 1
 
     def _reset_setup_tracking(self) -> None:
         self._observed_turn_side: str | None = None
@@ -432,28 +538,35 @@ class Session:
                 "status_message": "Battle flow inactive until HQ setup completes.",
             }
 
-        if self.battle_active_side in PLAYERS:
-            marker_id = 10 if self.battle_active_side == "p1" else 20
+        positioning_side = self._tutorial_positioning_side()
+        if positioning_side in PLAYERS:
+            marker_id = 10 if positioning_side == "p1" else 20
             confirm_id = 4
+            nuke_marker_id = 19 if positioning_side == "p1" else 29
             return {
-                "active_side": self.battle_active_side,
+                "active_side": positioning_side,
                 "waiting_for_side": None,
                 "status_code": "positioning",
-                "status_message": f"{self.battle_active_side.upper()} positioning active. Arrange that side's tokens, then scan ID{confirm_id} to attack.",
+                "status_message": f"{positioning_side.upper()} positioning active. Arrange that side's tokens, then scan ID{confirm_id} to attack.",
                 "turn_marker_id": marker_id,
                 "confirm_marker_id": confirm_id,
-                "pending_nuke": self._pending_nuke_payload(self.battle_active_side),
+                "nuke_marker_id": nuke_marker_id,
+                "pending_nuke": self._pending_nuke_payload(positioning_side),
             }
 
         waiting_side = self.battle_waiting_for_side
         if waiting_side in PLAYERS:
             marker_id = 10 if waiting_side == "p1" else 20
             side_name = "Old Mick" if waiting_side == "p1" else "The Mob"
+            if waiting_side == "p1":
+                status_message = "Hide Your HQ. Let P1 scan ID10 to start their turn."
+            else:
+                status_message = f"Hide Your HQ. Let P2 scan ID20 to start their turn."
             return {
                 "active_side": None,
                 "waiting_for_side": waiting_side,
                 "status_code": "waiting_for_turn_marker",
-                "status_message": f"Waiting for {side_name}. Scan ID{marker_id} to begin that side's turn.",
+                "status_message": f"Hide your HQ. Scan ID{marker_id} to begin {side_name}'s turn.",
                 "turn_marker_id": marker_id,
                 "confirm_marker_id": 4,
             }
@@ -499,13 +612,19 @@ class Session:
         if action_name == "tutorial_dismiss":
             if self.tutorial_ctrl is not None:
                 self.tutorial_ctrl.dismiss()
+                self.tutorial_state = self.tutorial_ctrl.snapshot()
+                self._sync_tutorial_runner_effects()
                 if self.tutorial_ctrl.finished:
                     self._finish_tutorial_mode()
             return errors
-        
+
         if action_name == "tutorial_undo":
             if self.tutorial_ctrl is not None:
-                self.tutorial_ctrl.undo()
+                self.tutorial_ctrl.undo(
+                    confirm_present=self._tutorial_last_confirm,
+                    current_turn=self._tutorial_last_turn,
+                )
+                self.tutorial_state = self.tutorial_ctrl.snapshot()
             return errors
 
         if action_name in {"choose_side", "set_hq_candidate", "confirm_hq", "reset_setup", "cancel_hq"}:
@@ -545,10 +664,18 @@ class Session:
     def update_tokens(self, raw_p1: dict, raw_p2: dict, turn: int | None, hq_markers: dict, confirm_present: bool, help_present: bool, nuke_markers: list[dict] | None = None) -> list[dict]:
         self.hq_markers = hq_markers
         self.help_visible = help_present
+
+        if self._tutorial_is_battle_visual_step():
+            self._tutorial_ensure_game_started()
+            self._apply_tutorial_battle_posture(self._tutorial_step_id())
+
         active_side = None
         if self.setup.phase == PHASE_GAME:
-            self._update_marker_driven_battle_flow(turn, confirm_present)
+            if not self._tutorial_suppress_battle_confirm():
+                self._update_marker_driven_battle_flow(turn, confirm_present)
             active_side = self.battle_active_side
+            if self._tutorial_forces_p1_tokens():
+                active_side = "p1"
 
         if self.setup.phase == PHASE_GAME and active_side not in PLAYERS:
             raw_p1 = self.accepted_p1
@@ -571,8 +698,18 @@ class Session:
         else:
             self.turn = None
         self._update_marker_driven_nukes(nuke_markers or [])
+        self._tutorial_last_confirm = confirm_present
+        self._tutorial_last_turn = self.turn
         if self.tutorial_ctrl is not None:
-            self.tutorial_state = self.tutorial_ctrl.tick(self.accepted_p1, self.accepted_p2, self.turn, self.hq_markers, confirm_present)
+            self.tutorial_state = self.tutorial_ctrl.tick(
+                self.accepted_p1,
+                self.accepted_p2,
+                self.turn,
+                self.hq_markers,
+                confirm_present,
+                nuke_cells=dict(self._pending_nuke_cell),
+            )
+            self._sync_tutorial_runner_effects()
             if self.tutorial_ctrl.finished:
                 self._finish_tutorial_mode()
         return errors
@@ -581,7 +718,7 @@ class Session:
         if self.setup.phase != PHASE_GAME or self.model is None:
             return
 
-        active_side = self.battle_active_side
+        active_side = self._tutorial_positioning_side()
         if active_side not in PLAYERS:
             return
 
@@ -840,12 +977,17 @@ async def publish_live_tracker(camera_id: int = DEFAULT_CAMERA_ID, send_fps: int
             nuke_markers = _nuke_markers(snapshot_for_ui)
 
             frame_errors: list[dict] = []
-            if not board_scan_ready and session.setup.phase != PHASE_GAME:
-                frame_errors.append(make_error("marker_map_scan_failed"))
-            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present, nuke_markers))
+            if not board_scan_ready:
+                frame_errors.append(
+                    make_error("board_not_scanned")
+                    if session.setup.phase == PHASE_GAME
+                    else make_error("marker_map_scan_failed")
+                )
 
             for command in await drain_actions():
                 frame_errors.extend(session.apply_command(command, board_scan_ready=board_scan_ready))
+
+            frame_errors.extend(session.update_tokens(raw_p1, raw_p2, turn, hq_markers, confirm_present, help_present, nuke_markers))
 
             events = session.game_events()
             payload = session.payload(
