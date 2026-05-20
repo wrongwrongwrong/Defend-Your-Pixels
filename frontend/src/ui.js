@@ -80,6 +80,8 @@ function onState(s) {
 
   el("panel-left") ?.classList.toggle("active-p1", activeSide === "p1");
   el("panel-right")?.classList.toggle("active-p2", activeSide === "p2");
+  el("panel-left") ?.classList.toggle("tutorial-highlight", s.tutorial?.highlight_sidebar === "left");
+  el("panel-right")?.classList.toggle("tutorial-highlight", s.tutorial?.highlight_sidebar === "right");
 
   if (!_resultTimerActive) {
     _updateStatus(s, activeSide, game);

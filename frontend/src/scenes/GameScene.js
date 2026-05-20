@@ -20,7 +20,7 @@ import {
   COLORS, DIR_VEC, ARROW_CHAR,
   FONT_TITLE, FONT_LABEL, FONT_MONO,
 } from "../constants.js";
-import { playSfx, playBgm, toggleMute, isMuted } from "../audio.js";
+import { playSfx, playBgm, toggleMute } from "../audio.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,14 @@ function isP1Cell(c, r)  { return c + r < 11; }
 function isP2Cell(c, r)  { return c + r > 11; }
 function isOnFence(c, r) { return c + r === 11; }
 function colLabel(col)   { return String.fromCharCode(65 + col); }
+
+/** Matches backend setup: p1 bottom-left, p2 top-right, fence when col+row === 11. */
+function sideOfTutorialCell(col, row) {
+  const sum = col + row;
+  if (sum < 11) return "p1";
+  if (sum > 11) return "p2";
+  return null;
+}
 
 function isWrongSideDir(side, dir) {
   if (!dir || !DIR_VEC[dir]) return false;
@@ -110,10 +118,10 @@ export class GameScene extends Phaser.Scene {
     this._nukeArmingSide  = null;
     this._prevWinner      = null;
     this._terrainSprites  = [];
-    this._terrainHpLabels = [];
     this._rayGfxPool      = [];   // recycled Graphics objects for ray animations
     this._pickerData      = null; // {container, col, row, side} when picker is open
     this._lastActiveSide  = null; // track turn changes
+    this._bgmStarted      = false; // ensure BGM only starts once
   }
 
   create() {
@@ -130,11 +138,16 @@ export class GameScene extends Phaser.Scene {
     this._buildTutorialOverlay();
     this._buildEndTurnBtn();
     this._buildTurnOverlay();
+    this._buildMuteButton();
     this._bindWS();
 
     this.input.on("pointerdown", this._handleBoardClick, this);
 
     this.input.keyboard.on("keydown-N", () => this.ws?.send("demo_next", {}));
+
+    // BGM is started on first board click (see _handleBoardClick).
+    // Browsers block audio until a user gesture — starting it here would be
+    // silently ignored. First pointerdown is the guaranteed safe moment.
 
     this.time.addEvent({ delay: 33, loop: true, callback: () => this._render() });
 
@@ -193,11 +206,9 @@ export class GameScene extends Phaser.Scene {
       p1_atk_a: "tok_mick_atk_a",
       p1_atk_b: "tok_mick_atk_b",
       p1_def:   "tok_mick_def",
-      p1_nuke:  "tok_mick_nuke",
       p2_atk_a: "tok_emu_atk_a",
       p2_atk_b: "tok_emu_atk_b",
       p2_def:   "tok_emu_def",
-      p2_nuke:  "tok_emu_nuke",
     };
 
     this.tokenSprites    = {};
@@ -280,50 +291,333 @@ export class GameScene extends Phaser.Scene {
   }
 
   _buildTutorialOverlay() {
-    const cx   = CANVAS_W / 2;
-    const topY = BOARD_OFF_Y + 80;
+    const tutPad    = 8;
+    const maxPanelW = CANVAS_W - tutPad;
+    const headerY   = tutPad;
 
-    this.tutorialContainer = this.add.container(cx, topY).setDepth(50).setVisible(false);
+    this.tutorialContainer = this.add
+      .container(CANVAS_W / 2, BOARD_OFF_Y + 100)
+      .setDepth(50)
+      .setVisible(false);
 
-    const panelW = 550, panelH = 140;
-    const bg = this.add.rectangle(0, 0, panelW, panelH, 0x1a1008, 0.95)
+    this._tutLayoutTextOnly = {
+      panelW: maxPanelW, panelH: 252, pad: tutPad,
+      titleSize: 52, bodySize: 36, stepSize: 28, hintSize: 24,
+      headerY, bodyY: headerY + 62, hintBottomPad: 28, bodyLineSpacing: 12,
+      gifW: 0, gifH: 0,
+    };
+    this._tutLayoutWithGif = {
+      panelW: maxPanelW, panelH: 220, panelHBase: 220, pad: tutPad,
+      gifW: 188, gifH: 132,
+      gifInsetRight: 0,
+      gifDomNudgeX: 14,
+      gifDomNudgeY: 20,
+      textGifGap: 16,
+      titleSize: 44, bodySize: 32, stepSize: 24, hintSize: 18,
+      headerY, bodyY: headerY + 54, hintBottomPad: 24, bodyLineSpacing: 12,
+    };
+    this._tutLayoutWithPic = {
+      panelW: maxPanelW, panelH: 236, pad: tutPad,
+      picW: 200, picH: 132,
+      picInsetRight: 0,
+      picDomNudgeX: 14,
+      picDomNudgeY: 20,
+      textPicGap: 16,
+      titleSize: 44, bodySize: 32, stepSize: 24, hintSize: 18,
+      headerY, bodyY: headerY + 54, hintBottomPad: 24, bodyLineSpacing: 12,
+    };
+
+    const L = this._tutLayoutTextOnly;
+    this._tutBg = this.add.rectangle(0, 0, L.panelW, L.panelH, 0x1a1008, 0.95)
       .setStrokeStyle(2, 0xffd060);
 
-    this._tutStepTxt = this.add.text(panelW / 2 - 12, -panelH / 2 + 12, "", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#8a7060",
+    this._tutStepTxt = this.add.text(L.panelW / 2 - L.pad, -L.panelH / 2 + L.pad, "", {
+      fontFamily: FONT_MONO, fontSize: `${L.stepSize}px`, color: "#8a7060",
     }).setOrigin(1, 0);
 
-    this._tutTitleTxt = this.add.text(0, -panelH / 2 + 30, "", {
-      fontFamily: FONT_TITLE, fontSize: "20px", fontStyle: "bold", color: "#ffd060",
+    this._tutTitleTxt = this.add.text(0, -L.panelH / 2 + L.headerY, "", {
+      fontFamily: FONT_TITLE, fontSize: `${L.titleSize}px`, fontStyle: "bold", color: "#ffd060",
     }).setOrigin(0.5, 0);
 
-    this._tutTextTxt = this.add.text(0, -panelH / 2 + 65, "", {
-      fontFamily: FONT_LABEL, fontSize: "14px", color: "#d0c0a0",
-      align: "center", wordWrap: { width: panelW - 40 }, lineSpacing: 4,
+    this._tutTextTxt = this.add.text(0, -L.panelH / 2 + 78, "", {
+      fontFamily: FONT_LABEL, fontSize: `${L.bodySize}px`, color: "#d0c0a0",
+      align: "center", wordWrap: { width: L.panelW - L.pad * 2 },
+      lineSpacing: L.bodyLineSpacing ?? 12,
     }).setOrigin(0.5, 0);
 
-    this._tutHintTxt = this.add.text(0, panelH / 2 - 18, "Press SPACE or click to continue", {
-      fontFamily: FONT_MONO, fontSize: "11px", color: "#7a6a50",
+    this._tutHintTxt = this.add.text(0, L.panelH / 2 - 22, "", {
+      fontFamily: FONT_MONO, fontSize: `${L.hintSize}px`, color: "#7a6a50",
     }).setOrigin(0.5).setVisible(false);
 
-    this.tutorialContainer.add([bg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt]);
+    const gifHtml = [
+      '<motion.div class="tut-gif-wrap" style="width:200px;height:148px;overflow:hidden;',
+      'border:2px solid #5a4020;border-radius:8px;background:#0d0804;">',
+      '<img class="tut-gif-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;" />',
+      "</motion.div>",
+    ].join("").replaceAll("motion.div", "div");
+    // DOM elements do not follow Phaser Container transforms — scene-level + world sync.
+    this._tutGifDom = this.add.dom(0, 0).createFromHTML(gifHtml);
+    this._tutGifDom.setOrigin(0.5, 0.5).setDepth(51).setVisible(false);
+    this._tutGifLayout = null;
+    this._tutGifWorld  = new Phaser.Math.Vector2();
+
+    const picHtml = [
+      '<div class="tut-pic-wrap" style="display:flex;gap:8px;align-items:center;justify-content:center;',
+      'width:200px;height:148px;overflow:hidden;border:2px solid #5a4020;border-radius:8px;background:#0d0804;padding:6px;box-sizing:border-box;">',
+      "</div>",
+    ].join("");
+    this._tutPicDom = this.add.dom(0, 0).createFromHTML(picHtml);
+    this._tutPicDom.setOrigin(0.5, 0.5).setDepth(51).setVisible(false);
+    this._tutPicLayout = null;
+    this._tutPicWorld  = new Phaser.Math.Vector2();
+
+    this.tutorialContainer.add([
+      this._tutBg, this._tutStepTxt, this._tutTitleTxt, this._tutTextTxt, this._tutHintTxt,
+    ]);
     this.tutHighlightGfx = this.add.graphics().setDepth(45);
+
+    this._tutHitArea = this.add.zone(0, 0, L.panelW, L.panelH)
+      .setInteractive({ useHandCursor: true });
+    this.tutorialContainer.add(this._tutHitArea);
+    this._tutHitArea.on("pointerdown", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && this._tutorialCanSpaceContinue(tut)) this._sendTutorialDismiss();
+    });
 
     this.input.keyboard.on("keydown-SPACE", () => {
       const tut = this.gameState?.tutorial;
-      if (tut?.active && tut?.needs_dismiss) this._sendTutorialDismiss();
+      if (tut?.active && this._tutorialCanSpaceContinue(tut)) this._sendTutorialDismiss();
+    });
+    this.input.keyboard.on("keydown-W", () => {
+      const tut = this.gameState?.tutorial;
+      if (tut?.active && tut?.can_undo) {
+        this.ws?.send("tutorial_undo", {});
+        playSfx(this, "sfx_select");
+      }
     });
 
-    this.tutorialContainer.setInteractive(
-      new Phaser.Geom.Rectangle(-275, -70, 550, 140), Phaser.Geom.Rectangle.Contains);
-    this.tutorialContainer.on("pointerdown", () => {
-      const tut = this.gameState?.tutorial;
-      if (tut?.active && tut?.needs_dismiss) this._sendTutorialDismiss();
-    });
+    this._applyTutorialLayout("text");
+  }
+
+  _applyTutorialLayout(mode) {
+    const L = mode === "gif"
+      ? this._tutLayoutWithGif
+      : mode === "pic"
+        ? this._tutLayoutWithPic
+        : this._tutLayoutTextOnly;
+    const { panelW, panelH, pad } = L;
+    const mediaW = mode === "pic" ? (L.picW ?? 0) : (L.gifW ?? 0);
+    const mediaH = mode === "pic" ? (L.picH ?? 0) : (L.gifH ?? 0);
+    const hasMedia = mode === "gif" || mode === "pic";
+
+    this._tutBg.setSize(panelW, panelH);
+
+    const centerY = BOARD_OFF_Y + 20 + panelH / 2;
+    this.tutorialContainer.setPosition(CANVAS_W / 2, centerY);
+
+    const mediaInsetRight = L.gifInsetRight ?? L.picInsetRight ?? 0;
+    const textMediaGap    = L.textGifGap ?? L.textPicGap ?? 16;
+    const leftMinX = -panelW / 2 + pad;
+    const leftMaxX = hasMedia
+      ? panelW / 2 - mediaW - pad - mediaInsetRight - textMediaGap
+      : panelW / 2 - pad;
+    const leftCx   = (leftMinX + leftMaxX) / 2;
+    const textW    = Math.max(120, leftMaxX - leftMinX);
+
+    const headerY = L.headerY ?? L.titleY ?? pad;
+    const bodyY   = L.bodyY ?? headerY + 56;
+    const hintBottomPad = L.hintBottomPad ?? 18;
+
+    this._tutStepTxt
+      .setPosition(panelW / 2 - pad, -panelH / 2 + headerY)
+      .setOrigin(1, 0)
+      .setFontSize(L.stepSize);
+    this._tutTitleTxt
+      .setPosition(leftMinX, -panelH / 2 + headerY)
+      .setOrigin(0, 0)
+      .setFontSize(L.titleSize);
+    this._tutTextTxt
+      .setPosition(leftCx, -panelH / 2 + bodyY)
+      .setFontSize(L.bodySize)
+      .setWordWrapWidth(textW, true)
+      .setStyle({ lineSpacing: L.bodyLineSpacing ?? 12 });
+    this._tutHintTxt
+      .setPosition(leftCx, panelH / 2 - hintBottomPad)
+      .setFontSize(L.hintSize);
+
+    if (mode === "gif") {
+      const gifTop = panelH - pad - mediaH;
+      this._tutGifLayout = {
+        x: panelW / 2 - mediaInsetRight - mediaW,
+        y: -panelH / 2 + gifTop,
+        w: mediaW,
+        h: mediaH,
+        domNudgeX: L.gifDomNudgeX ?? 0,
+        domNudgeY: L.gifDomNudgeY ?? 0,
+      };
+      const wrap = this._tutGifDom.node?.querySelector(".tut-gif-wrap");
+      if (wrap) {
+        wrap.style.width  = `${mediaW}px`;
+        wrap.style.height = `${mediaH}px`;
+      }
+      this._tutPicLayout = null;
+      this._tutPicDom?.setVisible(false);
+      this._syncTutorialGifDomPosition();
+    } else {
+      this._tutGifLayout = null;
+      this._tutGifDom?.setVisible(false);
+    }
+
+    if (mode === "pic") {
+      const picTop = panelH - pad - mediaH;
+      this._tutPicLayout = {
+        x: panelW / 2 - mediaInsetRight - mediaW,
+        y: -panelH / 2 + picTop,
+        w: mediaW,
+        h: mediaH,
+        domNudgeX: L.picDomNudgeX ?? 0,
+        domNudgeY: L.picDomNudgeY ?? 0,
+      };
+      const wrap = this._tutPicDom.node?.querySelector(".tut-pic-wrap");
+      if (wrap) {
+        wrap.style.width  = `${mediaW}px`;
+        wrap.style.height = `${mediaH}px`;
+      }
+      this._tutGifLayout = null;
+      this._tutGifDom?.setVisible(false);
+      this._syncTutorialPicDomPosition();
+    } else if (mode !== "gif") {
+      this._tutPicLayout = null;
+      this._tutPicDom?.setVisible(false);
+    }
+
+    if (this._tutHitArea) this._tutHitArea.setSize(panelW, panelH);
+  }
+
+  /** Position tutorial GIF in canvas space (DOM ignores container parent transform). */
+  _syncTutorialGifDomPosition() {
+    const lay = this._tutGifLayout;
+    if (!lay || !this._tutGifDom || !this.tutorialContainer.visible) return;
+
+    this._tutGifDom.setOrigin(0, 0);
+    const mat = this.tutorialContainer.getWorldTransformMatrix();
+    mat.transformPoint(lay.x, lay.y, this._tutGifWorld);
+    const nudgeX = lay.domNudgeX ?? 0;
+    const nudgeY = lay.domNudgeY ?? 0;
+    this._tutGifDom.setPosition(this._tutGifWorld.x + nudgeX, this._tutGifWorld.y + nudgeY);
+    if (typeof this._tutGifDom.setSize === "function") {
+      this._tutGifDom.setSize(lay.w, lay.h);
+    }
+  }
+
+  _setTutorialGifSrc(url) {
+    if (!this._tutGifDom?.node) return;
+    const img = this._tutGifDom.node.querySelector("img.tut-gif-img");
+    if (!img || !url) return;
+    if (img.dataset.tutSrc === url) return;
+    img.src = url;
+    img.dataset.tutSrc = url;
+  }
+
+  _syncTutorialPicDomPosition() {
+    const lay = this._tutPicLayout;
+    if (!lay || !this._tutPicDom || !this.tutorialContainer.visible) return;
+
+    this._tutPicDom.setOrigin(0, 0);
+    const mat = this.tutorialContainer.getWorldTransformMatrix();
+    mat.transformPoint(lay.x, lay.y, this._tutPicWorld);
+    const nudgeX = lay.domNudgeX ?? 0;
+    const nudgeY = lay.domNudgeY ?? 0;
+    this._tutPicDom.setPosition(this._tutPicWorld.x + nudgeX, this._tutPicWorld.y + nudgeY);
+    if (typeof this._tutPicDom.setSize === "function") {
+      this._tutPicDom.setSize(lay.w, lay.h);
+    }
+  }
+
+  _setTutorialPicSrcs(urls) {
+    const wrap = this._tutPicDom?.node?.querySelector(".tut-pic-wrap");
+    if (!wrap || !urls?.length) return;
+    const key = urls.join("|");
+    if (wrap.dataset.tutSrc === key) return;
+    wrap.dataset.tutSrc = key;
+    wrap.innerHTML = urls.map((url) => (
+      `<img class="tut-pic-img" src="${url}" alt="" `
+      + 'style="flex:1;min-width:0;height:100%;object-fit:contain;" />'
+    )).join("");
+  }
+
+  _drawTutorialAlternateSides() {
+    this._drawTutorialSideCells("p1");
+    this._drawTutorialSideCells("p2");
+  }
+
+  /** Pulse-highlight all cells on one side (e.g. Mob / Emu territory for explain_win). */
+  _drawTutorialSideCells(side) {
+    const cw = GRID_DRAW_W / GRID_SIZE;
+    const ch = GRID_DRAW_H / GRID_SIZE;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 220);
+    const color = side === "p1" ? 0xe8a030 : 0x60e8a0;
+
+    for (let col = 0; col < GRID_SIZE; col++) {
+      for (let row = 0; row < GRID_SIZE; row++) {
+        if (sideOfTutorialCell(col, row) !== side) continue;
+        const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
+        const alpha = 0.08 + 0.10 * pulse;
+        this.tutHighlightGfx.fillStyle(color, alpha);
+        this.tutHighlightGfx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+        this.tutHighlightGfx.lineStyle(2, color, 0.35 + 0.35 * pulse);
+        this.tutHighlightGfx.strokeRect(bx + 1, by + 1, cw - 2, ch - 2);
+      }
+    }
+  }
+
+  _tutorialCanSpaceContinue(tut) {
+    return !!(tut?.needs_dismiss || tut?.allow_skip);
+  }
+
+  _updateTutorialHint(tut) {
+    if (!tut?.active) {
+      this._tutHintTxt.setVisible(false);
+      return;
+    }
+    if (tut.completed) {
+      this._tutHintTxt
+        .setText("Tutorial complete! Press SPACE or click to play.")
+        .setVisible(true);
+      return;
+    }
+    const parts = [];
+    if (tut.needs_dismiss || tut.allow_skip) parts.push("SPACE or click to continue");
+    if (tut.allow_skip && !tut.needs_dismiss) parts.push("SPACE to skip");
+    if (tut.needs_confirm) parts.push("Scan the confirm marker to continue");
+    else if (tut.needs_token) parts.push("Place and aim the token as shown");
+    else if (tut.allow_skip && !tut.needs_dismiss) parts.push("Scan the correct turn marker to continue");
+    if (tut.can_undo) parts.push("W to undo");
+    if (parts.length) {
+      this._tutHintTxt.setText(parts.join(" · ")).setVisible(true);
+    } else {
+      this._tutHintTxt.setVisible(false);
+    }
   }
 
   _sendTutorialDismiss() {
-    if (this.ws) { this.ws.send("tutorial_dismiss", {}); playSfx(this, "sfx_select"); }
+    if (this.ws) {
+      this.ws.send("tutorial_dismiss", {});
+      playSfx(this, "sfx_select");
+    }
+  }
+
+  _buildMuteButton() {
+    const btn = this.add.text(CANVAS_W - 12, 12, "🔊", {
+      fontFamily: FONT_MONO, fontSize: "18px", color: "#fff0d0",
+    }).setOrigin(1, 0).setDepth(55).setInteractive({ useHandCursor: true });
+
+    btn.on("pointerdown", () => {
+      const muted = toggleMute();
+      btn.setText(muted ? "🔇" : "🔊");
+      if (!muted && this._bgmStarted) playBgm(this, "bgm_outback");
+    });
   }
 
   // ─── End Turn Button ─────────────────────────────────────────────────────────
@@ -568,7 +862,7 @@ export class GameScene extends Phaser.Scene {
     const nextDir = cycle[(curIdx + 1) % cycle.length];
 
     this.ws?.send("rotate_token", { side, role, direction: nextDir });
-    playSfx(this, "sfx_select");
+    playSfx(this, "sfx_marker_turn");  // short 523 Hz sine click on every rotation
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -576,6 +870,18 @@ export class GameScene extends Phaser.Scene {
   // ══════════════════════════════════════════════════════════════════════════════
 
   _handleBoardClick(pointer) {
+    const tut = this.gameState?.tutorial;
+    if (tut?.active && this._tutorialCanSpaceContinue(tut)) {
+      this._sendTutorialDismiss();
+      return;
+    }
+
+    // First click = guaranteed user gesture → safe to start BGM now
+    if (!this._bgmStarted) {
+      this._bgmStarted = true;
+      playBgm(this, "bgm_outback");
+    }
+
     const s = this.gameState;
     if (!s || s.phase !== "game") return;
 
@@ -584,13 +890,20 @@ export class GameScene extends Phaser.Scene {
     const col = Math.floor((pointer.x - BOARD_OFF_X - GRID_INSET_X) / cw);
     const row = Math.floor((pointer.y - BOARD_OFF_Y - GRID_INSET_Y) / ch);
 
-    // ── Nuke targeting (highest priority) ────────────────────────────────────
+    // ── Nuke targeting (manual / no-camera: click enemy cell after arming card) ─
     if (this._nukeArmingSide) {
       if (col >= 0 && col < GRID_SIZE && row >= 0 && row < GRID_SIZE) {
         const onEnemy = this._nukeArmingSide === "p1" ? isP2Cell(col, row) : isP1Cell(col, row);
         if (onEnemy) {
           this.ws?.send("trigger_nuke", { side: this._nukeArmingSide, position: { x: col, y: row } });
           playSfx(this, "sfx_select");
+          const confirmId = s.battle?.confirm_marker_id ?? 4;
+          if (!s.manual_controls) {
+            this._ensureNukeHint();
+            this._nukeHintTxt
+              .setText(`Nuke target set — scan ID${confirmId} to launch`)
+              .setVisible(true);
+          }
         }
       }
       this._nukeArmingSide = null;
@@ -666,7 +979,7 @@ export class GameScene extends Phaser.Scene {
     const battle   = s.battle || {};
     const inBattle = s.phase === "game" || s.phase == null;
 
-    const terrainKey = `${s.map_seed}|${JSON.stringify(G.hard_damage || {})}|${JSON.stringify(G.soft_damage || {})}|${JSON.stringify(G.hard_gone || [])}|${JSON.stringify(G.soft_gone || [])}`;
+    const terrainKey = `${s.map_seed}|${JSON.stringify(G.hard_gone || [])}|${JSON.stringify(G.soft_gone || [])}`;
     if (s.terrain && terrainKey !== this._lastSeed) {
       this._renderResources(s);
       this._lastSeed = terrainKey;
@@ -679,12 +992,9 @@ export class GameScene extends Phaser.Scene {
 
     if (inBattle) {
       if (s.p1?.def?.col != null)
-        this._drawDefZone("p1", s.p1.def.col, s.p1.def.row, G.def_tier_p1 ?? 0, 0xe8d060, G);
+        this._drawDefZone(s.p1.def.col, s.p1.def.row, G.def_tier_p1 ?? 0, 0xe8d060);
       if (s.p2?.def?.col != null)
-        this._drawDefZone("p2", s.p2.def.col, s.p2.def.row, G.def_tier_p2 ?? 0, 0x60e8a0, G);
-      this._drawConsumedDefCells("p1", G, 0xe8d060);
-      this._drawConsumedDefCells("p2", G, 0x60e8a0);
-      this._drawNukePreview(battle.pending_nuke);
+        this._drawDefZone(s.p2.def.col, s.p2.def.row, G.def_tier_p2 ?? 0, 0x60e8a0);
 
       for (const role of ["atk_a", "atk_b"]) {
         if (s.p1?.[role]?.col != null && s.p1[role].direction)
@@ -696,15 +1006,17 @@ export class GameScene extends Phaser.Scene {
             computeRay(s.p2[role].col, s.p2[role].row, s.p2[role].direction,
                        hardMap, softMap, "p2", destroyedMap, p1TargetMap));
       }
-    } else {
-      this._drawNukePreview(null);
     }
 
     this._drawHqPlacementRings(s);
     this._renderTokens(s.p1, s.p2, inBattle, G);
     this._renderHqSprites(s, G);
     this._renderWinOverlay(G);
+    this._drawNukePendingZone(battle);
+    this._updateNukeUi(s);
     this._renderTutorial(s.tutorial);
+    if (this._tutGifDom?.visible) this._syncTutorialGifDomPosition();
+    if (this._tutPicDom?.visible) this._syncTutorialPicDomPosition();
     this._updateEndTurnBtn();
   }
 
@@ -713,15 +1025,11 @@ export class GameScene extends Phaser.Scene {
   _renderResources(state) {
     for (const sp of this._terrainSprites) sp.destroy();
     this._terrainSprites = [];
-    for (const label of this._terrainHpLabels) label.destroy();
-    this._terrainHpLabels = [];
     this.resourceGfx.clear();
     const terrain = state?.terrain;
     if (!terrain) return;
     const hardGoneKeys = new Set((state.game?.hard_gone || []).map(([c, r]) => `${c},${r}`));
     const softGoneKeys = new Set((state.game?.soft_gone || []).map(([c, r]) => `${c},${r}`));
-    const hardHp = state.game?.hard_terrain_hp ?? 5;
-    const softHp = state.game?.soft_terrain_hp ?? 2;
 
     const cw = GRID_DRAW_W / GRID_SIZE;
     const ch = GRID_DRAW_H / GRID_SIZE;
@@ -733,30 +1041,12 @@ export class GameScene extends Phaser.Scene {
       this._terrainSprites.push(sp);
     };
 
-    const placeTerrain = (col, row, tex, maxHp, damageMap, goneKeys, color) => {
-      const key = `${col},${row}`;
-      if (goneKeys.has(key)) return;
-      place(col, row, tex);
-      const damage = damageMap?.[key] ?? 0;
-      const remaining = Math.max(1, maxHp - damage);
-      const { x, y } = cellXY(col, row);
-      const label = this.add.text(x, y + ch * 0.34, String(remaining), {
-        fontFamily: FONT_MONO,
-        fontSize: "11px",
-        fontStyle: "bold",
-        color,
-        stroke: "#000000",
-        strokeThickness: 4,
-      }).setOrigin(0.5).setDepth(12);
-      this._terrainHpLabels.push(label);
-    };
-
     for (const r of terrain.p1_resources || []) place(r.col, r.row, "cell_mick");
     for (const r of terrain.p2_resources || []) place(r.col, r.row, "cell_emu");
-    for (const t of terrain.p1_hard || []) placeTerrain(t.col, t.row, "hard_mick", hardHp, state.game?.hard_damage, hardGoneKeys, "#ffd060");
-    for (const t of terrain.p2_hard || []) placeTerrain(t.col, t.row, "hard_emu", hardHp, state.game?.hard_damage, hardGoneKeys, "#ffd060");
-    for (const t of terrain.p1_soft || []) placeTerrain(t.col, t.row, "soft_mick", softHp, state.game?.soft_damage, softGoneKeys, "#ffe0a0");
-    for (const t of terrain.p2_soft || []) placeTerrain(t.col, t.row, "soft_emu", softHp, state.game?.soft_damage, softGoneKeys, "#ffe0a0");
+    for (const t of terrain.p1_hard      || []) if (!hardGoneKeys.has(`${t.col},${t.row}`)) place(t.col, t.row, "hard_mick");
+    for (const t of terrain.p2_hard      || []) if (!hardGoneKeys.has(`${t.col},${t.row}`)) place(t.col, t.row, "hard_emu");
+    for (const t of terrain.p1_soft      || []) if (!softGoneKeys.has(`${t.col},${t.row}`)) place(t.col, t.row, "soft_mick");
+    for (const t of terrain.p2_soft      || []) if (!softGoneKeys.has(`${t.col},${t.row}`)) place(t.col, t.row, "soft_emu");
 
     const g = this.resourceGfx;
     for (const r of [...(terrain.p1_resources || []), ...(terrain.p2_resources || [])]) {
@@ -815,61 +1105,17 @@ export class GameScene extends Phaser.Scene {
 
   // ─── Defence zone ───────────────────────────────────────────────────────────
 
-  _drawDefZone(side, col, row, tier, color, G) {
-    const rad = tier >= 1 ? 2 : 1;
-    const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
-    const consumed = new Set();
-    const anchor = G?.def_anchor_cells?.[side];
-    if (Array.isArray(anchor) && anchor[0] === col && anchor[1] === row) {
-      for (const [c, r] of G?.def_consumed_cells?.[side] || []) consumed.add(`${c},${r}`);
-    }
-
-    this.dynGfx.lineStyle(1.5, color, 0.42);
-    for (let y = row - rad; y <= row + rad; y++) {
-      for (let x = col - rad; x <= col + rad; x++) {
-        if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) continue;
-        if (consumed.has(`${x},${y}`)) continue;
-        const bx = BOARD_OFF_X + GRID_INSET_X + x * cw;
-        const by = BOARD_OFF_Y + GRID_INSET_Y + y * ch;
-        this.dynGfx.fillStyle(color, 0.09);
-        this.dynGfx.fillRect(bx, by, cw, ch);
-        this.dynGfx.strokeRect(bx, by, cw, ch);
-      }
-    }
-
-  }
-
-  _drawConsumedDefCells(side, G, color) {
-    const anchor = G?.def_anchor_cells?.[side];
-    const token = this.gameState?.[side]?.def;
-    if (!Array.isArray(anchor) || token?.col !== anchor[0] || token?.row !== anchor[1]) return;
-
-    const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
-    const destroyed = new Set((G?.destroyed || []).map(([col, row]) => `${col},${row}`));
-    for (const [col, row] of G?.def_consumed_cells?.[side] || []) {
-      if (destroyed.has(`${col},${row}`)) continue;
-      const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
-      const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
-      const pad = 5;
-      const cut = 13;
-      this.dynGfx.fillStyle(0x000000, 0.28);
-      this.dynGfx.fillRect(bx + pad, by + pad, cw - pad * 2, ch - pad * 2);
-      this.dynGfx.lineStyle(3, 0x000000, 0.75);
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + pad, by + pad + cut, bx + pad + cut, by + pad));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw - pad - cut, by + pad, bx + cw - pad, by + pad + cut));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + pad, by + ch - pad - cut, bx + pad + cut, by + ch - pad));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw - pad - cut, by + ch - pad, bx + cw - pad, by + ch - pad - cut));
-      this.dynGfx.lineStyle(2, color, 1.0);
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + pad, by + pad + cut, bx + pad + cut, by + pad));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw - pad - cut, by + pad, bx + cw - pad, by + pad + cut));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + pad, by + ch - pad - cut, bx + pad + cut, by + ch - pad));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw - pad - cut, by + ch - pad, bx + cw - pad, by + ch - pad - cut));
-      this.dynGfx.lineStyle(2.5, 0xff3020, 0.95);
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw * 0.39, by + ch * 0.36, bx + cw * 0.50, by + ch * 0.50));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw * 0.50, by + ch * 0.50, bx + cw * 0.43, by + ch * 0.65));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw * 0.54, by + ch * 0.38, bx + cw * 0.61, by + ch * 0.50));
-      this.dynGfx.strokeLineShape(new Phaser.Geom.Line(bx + cw * 0.61, by + ch * 0.50, bx + cw * 0.56, by + ch * 0.64));
-    }
+  _drawDefZone(col, row, tier, color) {
+    const rad  = tier >= 1 ? 2 : 1;
+    const cw   = GRID_DRAW_W / GRID_SIZE;
+    const ch   = GRID_DRAW_H / GRID_SIZE;
+    const size = rad * 2 + 1;
+    const x    = BOARD_OFF_X + GRID_INSET_X + (col - rad) * cw;
+    const y    = BOARD_OFF_Y + GRID_INSET_Y + (row - rad) * ch;
+    this.dynGfx.fillStyle(color, 0.09);
+    this.dynGfx.fillRect(x, y, size * cw, size * ch);
+    this.dynGfx.lineStyle(2, color, 0.55);
+    this.dynGfx.strokeRect(x, y, size * cw, size * ch);
   }
 
   // ─── Attack ray ─────────────────────────────────────────────────────────────
@@ -930,50 +1176,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  _drawNukePreview(pendingNuke) {
-    const sprites = {
-      p1: this.tokenSprites?.p1_nuke,
-      p2: this.tokenSprites?.p2_nuke,
-    };
-
-    for (const sprite of Object.values(sprites)) sprite?.setVisible(false);
-
-    if (!pendingNuke || pendingNuke.col == null || pendingNuke.row == null) return;
-    const { side, col, row } = pendingNuke;
-    const sprite = sprites[side];
-    if (!sprite) return;
-
-    const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
-    const pulse = 0.65 + 0.20 * Math.sin(this.time.now / 140);
-    const color = side === "p1" ? 0xffb020 : 0xff6040;
-
-    for (let y = row - 1; y <= row + 1; y++) {
-      for (let x = col - 1; x <= col + 1; x++) {
-        if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) continue;
-        const bx = BOARD_OFF_X + GRID_INSET_X + x * cw;
-        const by = BOARD_OFF_Y + GRID_INSET_Y + y * ch;
-        this.dynGfx.fillStyle(color, 0.16);
-        this.dynGfx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
-        this.dynGfx.lineStyle(2, color, pulse);
-        this.dynGfx.strokeRect(bx + 2, by + 2, cw - 4, ch - 4);
-      }
-    }
-
-    const { x, y } = cellXY(col, row);
-    this.dynGfx.lineStyle(4, 0x000000, 0.65);
-    this.dynGfx.strokeCircle(x, y, cw * 0.52);
-    this.dynGfx.lineStyle(2.5, color, 0.95);
-    this.dynGfx.strokeCircle(x, y, cw * 0.52);
-    sprite.setPosition(x, y).setAngle(Math.sin(this.time.now / 180) * 3).setAlpha(1).setVisible(true);
-  }
-
   // ─── HQ placement rings ─────────────────────────────────────────────────────
 
   _drawHqPlacementRings(s) {
-    if (s.phase !== "hq_placement") return;
     const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
     for (const side of ["p1", "p2"]) {
-      if (s.setup?.active_setup_side !== side || s.setup?.hq?.[side]?.confirmed) continue;
+      if (s.phase === "hq_placement" && s.setup?.active_setup_side !== side) continue;
       const marker = s.hq_markers?.[side];
       if (!marker || marker.col == null || marker.stale) continue;
       const { col, row } = marker;
@@ -1105,8 +1313,7 @@ export class GameScene extends Phaser.Scene {
       (G.win_reason === "homestead_destroyed" || G.win_reason === "nest_destroyed");
 
     for (const side of ["p1", "p2"]) {
-      if (s.phase !== "hq_placement") continue;
-      if (s.setup?.active_setup_side !== side || s.setup?.hq?.[side]?.confirmed) continue;
+      if (s.phase === "hq_placement" && s.setup?.active_setup_side !== side) continue;
       const m = s.hq_markers?.[side];
       if (m?.col != null && !m.stale) {
         showAt(side, m.col, m.row);
@@ -1161,25 +1368,133 @@ export class GameScene extends Phaser.Scene {
     this.winContainer.setVisible(true);
   }
 
+  // ─── Nuke UI (live marker flow + manual click targeting) ─────────────────────
+
+  _ensureNukeHint() {
+    if (this._nukeHintTxt) return;
+    this._nukeHintTxt = this.add.text(CANVAS_W / 2, BOARD_OFF_Y + BOARD_PX + 14, "", {
+      fontFamily: FONT_MONO, fontSize: "12px", color: "#ffd070",
+      align: "center", wordWrap: { width: BOARD_PX },
+    }).setOrigin(0.5, 0).setDepth(52).setVisible(false);
+  }
+
+  _updateNukeUi(s) {
+    this._ensureNukeHint();
+    const battle     = s?.battle || {};
+    const game       = s?.game   || {};
+    const activeSide = battle.active_side ?? null;
+    const manual     = !!s?.manual_controls;
+
+    if (!activeSide || s?.phase !== "game") {
+      this._nukeArmingSide = null;
+      this._nukeHintTxt?.setVisible(false);
+      return;
+    }
+
+    if (!manual && this._nukeArmingSide) this._nukeArmingSide = null;
+
+    const markerId   = battle.nuke_marker_id ?? (activeSide === "p1" ? 19 : 29);
+    const confirmId  = battle.confirm_marker_id ?? 4;
+    const pending    = battle.pending_nuke;
+    const available  = activeSide === "p1" ? !!game.nuke_available_p1 : !!game.nuke_available_p2;
+    const used       = activeSide === "p1" ? !!game.nuke_used_p1 : !!game.nuke_used_p2;
+
+    if (pending?.col != null && pending?.row != null) {
+      const label = `${colLabel(pending.col)}${pending.row + 1}`;
+      this._nukeHintTxt
+        .setText(`Nuke locked on ${label} — scan ID${confirmId} to launch`)
+        .setVisible(true);
+    } else if (this._nukeArmingSide === activeSide) {
+      this._nukeHintTxt
+        .setText("Click an enemy cell to set the nuke target")
+        .setVisible(true);
+    } else if (available && !used) {
+      const lead = manual
+        ? "Nuke ready — click the Nuke card, then an enemy cell"
+        : `Nuke ready — scan ID${markerId} on an enemy cell, then ID${confirmId}`;
+      this._nukeHintTxt.setText(lead).setVisible(true);
+    } else {
+      this._nukeHintTxt.setVisible(false);
+    }
+  }
+
+  _drawNukePendingZone(battle) {
+    const pending = battle?.pending_nuke;
+    if (!pending || pending.col == null || pending.row == null) return;
+
+    const cx = pending.col;
+    const cy = pending.row;
+    const cw = GRID_DRAW_W / GRID_SIZE;
+    const ch = GRID_DRAW_H / GRID_SIZE;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 160);
+    const g = this.dynGfx;
+
+    for (let row = cy - 1; row <= cy + 1; row++) {
+      for (let col = cx - 1; col <= cx + 1; col++) {
+        if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) continue;
+        const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
+        const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
+        g.fillStyle(0xff6020, 0.12 + 0.12 * pulse);
+        g.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+        g.lineStyle(2, 0xff9040, 0.55 + 0.35 * pulse);
+        g.strokeRect(bx + 1, by + 1, cw - 2, ch - 2);
+      }
+    }
+  }
+
   // ─── Tutorial overlay ────────────────────────────────────────────────────────
 
   _renderTutorial(tut) {
     this.tutHighlightGfx.clear();
+
     if (!tut?.active) {
       this.tutorialContainer.setVisible(false);
+      this._tutGifDom?.setVisible(false);
+      this._tutPicDom?.setVisible(false);
       this._tutCellLabel?.setVisible(false);
       return;
     }
 
+    const picUrls = [];
+    if (tut.tutorial_image) picUrls.push(tut.tutorial_image);
+    if (Array.isArray(tut.tutorial_images)) picUrls.push(...tut.tutorial_images);
+
+    const layout = tut.tutorial_layout
+      || (picUrls.length ? "with_pic" : tut.tutorial_gif ? "gif" : "text");
+    const layoutMode = layout === "with_pic" ? "pic" : layout === "gif" ? "gif" : "text";
+
     this._tutStepTxt.setText(`${tut.step_index + 1} / ${tut.total_steps}`);
     this._tutTitleTxt.setText(tut.title || "");
-    this._tutTextTxt.setText(tut.text  || "");
-    this._tutHintTxt.setVisible(!!tut.needs_dismiss);
+    this._tutTextTxt.setText(tut.text || "");
+    this._applyTutorialLayout(layoutMode, tut);
+    this._updateTutorialHint(tut);
     this.tutorialContainer.setVisible(true);
 
-    if (tut.highlight) {
+    if (layoutMode === "pic" && picUrls.length) {
+      this._setTutorialPicSrcs(picUrls);
+      this._tutPicDom?.setVisible(true);
+      this._syncTutorialPicDomPosition();
+    } else if (layoutMode === "gif" && tut.tutorial_gif) {
+      this._setTutorialGifSrc(tut.tutorial_gif);
+      this._tutGifDom?.setVisible(true);
+      this._syncTutorialGifDomPosition();
+    } else {
+      this._tutGifLayout = null;
+      this._tutPicLayout = null;
+      this._tutGifDom?.setVisible(false);
+      this._tutPicDom?.setVisible(false);
+    }
+
+    if (tut.highlight_alternate_sides) {
+      this._drawTutorialAlternateSides();
+      this._tutCellLabel?.setVisible(false);
+    } else if (tut.highlight_side === "p1" || tut.highlight_side === "p2") {
+      this._drawTutorialSideCells(tut.highlight_side);
+      this._tutCellLabel?.setVisible(false);
+    } else if (tut.highlight) {
       const { col, row } = tut.highlight;
-      const cw = GRID_DRAW_W / GRID_SIZE, ch = GRID_DRAW_H / GRID_SIZE;
+      const cw = GRID_DRAW_W / GRID_SIZE;
+      const ch = GRID_DRAW_H / GRID_SIZE;
       const bx = BOARD_OFF_X + GRID_INSET_X + col * cw;
       const by = BOARD_OFF_Y + GRID_INSET_Y + row * ch;
       const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 200);
@@ -1190,18 +1505,15 @@ export class GameScene extends Phaser.Scene {
 
       if (!this._tutCellLabel) {
         this._tutCellLabel = this.add.text(0, 0, "", {
-          fontFamily: FONT_MONO, fontSize: "12px", fontStyle: "bold",
-          color: "#ffd060", stroke: "#000000", strokeThickness: 3,
+          fontFamily: FONT_MONO, fontSize: "28px", fontStyle: "bold",
+          color: "#ffd060", stroke: "#000000", strokeThickness: 4,
         }).setOrigin(0.5).setDepth(46);
       }
       this._tutCellLabel.setText(`${colLabel(col)}${row + 1}`)
-        .setPosition(bx + cw / 2, by + ch + 8).setVisible(true);
+        .setPosition(bx + cw / 2, by + ch + 10)
+        .setVisible(true);
     } else {
       this._tutCellLabel?.setVisible(false);
-    }
-
-    if (tut.completed) {
-      this._tutHintTxt.setText("Tutorial Complete! Press SPACE to continue.").setVisible(true);
     }
   }
 
@@ -1243,13 +1555,25 @@ export class GameScene extends Phaser.Scene {
   _bindWS() {
     if (!this.ws) return;
 
+    // Track previous tier values so we can detect upgrades via state diff
+    this._prevTiers = { p1: 0, p2: 0 };
+
     this.ws.on("state", (s) => {
       const prevSide = this._lastActiveSide;
       const newSide  = s.battle?.active_side ?? null;
 
       this.gameState = s;
 
-      // Detect turn switch: show overlay when active_side changes to a non-null value
+      // ── Tier-up detection (state diff) ─────────────────────────────────────
+      const t1 = s.game?.tier_p1 ?? s.p1?.tier ?? 0;
+      const t2 = s.game?.tier_p2 ?? s.p2?.tier ?? 0;
+      if (t1 > this._prevTiers.p1 || t2 > this._prevTiers.p2) {
+        playSfx(this, "sfx_tier_up");
+      }
+      this._prevTiers.p1 = t1;
+      this._prevTiers.p2 = t2;
+
+      // ── Turn switch: show pass-device overlay ───────────────────────────────
       if (newSide && newSide !== prevSide) {
         this._showTurnOverlay(newSide);
         // Close any open picker when turn changes

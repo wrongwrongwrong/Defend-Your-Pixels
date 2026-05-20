@@ -49,6 +49,12 @@ html, body {
   background: #1e1508;
 }
 
+.panel.tutorial-highlight {
+  outline: 3px solid #ffd060;
+  outline-offset: 2px;
+  box-shadow: 0 0 18px rgba(255, 208, 96, 0.45);
+}
+
 /* ── Score block ──────────────────────────────────────────────── */
 .score-block {
   display: flex;
