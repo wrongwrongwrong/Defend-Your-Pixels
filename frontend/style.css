@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Defend Your Pixels — Prototype 4 Stylesheet
+   Old Micks and The Emus — Prototype 4 Stylesheet
    Font: Press Start 2P (pixel retro)
    Layout: panel-left | board | panel-right  +  bottom bar
 ═══════════════════════════════════════════════════════════════ */
@@ -269,6 +269,82 @@ html, body {
   justify-content: center;
   min-width: 0;
   background: #1a1208;
+  position: relative;
+}
+
+/* Intro: fullscreen Start + video — hide game chrome until GameScene */
+body.intro-stage {
+  background: #000000 url('../assets/images/board.png') center / cover no-repeat;
+}
+body.intro-stage::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 1;
+}
+body.intro-stage #game-canvas {
+  position: relative;
+  z-index: 2;
+}
+body.intro-stage .game-root {
+  width: 100%;
+  height: calc(100vh - 56px);
+  background: transparent;
+}
+body.intro-stage .panel-left,
+body.intro-stage .panel-right,
+body.intro-stage .notif-bar {
+  display: none !important;
+}
+body.intro-stage .board-area {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+}
+body.intro-stage #game-canvas canvas {
+  background: transparent !important;
+}
+body.intro-stage.intro-video-playing #game-canvas canvas {
+  visibility: hidden;
+}
+
+/* Story video — HTML layer aligned to board area, native aspect ratio */
+.intro-video-host {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+  cursor: pointer;
+}
+.intro-video-host.hidden {
+  display: none;
+}
+.intro-video-host video {
+  display: block;
+  object-fit: none;
+  max-width: 100%;
+  max-height: 100%;
+}
+.intro-video-skip {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: monospace;
+  font-size: 11px;
+  color: #d4a030;
+  pointer-events: none;
+  animation: intro-skip-pulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes intro-skip-pulse {
+  from { opacity: 0.45; }
+  to   { opacity: 1; }
 }
 
 #game-canvas {
@@ -295,24 +371,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   background: #c8a870;    /* sand/tan — matches screenshot */
   border-top: 3px solid #8a6830;
   padding: 0 24px;
   transition: background 0.4s, border-top-color 0.4s;
-}
-
-.notif-icon {
-  display: none;
-  flex: 0 0 auto;
-  font-family: 'Press Start 2P', system-ui;
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: #ff5040;
-}
-
-.notif-bar.notif-warning .notif-icon {
-  display: inline-block;
 }
 
 /* Turn colour variants */
@@ -348,59 +410,3 @@ html, body {
 .notif-bar.turn-p2   #notif-text { color: #f8e090; }
 .notif-bar.result-p1 #notif-text { color: #90ff70; }
 .notif-bar.result-p2 #notif-text { color: #ffe870; }
-
-/* ════════════════════════════════════════════════════════════════
-   MODE SELECT OVERLAY
-════════════════════════════════════════════════════════════════ */
-.mode-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 6, 2, 0.86);
-  z-index: 1000;
-}
-.mode-overlay.hidden { display: none; }
-
-.mode-card {
-  width: min(520px, calc(100vw - 48px));
-  padding: 28px 24px;
-  background: #1a1208;
-  border: 3px solid #c8a030;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.65);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  text-align: center;
-}
-
-.mode-title {
-  font-size: 18px;
-  line-height: 1.45;
-  color: #f0e060;
-}
-
-.mode-subtitle {
-  font-size: 8px;
-  line-height: 1.8;
-  color: #a08040;
-  margin-bottom: 8px;
-}
-
-.mode-button {
-  border: 2px solid #e0b030;
-  background: #3a2810;
-  color: #ffe080;
-  font-family: 'Press Start 2P', system-ui;
-  font-size: 9px;
-  padding: 16px 12px;
-  cursor: pointer;
-}
-.mode-button:hover { background: #5a3a10; }
-.mode-button-secondary {
-  border-color: #6adf50;
-  color: #c8ffb0;
-  background: #183014;
-}
-.mode-button-secondary:hover { background: #245020; }

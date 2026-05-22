@@ -1,4 +1,5 @@
 import { BootScene } from "./scenes/BootScene.js";
+import { IntroScene } from "./scenes/IntroScene.js";
 import { GameScene } from "./scenes/GameScene.js";
 import { WSClient, resolveWsUrl } from "/protocol/websocket/browser_client.js";
 import { initUI }    from "./ui.js";
@@ -12,11 +13,11 @@ const game = new Phaser.Game({
   type:            Phaser.AUTO,
   width:           CANVAS_W,
   height:          CANVAS_H,
-  backgroundColor: "#0f0c08",
+  transparent:      true,
   parent:          "game-canvas",
   // Required for tutorial GIF <img> overlays (add.dom) to align with the scaled canvas.
   dom:             { createContainer: true },
-  scene:           [BootScene, GameScene],
+  scene:           [BootScene, IntroScene, GameScene],
   scale: {
     mode:       Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.NO_CENTER,

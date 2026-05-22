@@ -373,6 +373,12 @@ class Session:
         self.board_scan_ready = False
         self.reset(board_scan_ready=False)
 
+    def _mode_select_setup_payload(self) -> dict:
+        payload = self.setup.public_payload()
+        payload["status_code"] = "mode_select"
+        payload["status_message"] = "Choose START GAME or TUTORIAL to begin."
+        return payload
+
     def reset(self, *, board_scan_ready: bool) -> None:
         self.board_scan_ready = bool(board_scan_ready)
         if self.selected_mode == MODE_TUTORIAL:
@@ -396,6 +402,16 @@ class Session:
         self.setup.reset(board_scan_ready=self.board_scan_ready)
         mode_tag = f" mode={self.selected_mode}" if self.selected_mode else ""
         print(f"[MAP] New game (seed={self.seed}{mode_tag})")
+
+    def return_to_mode_select(self, *, board_scan_ready: bool) -> None:
+        self.selected_mode = None
+        self.tutorial_ctrl = None
+        self.tutorial_state = None
+        self._tutorial_last_confirm = False
+        self._tutorial_last_turn = None
+        self._tutorial_fx_step_id = None
+        self.reset(board_scan_ready=board_scan_ready)
+        print("[MODE] Returned to mode select")
 
     def select_mode(self, mode: str, *, board_scan_ready: bool) -> bool:
         if self.selected_mode is not None or mode not in {MODE_NORMAL, MODE_TUTORIAL}:
@@ -609,6 +625,10 @@ class Session:
                 self.select_mode(mode, board_scan_ready=board_scan_ready)
             return errors
 
+        if action_name == "return_to_mode_select":
+            self.return_to_mode_select(board_scan_ready=board_scan_ready)
+            return errors
+
         if action_name == "tutorial_dismiss":
             if self.tutorial_ctrl is not None:
                 self.tutorial_ctrl.dismiss()
@@ -766,7 +786,7 @@ class Session:
             "map_seed": self.seed,
             "game": self.model.snapshot() if self.model is not None else {},
             "events": events,
-            "setup": self.setup.public_payload(),
+            "setup": self._mode_select_setup_payload() if self.selected_mode is None else self.setup.public_payload(),
             "battle": self._battle_payload(),
             "help_visible": self.help_visible,
             "errors": dedupe_errors(errors),

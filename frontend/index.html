@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Defend Your Pixels — The Great Emu War</title>
+  <title>Old Mick and the Emus</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Special+Elite&family=Oswald:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <script src="phaser.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="intro-stage">
 
   <div class="game-root">
 
@@ -33,7 +33,7 @@
         <div class="token-card card-farmer" id="p1-card-def">
           <div class="card-fill card-fill-p1" id="p1-fill-def"></div>
           <div class="card-img">
-            <img src="assets/images/def-mick.png" alt="Defense">
+            <img src="assets/images/tokens/def-m-level1.png" alt="Defense">
           </div>
           <div class="card-info">
             <div class="card-label">Protecting</div>
@@ -46,7 +46,7 @@
         <div class="token-card card-farmer" id="p1-card-atk_a">
           <div class="card-fill card-fill-p1" id="p1-fill-atk_a"></div>
           <div class="card-img">
-            <img src="assets/images/atk-mick-a.png" alt="Rifleman A">
+            <img src="assets/images/tokens/atk-m-1.png" alt="Rifleman A">
           </div>
           <div class="card-info">
             <div class="card-label">Destroyed</div>
@@ -59,7 +59,7 @@
         <div class="token-card card-farmer" id="p1-card-atk_b">
           <div class="card-fill card-fill-p1" id="p1-fill-atk_b"></div>
           <div class="card-img">
-            <img src="assets/images/atk-mick-b.png" alt="Rifleman B">
+            <img src="assets/images/tokens/atk-m-2.png" alt="Rifleman B">
           </div>
           <div class="card-info">
             <div class="card-label">Destroyed</div>
@@ -71,7 +71,7 @@
         <!-- Nuke -->
         <div class="token-card token-card-nuke card-farmer" id="p1-card-nuke">
           <div class="card-img">
-            <img src="assets/images/nuke-mick-keith.png" alt="Nuke">
+            <img src="assets/images/tokens/wild-token-m-keith.png" alt="Nuke">
           </div>
           <div class="card-info">
             <div class="card-label">Nuke</div>
@@ -86,6 +86,7 @@
 
     <!-- ═══════════════════════════════════ BOARD -->
     <main class="board-area">
+      <div id="intro-video-host" class="intro-video-host hidden" aria-hidden="true"></div>
       <div id="game-canvas"></div>
     </main>
 
@@ -98,7 +99,7 @@
         <div class="score-bar-track">
           <div class="score-bar score-bar-p2" id="p2-score-bar"></div>
         </div>
-        <div class="score-label">Nest</div>
+        <div class="score-label">Nests</div>
       </div>
 
       <!-- Token cards -->
@@ -108,7 +109,7 @@
         <div class="token-card card-emu" id="p2-card-def">
           <div class="card-fill card-fill-p2" id="p2-fill-def"></div>
           <div class="card-img">
-            <img src="assets/images/atk-emu-cassowary.png" alt="Cassowary">
+            <img src="assets/images/tokens/def-e-level1.png" alt="Cassowary">
           </div>
           <div class="card-info">
             <div class="card-label">Protecting</div>
@@ -121,7 +122,7 @@
         <div class="token-card card-emu" id="p2-card-atk_a">
           <div class="card-fill card-fill-p2" id="p2-fill-atk_a"></div>
           <div class="card-img">
-            <img src="assets/images/atk-emu-a.png" alt="Emu Pack A">
+            <img src="assets/images/tokens/atk-e-1.png" alt="Emu Pack A">
           </div>
           <div class="card-info">
             <div class="card-label">Destroyed</div>
@@ -134,7 +135,7 @@
         <div class="token-card card-emu" id="p2-card-atk_b">
           <div class="card-fill card-fill-p2" id="p2-fill-atk_b"></div>
           <div class="card-img">
-            <img src="assets/images/atk-emu-b.png" alt="Emu Pack B">
+            <img src="assets/images/tokens/atk-e-2.png" alt="Emu Pack B">
           </div>
           <div class="card-info">
             <div class="card-label">Destroyed</div>
@@ -146,7 +147,7 @@
         <!-- Nuke -->
         <div class="token-card token-card-nuke card-emu" id="p2-card-nuke">
           <div class="card-img">
-            <img src="assets/images/nuke-emu-ancestors.png" alt="Nuke">
+            <img src="assets/images/tokens/wild-token-e-dino.png" alt="Nuke">
           </div>
           <div class="card-info">
             <div class="card-label">Nuke</div>
@@ -156,24 +157,14 @@
 
       </div><!-- /token-cards -->
 
-      <div class="panel-name p2-name">THE MOB</div>
+      <div class="panel-name p2-name">THE EMUS</div>
     </aside>
 
   </div><!-- /game-root -->
 
   <!-- ═══════════════════════════════════ BOTTOM BAR -->
   <div class="notif-bar" id="notif-bar">
-    <span class="notif-icon" id="notif-icon" aria-hidden="true">[!]</span>
-    <span id="notif-text">Waiting for server...</span>
-  </div>
-
-  <div class="mode-overlay" id="mode-overlay">
-    <div class="mode-card">
-      <div class="mode-title">DEFEND YOUR PIXELS</div>
-      <div class="mode-subtitle">Choose a play mode to start setup</div>
-      <button class="mode-button" id="mode-normal" type="button">NORMAL GAME</button>
-      <button class="mode-button mode-button-secondary" id="mode-tutorial" type="button">TUTORIAL</button>
-    </div>
+    <span id="notif-text">Waiting for server…</span>
   </div>
 
   <script type="module" src="src/main.js"></script>

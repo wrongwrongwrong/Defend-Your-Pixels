@@ -1,5 +1,9 @@
 # Interaction Flow v1
 
+> Status: reference document.
+>
+> Parts of this file describe earlier interaction ideas that are no longer the primary implementation path for the current live frontend. Use `docs/setup_flow_backend_v1.md`, `docs/manual_play.md`, `docs/board_state_v1.md`, and `docs/authoritative_actions_v1.md` as the canonical current references.
+
 This document defines the current MVP interaction flow for `Old Mick Against the Mob`.
 
 This is not a visual design spec. It describes how players operate the prototype and how

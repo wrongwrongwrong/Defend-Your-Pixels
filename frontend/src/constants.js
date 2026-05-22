@@ -10,13 +10,13 @@ export const PANEL_W    = 260;           // HTML side panel width — reference 
 export const TOP_BAR_H  = 44;           // HTML header height — reference only
 export const BOT_BAR_H  = 116;          // HTML game log height — reference only
 
-const LABEL_PAD         = 24;           // space for A–L / 1–12 axis labels
+const LABEL_PAD         = 32;           // space for A–L / 1–12 axis labels
 
 export const BOARD_OFF_X = LABEL_PAD;   // board image starts at x = 24
 export const BOARD_OFF_Y = LABEL_PAD;   // board image starts at y = 24
 
-export const CANVAS_W   = LABEL_PAD + BOARD_PX;  // 744
-export const CANVAS_H   = LABEL_PAD + BOARD_PX;  // 744
+export const CANVAS_W   = 2 * LABEL_PAD + BOARD_PX;  // 784
+export const CANVAS_H   = 2 * LABEL_PAD + BOARD_PX;  // 784
 
 // ─── Board image calibration ──────────────────────────────────────────────────
 // If the grid in board1.png doesn't perfectly fill the image edge-to-edge,
@@ -83,6 +83,6 @@ export const COLORS = {
 // ─── Fonts ─────────────────────────────────────────────────────────────────────
 // Loaded via Google Fonts in index.html.
 // Change these strings if you swap the font in the <link> tag.
-export const FONT_TITLE  = "'Special Elite', serif";       // dramatic headers
-export const FONT_LABEL  = "'Oswald', sans-serif";         // bold labels / numbers
-export const FONT_MONO   = "'Share Tech Mono', monospace"; // coordinates / tech info
+export const FONT_TITLE  = "'Press Start 2P', system-ui";  // dramatic headers
+export const FONT_LABEL  = "'Press Start 2P', system-ui";  // bold labels / numbers
+export const FONT_MONO   = "'Press Start 2P', system-ui";  // coordinates / tech info

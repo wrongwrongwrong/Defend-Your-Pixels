@@ -12,7 +12,7 @@ MAX_WORDS_PER_TUTORIAL_LINE = 10
 STEPS = [
     {
         "id": "intro",
-        "title": "Welcome to Old Mick vs the Mob",
+        "title": "Welcome to Old Mick vs the Emus",
         "text": "In 1932, emus invaded the outback.\nYou are Old Mick.\nDefend your homestead.",
         "condition": "dismiss",
     },
@@ -33,7 +33,7 @@ STEPS = [
     {
         "id": "explain_sides_alternate",
         "title": "Who Owns Which Side?",
-        "text": "A diagonal fence splits the board.\nOld Mick: bottom-left (orange).\nThe Mob: top-right (green).",
+        "text": "A diagonal fence splits the board.\nOld Mick: top-left farmlands.\nThe Emus: bottom-right scrublands.",
         "condition": "dismiss",
         "highlight_side": "p1",
     },
@@ -43,12 +43,12 @@ STEPS = [
         "text": "Destroy the enemy HQ, or wipe out their resources.\nProtect your own HQ.",
         "condition": "dismiss",
         "tutorial_layout": "with_pic",
-        "tutorial_image": "assets/images/cell-emu-feeding grounds.png",
+        "tutorial_image": "assets/images/tiles/cell-e-nest.png",
     },
     {
         "id": "explain_turn_markers",
         "title": "Turn Control",
-        "text": "Scan markers to set whose turn it is. Old Mick marker → your turn.\nMob marker → their turn.",
+        "text": "Scan markers to set whose turn it is.\nOld Mick marker → your turn.\nEmu marker → their turn.",
         "condition": "dismiss",
         "tutorial_layout": "gif",
         "tutorial_gif": "assets/gif/End_turn_explain.gif",
@@ -83,7 +83,7 @@ STEPS = [
         "highlight": {"col": 1, "row": 9},
         "condition": "dismiss",
         "tutorial_layout": "with_pic",
-        "tutorial_image": "assets/images/hq_mick.png",
+        "tutorial_image": "assets/images/tokens/hq-mick.png",
     },
     {
         "id": "hq_confirm_scan",
@@ -97,7 +97,7 @@ STEPS = [
     {
         "id": "notify_tutorial_skip",
         "title": "Tutorial Pace",
-        "text": "Token placement and Mob's turn are skipped in this tutorial.",
+        "text": "Token placement and the Emus' turn are skipped in this tutorial.",
         "condition": "dismiss",
         "runner_effect": "skip_p2_setup",
     },
@@ -131,7 +131,7 @@ STEPS = [
     {
         "id": "aim_atk_a",
         "title": "Aim Rifleman A",
-        "text": "Place Rifleman A on cell D5.\nPoint the angle toward south.",
+        "text": "Move Rifleman A to cell D5.\nPoint the marker toward south.",
         "highlight": {"col": 3, "row": 4},
         "condition": {
             "token": "p1.atk_a",
@@ -145,7 +145,7 @@ STEPS = [
     {
         "id": "explain_ray",
         "title": "Attack Rays",
-        "text": "The green line is your attack ray.\nIt stops at the first enemy resource.",
+        "text": "The red line is your attack ray.\nIt stops at the first enemy resource.",
         "condition": "dismiss",
     },
     {
@@ -182,7 +182,7 @@ STEPS = [
     {
         "id": "explain_nuke",
         "title": "The Nuke",
-        "text": "At eight or fewer cells left, Nuke unlocks.Place your nuke marker on cell K10.",
+        "text": "At eight or fewer cells left, Nuke unlocks.\nPlace your nuke marker on cell K10.",
         "highlight": {"col": 10, "row": 9},
         "condition": {
             "token": "p1.nuke",
@@ -191,8 +191,8 @@ STEPS = [
         },
         "tutorial_layout": "with_pic",
         "tutorial_images": [
-            "assets/images/nuke-mick-keith.png",
-            "assets/images/nuke-emu-ancestors.png",
+            "assets/images/tokens/wild-token-m-keith.png",
+            "assets/images/tokens/wild-token-e-dino.png",
         ],
         "runner_effect": "p1_nuke_unlock",
     },

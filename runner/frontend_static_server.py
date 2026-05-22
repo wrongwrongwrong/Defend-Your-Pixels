@@ -62,7 +62,7 @@ def start_frontend_http_server(port: int, root: Path, protocol_root: Path | None
     except PermissionError as exc:
         raise RuntimeError(
             f"Cannot bind HTTP port {port}: {exc}\n"
-            "On Windows, port 8080 is often blocked; try --http-port 18080."
+            "Try another port with --http-port <port>."
         ) from exc
     except OSError as exc:
         raise RuntimeError(f"Cannot bind HTTP port {port}: {exc}") from exc

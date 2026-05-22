@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Old Mick and the Emus — Game Design Document</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rye&family=Barlow:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Barlow', Georgia, serif; background: #f5ede0; color: #1a1208; }
+.doc { max-width: 740px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+.masthead { text-align: center; padding: 0 0 2rem; border-bottom: 0.5px solid rgba(0,0,0,0.15); margin-bottom: 2rem; }
+.game-title { font-family: 'Rye', serif; font-size: 34px; color: #1a1208; letter-spacing: 0px; margin-top: 1.5rem; line-height: 1.1; }
+.game-sub { font-size: 14px; color: #6b4f2a; margin-top: 10px; line-height: 1.7; max-width: 480px; margin-left: auto; margin-right: auto; font-style: italic; }
+.pill-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 14px; }
+.pill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px; letter-spacing: 0.04em; text-transform: uppercase; }
+.pill-ochre { background: #f0d080; color: #5a3800; }
+.pill-bush { background: #c8dca0; color: #1e4010; }
+.pill-red { background: #f0d0c0; color: #7a1f0a; }
+.pill-dust { background: #e0d4c0; color: #3a2e1a; }
+
+.section { margin-bottom: 2rem; }
+.section-title { font-family: 'Rye', serif; font-size: 12px; color: #8b6030; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1.5px solid #d4a84a; letter-spacing: 0.06em; }
+.prose { font-size: 14px; color: #2a1e0e; line-height: 1.85; }
+.prose + .prose { margin-top: 10px; }
+
+.side-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.side-card { border-radius: 10px; padding: 14px 16px; }
+.side-mick { background: #f0d898; border: 1.5px solid #c8980a; }
+.side-emu { background: #d4e8b8; border: 1.5px solid #6a9a30; }
+.side-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.side-label-mick { color: #7a4800; }
+.side-label-emu { color: #1e4a08; }
+.side-name { font-family: 'Rye', serif; font-size: 16px; color: #1a1208; margin-bottom: 4px; }
+.side-desc { font-size: 12px; color: #4a3a1a; line-height: 1.5; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; align-items: flex-start; }
+.card-icon { margin-bottom: 10px; }
+.card-name { font-family: 'Rye', serif; font-size: 13px; color: #1a1208; margin-bottom: 3px; }
+.card-role { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 7px; }
+.card-desc { font-size: 12px; color: #555; line-height: 1.55; }
+.role-atk { color: #991a0a; }
+.role-def { color: #1e5a10; }
+.role-terrain { color: #6b4e1a; }
+.role-win { color: #3a2878; }
+.role-wild { color: #7a1f7a; }
+
+.upgrade-list { border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; overflow: hidden; }
+.upgrade-row { display: grid; grid-template-columns: 72px 1fr; border-bottom: 0.5px solid rgba(0,0,0,0.08); }
+.upgrade-row:last-child { border-bottom: none; }
+.upgrade-tier { padding: 14px 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #f0e8d0; border-right: 0.5px solid rgba(0,0,0,0.08); }
+.tier-num { font-family: 'Rye', serif; font-size: 22px; color: #1a1208; }
+.tier-label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+.upgrade-body { padding: 14px 16px; background: #fff; }
+.upgrade-name { font-family: 'Rye', serif; font-size: 13px; color: #1a1208; margin-bottom: 3px; }
+.upgrade-token { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.upgrade-desc { font-size: 12px; color: #555; line-height: 1.5; }
+.token-mob { color: #1e5a10; }
+.token-riflemen { color: #991a0a; }
+.token-either { color: #7a4800; }
+.token-wild { color: #7a1f7a; }
+
+.win-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.win-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; padding: 16px; }
+.win-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.win-label-instant { color: #3a2878; }
+.win-label-attrition { color: #7a4800; }
+.win-name { font-family: 'Rye', serif; font-size: 14px; color: #1a1208; margin-bottom: 6px; }
+.win-desc { font-size: 12px; color: #555; line-height: 1.5; }
+
+.nuke-card { background: #fff; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; overflow: hidden; }
+.nuke-header { padding: 16px; border-bottom: 0.5px solid rgba(0,0,0,0.08); display: flex; gap: 16px; align-items: flex-start; }
+.nuke-text .nuke-title { font-family: 'Rye', serif; font-size: 16px; color: #1a1208; }
+.nuke-text .nuke-sub { font-size: 12px; color: #555; margin-top: 4px; line-height: 1.5; }
+.nuke-v { padding: 14px 16px; }
+.nuke-v-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
+.v-emu { color: #1e5a10; }
+.v-mick { color: #991a0a; }
+.nuke-v-name { font-family: 'Rye', serif; font-size: 13px; color: #1a1208; margin-bottom: 5px; }
+.nuke-v-desc { font-size: 12px; color: #555; line-height: 1.5; }
+.cost-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; margin-top: 8px; }
+.cost-emu { background: #d4e8b0; color: #1e4a08; }
+.cost-mick { background: #f0d0b8; color: #7a1f0a; }
+.cost-wild { background: #ead4ea; color: #7a1f7a; }
+
+.board-section { background: #ede4d0; border-radius: 12px; padding: 16px 18px; border: 1px solid #c8a860; }
+.board-desc { font-size: 13px; color: #2a1e0e; line-height: 1.8; }
+.board-desc + .board-desc { margin-top: 8px; }
+
+.divider { height: 1.5px; background: linear-gradient(to right, transparent, #c8a040, transparent); margin: 2rem 0; }
+.note { font-size: 12px; color: #888; line-height: 1.6; margin-top: 12px; font-style: italic; }
+
+.def-diagram { background: #fff; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.def-grid { display: inline-grid; grid-template-columns: repeat(3, 32px); gap: 3px; margin: 10px 0; }
+.def-cell { width: 32px; height: 32px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+.def-cell-perimeter { background: #b8d4f0; border: 1.5px solid #5a9ad4; color: #1a4a7a; }
+.def-cell-center { background: #1e5a10; border: 1.5px solid #1a4a08; color: #fff; font-size: 8px; text-align: center; }
+.def-cell-empty { background: #f0e8d0; border: 1.5px solid #d4c8a8; }
+
+@media (max-width: 480px) {
+  .win-grid, .side-split { grid-template-columns: 1fr; }
+  .game-title { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- HEADER ILLUSTRATION -->
+  <svg width="100%" viewBox="0 0 740 270" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Old Mick's outback paddock vs the emu scrublands, split by a rusted wire fence</title>
+    <rect x="0" y="0" width="740" height="270" fill="#d4eaf8"/>
+    <rect x="0" y="170" width="740" height="100" fill="#e8c870" opacity="0.25"/>
+    <polygon points="0,270 0,70 740,270" fill="#c8834a"/>
+    <ellipse cx="130" cy="210" rx="70" ry="20" fill="#b06830" opacity="0.4"/>
+    <ellipse cx="220" cy="245" rx="50" ry="14" fill="#b06830" opacity="0.3"/>
+    <ellipse cx="80" cy="250" rx="40" ry="10" fill="#d4985a" opacity="0.3"/>
+    <polygon points="740,70 740,270 0,270" fill="#7aaa4a" opacity="0.5"/>
+    <ellipse cx="560" cy="185" rx="60" ry="18" fill="#5a8a2a" opacity="0.4"/>
+    <ellipse cx="650" cy="220" rx="45" ry="14" fill="#5a8a2a" opacity="0.35"/>
+    <!-- Barn -->
+    <rect x="55" y="108" width="85" height="58" fill="#d4a860" rx="2"/>
+    <polygon points="45,110 97,74 150,110" fill="#a0a090"/>
+    <rect x="45" y="106" width="105" height="5" fill="#8a8a7a"/>
+    <rect x="83" y="134" width="24" height="32" fill="#8a5c28" rx="1"/>
+    <rect x="60" y="118" width="18" height="14" fill="#c8dce8" rx="1"/>
+    <rect x="118" y="118" width="18" height="14" fill="#c8dce8" rx="1"/>
+    <rect x="130" y="78" width="10" height="22" fill="#a09080"/>
+    <!-- Windmill -->
+    <line x1="200" y1="95" x2="200" y2="175" stroke="#8a6030" stroke-width="3"/>
+    <line x1="180" y1="115" x2="220" y2="115" stroke="#8a6030" stroke-width="2"/>
+    <circle cx="200" cy="115" r="8" fill="none" stroke="#a07840" stroke-width="1.5"/>
+    <line x1="200" y1="107" x2="195" y2="95" stroke="#a07840" stroke-width="1.5"/>
+    <line x1="200" y1="107" x2="212" y2="110" stroke="#a07840" stroke-width="1.5"/>
+    <line x1="200" y1="107" x2="198" y2="120" stroke="#a07840" stroke-width="1.5"/>
+    <line x1="200" y1="107" x2="188" y2="104" stroke="#a07840" stroke-width="1.5"/>
+    <!-- Wheat -->
+    <rect x="155" y="155" width="38" height="26" fill="#d4b040" rx="2"/>
+    <line x1="159" y1="155" x2="159" y2="181" stroke="#b89020" stroke-width="1"/>
+    <line x1="165" y1="155" x2="165" y2="181" stroke="#b89020" stroke-width="1"/>
+    <line x1="171" y1="155" x2="171" y2="181" stroke="#b89020" stroke-width="1"/>
+    <line x1="177" y1="155" x2="177" y2="181" stroke="#b89020" stroke-width="1"/>
+    <line x1="183" y1="155" x2="183" y2="181" stroke="#b89020" stroke-width="1"/>
+    <line x1="189" y1="155" x2="189" y2="181" stroke="#b89020" stroke-width="1"/>
+    <!-- Creek bed -->
+    <path d="M100,235 Q120,225 145,230 Q165,235 185,228" stroke="#c4a060" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.7"/>
+    <path d="M100,235 Q120,225 145,230 Q165,235 185,228" stroke="#e8c890" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.5"/>
+    <!-- Farmer figures -->
+    <ellipse cx="248" cy="210" rx="12" ry="9" fill="#c8944a"/>
+    <circle cx="248" cy="198" r="8" fill="#c8944a"/>
+    <ellipse cx="248" cy="192" rx="12" ry="3.5" fill="#5a3a10"/>
+    <rect x="242" y="184" width="12" height="9" rx="1" fill="#5a3a10"/>
+    <line x1="258" y1="185" x2="270" y2="215" stroke="#6a4820" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="255" y="184" width="3" height="8" rx="1" fill="#4a3010"/>
+    <rect x="242" y="218" width="5" height="10" rx="1" fill="#7a4820"/>
+    <rect x="250" y="218" width="5" height="10" rx="1" fill="#7a4820"/>
+    <ellipse cx="175" cy="215" rx="9" ry="7" fill="#c8903a"/>
+    <circle cx="175" cy="205" r="6" fill="#c8903a"/>
+    <ellipse cx="175" cy="200" rx="8" ry="2.5" fill="#4a3010"/>
+    <rect x="170" y="196" width="9" height="6" rx="1" fill="#4a3010"/>
+    <line x1="182" y1="198" x2="190" y2="218" stroke="#5a3808" stroke-width="2" stroke-linecap="round"/>
+    <!-- Fence line -->
+    <line x1="0" y1="68" x2="740" y2="268" stroke="#5a4020" stroke-width="3.5"/>
+    <line x1="0" y1="78" x2="740" y2="278" stroke="#8a6830" stroke-width="1.5" stroke-dasharray="10,5"/>
+    <line x1="0" y1="58" x2="740" y2="258" stroke="#8a6830" stroke-width="1.5" stroke-dasharray="10,5"/>
+    <rect x="0" y="56" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="92" y="80" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="187" y="106" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="280" y="130" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="372" y="154" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="465" y="178" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="558" y="202" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="650" y="226" width="7" height="30" fill="#4a3010" rx="1"/>
+    <rect x="734" y="248" width="7" height="30" fill="#4a3010" rx="1"/>
+    <!-- Terrain: rocks/termite mounds emu side -->
+    <ellipse cx="530" cy="198" rx="12" ry="20" fill="#b09060" opacity="0.85"/>
+    <ellipse cx="545" cy="205" rx="9" ry="15" fill="#c0a070" opacity="0.8"/>
+    <ellipse cx="520" cy="208" rx="7" ry="12" fill="#a88050" opacity="0.75"/>
+    <ellipse cx="610" cy="200" rx="22" ry="12" fill="#8ab830" opacity="0.6"/>
+    <ellipse cx="595" cy="210" rx="16" ry="9" fill="#7aaa20" opacity="0.5"/>
+    <line x1="600" y1="192" x2="597" y2="185" stroke="#5a8a10" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="608" y1="190" x2="610" y2="183" stroke="#5a8a10" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="618" y1="192" x2="622" y2="185" stroke="#5a8a10" stroke-width="1.5" stroke-linecap="round"/>
+    <ellipse cx="660" cy="188" rx="18" ry="12" fill="#8aa840" opacity="0.7"/>
+    <ellipse cx="660" cy="192" rx="10" ry="7" fill="#c8a030" opacity="0.4"/>
+    <ellipse cx="658" cy="193" rx="4" ry="5" fill="#f0e8c0" opacity="0.5"/>
+    <ellipse cx="664" cy="194" rx="3.5" ry="4.5" fill="#f0e8c0" opacity="0.45"/>
+    <!-- Emus -->
+    <ellipse cx="460" cy="195" rx="12" ry="8" fill="#3a3020"/>
+    <line x1="468" y1="190" x2="472" y2="178" stroke="#3a3020" stroke-width="5" stroke-linecap="round"/>
+    <ellipse cx="472" cy="175" rx="6" ry="5" fill="#2a2010"/>
+    <polygon points="477,173 483,175 477,177" fill="#b07830"/>
+    <circle cx="474" cy="173" r="1.5" fill="#f0c000"/>
+    <line x1="455" y1="202" x2="450" y2="215" stroke="#4a3828" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="462" y1="203" x2="462" y2="216" stroke="#4a3828" stroke-width="2.5" stroke-linecap="round"/>
+    <ellipse cx="440" cy="200" rx="9" ry="6" fill="#3a3020" opacity="0.7"/>
+    <line x1="447" y1="196" x2="450" y2="187" stroke="#3a3020" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+    <ellipse cx="450" cy="184" rx="5" ry="4" fill="#2a2010" opacity="0.7"/>
+    <!-- Cassowary -->
+    <ellipse cx="580" cy="170" rx="13" ry="9" fill="#1a1a18"/>
+    <line x1="587" y1="163" x2="588" y2="148" stroke="#1a1a18" stroke-width="6" stroke-linecap="round"/>
+    <ellipse cx="589" cy="145" rx="7" ry="6" fill="#1a1a18"/>
+    <ellipse cx="589" cy="140" rx="5" ry="4" fill="#c87820"/>
+    <rect x="585" y="148" width="5" height="10" rx="2" fill="#1a80c0"/>
+    <ellipse cx="584" cy="157" rx="2" ry="4" fill="#c02020"/>
+    <ellipse cx="587" cy="158" rx="2" ry="3" fill="#c02020"/>
+    <line x1="577" y1="178" x2="571" y2="188" stroke="#2a2018" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="583" y1="179" x2="580" y2="190" stroke="#2a2018" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="370" y="152" text-anchor="middle" font-family="Georgia, serif" font-size="20" font-weight="800" fill="#2a1808" opacity="0.65">VS</text>
+    <!-- Feathers -->
+    <ellipse cx="310" cy="108" rx="5" ry="2" fill="#2a2818" opacity="0.4" transform="rotate(-25 310 108)"/>
+    <ellipse cx="345" cy="130" rx="4" ry="1.5" fill="#2a2818" opacity="0.35" transform="rotate(15 345 130)"/>
+    <ellipse cx="395" cy="95" rx="4" ry="1.5" fill="#2a2818" opacity="0.3" transform="rotate(-40 395 95)"/>
+    <ellipse cx="425" cy="118" rx="5" ry="2" fill="#2a2818" opacity="0.35" transform="rotate(30 425 118)"/>
+    <ellipse cx="220" cy="240" rx="30" ry="10" fill="#d4a870" opacity="0.3"/>
+  </svg>
+
+  <div class="masthead">
+    <div class="game-title">Old Mick and the Emus</div>
+    <div class="game-sub">One stubborn farmer. His useless son. A rusted fence. And about ten thousand emus who don't give a damn.</div>
+    <div class="pill-row">
+      <span class="pill pill-dust">2 players</span>
+      <span class="pill pill-dust">12 × 12 grid</span>
+      <span class="pill pill-bush">Hidden win condition</span>
+      <span class="pill pill-ochre">Upgrade progression</span>
+      <span class="pill pill-red">Asymmetric sides</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">The Story</div>
+    <p class="prose">It is 1932. The Australian government has deployed soldiers to help Western Australian farmers deal with an emu invasion. The soldiers are losing. This is historically accurate.</p>
+    <p class="prose">Old Mick has farmed his patch of outback his entire life. He's not moving. He's got riflemen, a boundary fence, and forty years of stubbornness on his side. His goal is simple: destroy enough emu nests that the mob can't sustain itself and collapses. If he finds the Bird Council, it ends instantly.</p>
+    <p class="prose">On the other side of that wire: the emus. Hungry, relentless, and not interested in negotiation. The emus raid Old Mick's farms to steal grain — and that grain is everything. Raid enough farms and eventually something very old gets summoned. If they find the Grain Stash first, it ends there.</p>
+    <p class="prose">Somewhere on each side, hidden in the chaos, is the one thing that ends the game if it falls. Find theirs. Protect yours. The fence stopped meaning anything weeks ago.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">The Two Sides</div>
+    <div class="side-split">
+      <div class="side-card side-mick">
+        <div class="side-label side-label-mick">Farmer Side</div>
+        <div class="side-name">Old Mick's Paddock</div>
+        <div class="side-desc">Red dirt, wheat farms, a corrugated iron barn, and a windmill that hasn't worked since '28. Old Mick defends. The Riflemen attack. Nobody asks about Keith.</div>
+      </div>
+      <div class="side-card side-emu">
+        <div class="side-label side-label-emu">Emu Side</div>
+        <div class="side-name">The Scrublands</div>
+        <div class="side-desc">Dense bush, termite mounds, spinifex patches you can't see through. The Emu Pack raids. The Cassowary guards. The Burrow is hidden somewhere in there and it's staying that way.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">The Board</div>
+    <div class="board-section">
+      <p class="board-desc">A 12×12 grid split diagonally from top-right to bottom-left. Each square on the grid is a <strong>tile</strong>. Old Mick owns the outback paddock half — dry, exposed, hard-won. The emus own the scrublands half — dense, tangled, unknowable. The diagonal is the fence line: rusted wire, wooden posts, and absolutely no respect from either side.</p>
+      <p class="board-desc">Tiles that contain something worth fighting over — farms, nests, or terrain — are called <strong>cells</strong>. Farms are scattered across Old Mick's half at the start. Emu nests are scattered across the scrublands the same way. Lose enough and you can't fund anything. Somewhere on each half, hidden in the chaos, is the one thing that ends the game if it falls.</p>
+      <p class="board-desc">On your turn you direct your ATK token — pick a direction and it charges in a straight line, hits the first enemy cell it reaches across the fence, and returns. Horizontal, vertical, or diagonal. Unlimited range, but the line must be clean. Where you position your token determines what you can hit. That positioning is the game.</p>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">Tokens</div>
+    <p class="prose" style="margin-bottom:14px;">Each side has three token types. <strong>Tokens cannot be destroyed</strong> — they act, they move, they project power. Only cells can be destroyed.</p>
+    <div class="card-grid">
+
+      <!-- EMU PACK -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#d8ecc0"/>
+            <ellipse cx="24" cy="34" rx="11" ry="8" fill="#2a2818"/>
+            <line x1="30" y1="28" x2="32" y2="16" stroke="#2a2818" stroke-width="5" stroke-linecap="round"/>
+            <ellipse cx="33" cy="13" rx="6" ry="5" fill="#1a1810"/>
+            <polygon points="38,12 44,13 38,15" fill="#b07020"/>
+            <circle cx="35" cy="11" r="1.8" fill="#e8b800"/>
+            <line x1="20" y1="42" x2="17" y2="50" stroke="#3a3020" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="26" y1="42" x2="26" y2="50" stroke="#3a3020" stroke-width="2.5" stroke-linecap="round"/>
+            <ellipse cx="12" cy="36" rx="7" ry="5" fill="#2a2818" opacity="0.55"/>
+            <line x1="16" y1="32" x2="17" y2="24" stroke="#2a2818" stroke-width="3.5" stroke-linecap="round" opacity="0.55"/>
+            <ellipse cx="18" cy="22" rx="4" ry="3" fill="#1a1810" opacity="0.55"/>
+          </svg>
+        </div>
+        <div class="card-name">Emu Pack</div>
+        <div class="card-role role-atk">ATK Token × 2 — Emu side</div>
+        <div class="card-desc">Two packs, two raids per turn. Each turn you direct an Emu Pack — it charges in a straight line, horizontal, vertical, or diagonal, hits the first farm it reaches across the fence, and returns. The more farms each Pack destroys, the more damage it deals per raid. Each token levels up independently.</div>
+      </div>
+
+      <!-- CASSOWARY -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#c8e8d0"/>
+            <ellipse cx="26" cy="36" rx="13" ry="9" fill="#0a0a08"/>
+            <line x1="33" y1="29" x2="34" y2="14" stroke="#0a0a08" stroke-width="7" stroke-linecap="round"/>
+            <ellipse cx="35" cy="11" rx="7" ry="6" fill="#0a0a08"/>
+            <ellipse cx="35" cy="7" rx="5" ry="4" fill="#c87010"/>
+            <rect x="30" y="15" width="6" height="12" rx="2" fill="#1070c0"/>
+            <ellipse cx="29" cy="26" rx="2.5" ry="5" fill="#b81010"/>
+            <ellipse cx="33" cy="27" rx="2" ry="4" fill="#b81010"/>
+            <circle cx="37" cy="10" r="2" fill="#e8a000"/>
+            <circle cx="37" cy="10" r="0.8" fill="#1a1008"/>
+            <line x1="17" y1="43" x2="10" y2="50" stroke="#0a0a08" stroke-width="3" stroke-linecap="round"/>
+            <line x1="10" y1="50" x2="6" y2="48" stroke="#0a0a08" stroke-width="2" stroke-linecap="round"/>
+            <line x1="10" y1="50" x2="8" y2="54" stroke="#0a0a08" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="card-name">Cassowary</div>
+        <div class="card-role role-def">DEF Token — Emu side</div>
+        <div class="card-desc">Doesn't raid. Just stands there and radiates menace. Projects a 3×3 perimeter zone around itself — anything inside that zone is shielded. Attackers must break through the perimeter before they can destroy a cell. Move the Cassowary and the perimeter fully resets. One per game. Irreplaceable.</div>
+      </div>
+
+      <!-- RIFLEMEN -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#f0dcc0"/>
+            <ellipse cx="26" cy="34" rx="10" ry="8" fill="#c8903a"/>
+            <circle cx="26" cy="22" r="7" fill="#c8903a"/>
+            <ellipse cx="26" cy="17" rx="11" ry="3" fill="#4a3010"/>
+            <rect x="20" y="10" width="12" height="8" rx="1" fill="#4a3010"/>
+            <line x1="34" y1="20" x2="46" y2="28" stroke="#5a3a10" stroke-width="3" stroke-linecap="round"/>
+            <rect x="40" y="24" width="10" height="3" rx="1" fill="#3a2808"/>
+            <rect x="20" y="42" width="5" height="10" rx="1" fill="#7a4820"/>
+            <rect x="28" y="42" width="5" height="10" rx="1" fill="#7a4820"/>
+          </svg>
+        </div>
+        <div class="card-name">The Riflemen</div>
+        <div class="card-role role-atk">ATK Token × 2 — Farmer side</div>
+        <div class="card-desc">Two riflemen, two shots per turn. Each turn you direct a Rifleman — he fires in a straight line, horizontal, vertical, or diagonal, hits the first nest it reaches across the fence, and returns. The more nests each Rifleman destroys, the more damage he deals per shot. Each token levels up independently.</div>
+      </div>
+
+      <!-- OLD MICK -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#f0dcc0"/>
+            <ellipse cx="26" cy="36" rx="12" ry="9" fill="#c8903a"/>
+            <circle cx="26" cy="22" r="8" fill="#c8903a"/>
+            <ellipse cx="26" cy="16" rx="13" ry="4" fill="#3a2808"/>
+            <rect x="18" y="10" width="16" height="7" rx="2" fill="#3a2808"/>
+            <rect x="14" y="16" width="24" height="3" rx="1" fill="#2a1808"/>
+            <line x1="38" y1="22" x2="48" y2="30" stroke="#5a3a10" stroke-width="4" stroke-linecap="round"/>
+            <rect x="42" y="26" width="12" height="3" rx="1" fill="#2a1808"/>
+            <rect x="20" y="44" width="6" height="10" rx="1" fill="#7a4820"/>
+            <rect x="28" y="44" width="6" height="10" rx="1" fill="#7a4820"/>
+          </svg>
+        </div>
+        <div class="card-name">Old Mick</div>
+        <div class="card-role role-def">DEF Token — Farmer side</div>
+        <div class="card-desc">Not moving. Not negotiating. Projects a 3×3 perimeter zone around himself — anything inside is shielded. Attackers must break through the perimeter before they can destroy a cell. Move Old Mick and the perimeter fully resets. One per game. Irreplaceable.</div>
+      </div>
+
+      <!-- KEITH'S CANNON -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#f5ddb8"/>
+            <rect x="6" y="32" width="44" height="16" rx="3" fill="#c87820"/>
+            <rect x="22" y="20" width="24" height="16" rx="2" fill="#d89030"/>
+            <rect x="24" y="22" width="20" height="10" rx="1" fill="#b8d4e8" opacity="0.7"/>
+            <circle cx="15" cy="48" r="6" fill="#2a1808"/>
+            <circle cx="15" cy="48" r="3" fill="#4a3010"/>
+            <circle cx="41" cy="48" r="6" fill="#2a1808"/>
+            <circle cx="41" cy="48" r="3" fill="#4a3010"/>
+            <rect x="10" y="26" width="14" height="7" rx="2" fill="#6a6050"/>
+            <rect x="6" y="28" width="8" height="4" rx="1" fill="#5a5040"/>
+            <circle cx="48" cy="16" r="8" fill="#f0a020" opacity="0.6"/>
+            <circle cx="48" cy="16" r="5" fill="#f8c040" opacity="0.7"/>
+          </svg>
+        </div>
+        <div class="card-name">Keith's Cannon</div>
+        <div class="card-role role-wild">Wild Token — Farmer side</div>
+        <div class="card-desc">One use only. Unlocks when own cells reach critically low. Place the 3×3 zone anywhere in emu territory — 5 random cells destroyed instantly. Bypasses perimeter. You choose the zone. You don't choose the 5. Keith does not come back.</div>
+      </div>
+
+      <!-- THE ANCESTORS -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#c8e8c0"/>
+            <ellipse cx="30" cy="34" rx="14" ry="10" fill="#1a4010"/>
+            <line x1="36" y1="26" x2="42" y2="14" stroke="#1a4010" stroke-width="8" stroke-linecap="round"/>
+            <ellipse cx="44" cy="11" rx="9" ry="7" fill="#1a4010"/>
+            <path d="M40,8 Q48,10 50,16" stroke="#0a2808" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <line x1="43" y1="9" x2="43" y2="13" stroke="#f0f0e0" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="46" y1="9" x2="47" y2="13" stroke="#f0f0e0" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="24" y1="42" x2="18" y2="54" stroke="#143410" stroke-width="5" stroke-linecap="round"/>
+            <line x1="34" y1="43" x2="32" y2="54" stroke="#143410" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="46" cy="9" r="2.5" fill="#e8b800"/>
+            <circle cx="46" cy="9" r="1" fill="#0a0a08"/>
+          </svg>
+        </div>
+        <div class="card-name">The Ancestors</div>
+        <div class="card-role role-wild">Wild Token — Emu side</div>
+        <div class="card-desc">One use only. Unlocks when own cells reach critically low. Place the 3×3 zone anywhere in farmer territory — 5 random cells destroyed instantly. Bypasses perimeter. You choose the zone. You don't choose the 5. The Ancestors return to wherever they came from.</div>
+      </div>
+
+      <!-- GRAIN STASH -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#f0dca0"/>
+            <rect x="12" y="28" width="28" height="18" rx="3" fill="#c8880a"/>
+            <ellipse cx="26" cy="28" rx="14" ry="6" fill="#e8a820"/>
+            <line x1="18" y1="28" x2="18" y2="46" stroke="#a07008" stroke-width="1"/>
+            <line x1="26" y1="22" x2="26" y2="46" stroke="#a07008" stroke-width="1"/>
+            <line x1="34" y1="28" x2="34" y2="46" stroke="#a07008" stroke-width="1"/>
+            <text x="26" y="22" text-anchor="middle" font-family="Georgia, serif" font-size="13" font-weight="bold" fill="#5a3800" opacity="0.7">?</text>
+          </svg>
+        </div>
+        <div class="card-name">Grain Stash</div>
+        <div class="card-role role-win">Farmer secret HQ — hidden</div>
+        <div class="card-desc">Hidden somewhere in Old Mick's paddock. If the Emu Pack finds and raids it, the game ends instantly. Everything Old Mick was protecting — gone.</div>
+      </div>
+
+      <!-- BIRD COUNCIL -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#c8e0a8"/>
+            <ellipse cx="26" cy="38" rx="16" ry="8" fill="#2a4010" opacity="0.7"/>
+            <ellipse cx="18" cy="32" rx="8" ry="10" fill="#1a3010"/>
+            <ellipse cx="26" cy="30" rx="8" ry="10" fill="#2a3818"/>
+            <ellipse cx="34" cy="32" rx="8" ry="10" fill="#1a3010"/>
+            <ellipse cx="22" cy="34" rx="5" ry="6" fill="#d4d0a8"/>
+            <ellipse cx="30" cy="35" rx="4.5" ry="5.5" fill="#ccc898"/>
+            <text x="26" y="22" text-anchor="middle" font-family="Georgia, serif" font-size="13" font-weight="bold" fill="#2a4010" opacity="0.7">?</text>
+          </svg>
+        </div>
+        <div class="card-name">The Bird Council</div>
+        <div class="card-role role-win">Emu secret HQ — hidden</div>
+        <div class="card-desc">Hidden somewhere deep in the scrublands. If the Riflemen find it and destroy it, the game ends instantly. Every decision, every raid — all of it, gone.</div>
+      </div>
+
+      <!-- BARN -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#f0dcc0"/>
+            <rect x="8" y="24" width="36" height="24" rx="2" fill="#d4a860"/>
+            <polygon points="4,26 26,10 48,26" fill="#a09080"/>
+            <rect x="4" y="24" width="44" height="4" rx="1" fill="#8a8a7a"/>
+            <rect x="19" y="34" width="14" height="14" fill="#8a5c28" rx="1"/>
+            <rect x="9" y="28" width="10" height="8" rx="1" fill="#c8dce8"/>
+            <rect x="33" y="28" width="10" height="8" rx="1" fill="#c8dce8"/>
+          </svg>
+        </div>
+        <div class="card-name">The Barn</div>
+        <div class="card-role role-terrain">Farmer base</div>
+        <div class="card-desc">Old Mick's base of operations. Where the whole operation runs from.</div>
+      </div>
+
+      <!-- THE BURROW -->
+      <div class="card">
+        <div class="card-icon">
+          <svg width="52" height="52" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+            <rect width="52" height="52" rx="10" fill="#d8ecc0"/>
+            <ellipse cx="26" cy="40" rx="18" ry="8" fill="#8aa840" opacity="0.6"/>
+            <ellipse cx="26" cy="38" rx="13" ry="6" fill="#5a7820"/>
+            <ellipse cx="26" cy="36" rx="9" ry="4" fill="#2a1808" opacity="0.8"/>
+            <ellipse cx="26" cy="35" rx="6" ry="3" fill="#1a1008"/>
+            <ellipse cx="14" cy="40" rx="6" ry="3" fill="#7a9830" opacity="0.5"/>
+            <ellipse cx="38" cy="41" rx="5" ry="3" fill="#7a9830" opacity="0.5"/>
+            <text x="26" y="28" text-anchor="middle" font-family="Georgia, serif" font-size="13" font-weight="bold" fill="#2a4010" opacity="0.7">?</text>
+          </svg>
+        </div>
+        <div class="card-name">The Burrow</div>
+        <div class="card-role role-terrain">Emu base</div>
+        <div class="card-desc">The emus' base of operations. Where the whole mob runs from.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">Rules Reference</div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;margin-top:4px;">The Board</p>
+    <div style="border:0.5px solid rgba(0,0,0,0.1);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);width:40%;">Grid</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">12 × 12</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Fence line</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Diagonal — top-right to bottom-left. Divides the board into two triangular halves.</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Tile</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Any square on the grid. The basic unit of the board.</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Cell</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">A tile that contains something — a Farm, Nest, or terrain. Cells are what you destroy. Empty tiles are just ground.</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;">Cell names</td>
+          <td style="padding:10px 14px;color:#3a2a10;">Farmer side: <strong>Farms</strong> — Emu side: <strong>Nests</strong></td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;">Tokens</p>
+    <div style="border:0.5px solid rgba(0,0,0,0.1);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr style="background:#f0e8d0;">
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#7a4800;border-bottom:0.5px solid rgba(0,0,0,0.08);">Token</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#7a4800;border-bottom:0.5px solid rgba(0,0,0,0.08);">Farmer Side</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#1e4a08;border-bottom:0.5px solid rgba(0,0,0,0.08);">Emu Side</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">ATK × 2</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">The Riflemen</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Emu Pack</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">DEF × 1</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Old Mick</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Cassowary</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Wild Token × 1</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Keith's Cannon</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">The Ancestors</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td colspan="3" style="padding:10px 14px;color:#888;font-size:12px;font-style:italic;">Tokens cannot be destroyed by either side. Ever.</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;">Movement &amp; Combat</p>
+    <div style="border:0.5px solid rgba(0,0,0,0.1);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);width:40%;">ATK movement</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Straight line only — horizontal, vertical, or diagonal. Unlimited range. Hits the first enemy cell it reaches across the fence line, then returns. That is one action.</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">DEF movement</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Same straight-line rules. Repositioning spends its action for that turn. Perimeter resets on move.</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Target restriction</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">ATK tokens can only destroy enemy cells. You cannot destroy your own cells.</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;">Cell health</td>
+          <td style="padding:10px 14px;color:#3a2a10;">Every cell has 1 health. One hit destroys it — unless it is inside the DEF token's perimeter zone.</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;">DEF Token — Perimeter</p>
+    <div class="def-diagram" style="margin-bottom:16px;">
+      <p style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px;">The DEF token projects a perimeter zone around itself. Any cell inside that zone requires the perimeter to be broken on that tile first — then the cell can be destroyed on the next hit. The moment the DEF token moves, the entire perimeter resets around its new position.</p>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <div>
+          <p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#8b6030;margin-bottom:6px;">3×3 Zone (default)</p>
+          <div class="def-grid">
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-center">DEF</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+            <div class="def-cell def-cell-perimeter">🛡</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#555;line-height:1.7;max-width:280px;">
+          <strong>Hit a shielded tile once</strong> → perimeter on that tile breaks.<br>
+          <strong>Hit it again</strong> → cell is destroyed.<br>
+          <strong>Move the DEF token</strong> → all perimeter tiles reset instantly.<br>
+          <strong>After upgrade</strong> → zone expands to 5×5.
+        </div>
+      </div>
+    </div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;">Terrain</p>
+    <div style="border:0.5px solid rgba(0,0,0,0.1);border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr style="background:#f0e8d0;">
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#555;border-bottom:0.5px solid rgba(0,0,0,0.08);width:25%;">Type</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#555;border-bottom:0.5px solid rgba(0,0,0,0.08);">Effect</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Rocks</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Present on both sides. Blocks straight-line attacks. Hit it enough and it breaks apart. Watch the durability indicator.</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">Termite Mounds</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Present on both sides. Harder than rocks. Blocks straight-line attacks. Takes more hits to break down.</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td colspan="2" style="padding:10px 14px;color:#888;font-size:12px;font-style:italic;">All terrain shows a durability indicator. When it hits zero, the tile is removed from the board permanently.</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#8b6030;margin-bottom:8px;">Upgrade Summary</p>
+    <div style="border:0.5px solid rgba(0,0,0,0.1);border-radius:12px;overflow:hidden;margin-bottom:4px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr style="background:#f0e8d0;">
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#555;border-bottom:0.5px solid rgba(0,0,0,0.08);width:15%;">Upgrade</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#555;border-bottom:0.5px solid rgba(0,0,0,0.08);width:18%;">Trigger</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#7a4800;border-bottom:0.5px solid rgba(0,0,0,0.08);">Farmer Side</td>
+          <td style="padding:8px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#1e4a08;border-bottom:0.5px solid rgba(0,0,0,0.08);">Emu Side</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">ATK Lv 2</td>
+          <td style="padding:10px 14px;color:#555;font-size:12px;border-bottom:0.5px solid rgba(0,0,0,0.08);">Enemy cells destroyed (per token)</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Riflemen hit 2 cells per shot</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Emu Pack hits 2 cells per raid</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">ATK Lv 3</td>
+          <td style="padding:10px 14px;color:#555;font-size:12px;border-bottom:0.5px solid rgba(0,0,0,0.08);">Enemy cells destroyed (per token)</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Riflemen hit 3 cells per shot</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Emu Pack hits 3 cells per raid</td>
+        </tr>
+        <tr style="background:#fff;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;border-bottom:0.5px solid rgba(0,0,0,0.08);">DEF</td>
+          <td style="padding:10px 14px;color:#555;font-size:12px;border-bottom:0.5px solid rgba(0,0,0,0.08);">Own cells reach ~half</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Old Mick perimeter 3×3 → 5×5</td>
+          <td style="padding:10px 14px;color:#3a2a10;border-bottom:0.5px solid rgba(0,0,0,0.08);">Cassowary perimeter 3×3 → 5×5</td>
+        </tr>
+        <tr style="background:#f0e8d0;">
+          <td style="padding:10px 14px;font-weight:700;color:#1a1208;">Wild Token</td>
+          <td style="padding:10px 14px;color:#555;font-size:12px;">Own cells dangerously low</td>
+          <td style="padding:10px 14px;color:#3a2a10;">Keith's Cannon — unlocked</td>
+          <td style="padding:10px 14px;color:#3a2a10;">The Ancestors — unlocked</td>
+        </tr>
+      </table>
+    </div>
+    <p class="note">ATK tokens level up independently — each token tracks its own cells destroyed. One token can be Level 3 while the other is still Level 1.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">Win Conditions</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#7a4800;padding:0 4px;">🌾 Old Mick's Side</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#1e4a08;padding:0 4px;">🐦 The Emus</div>
+    </div>
+
+    <div class="win-grid" style="margin-bottom:10px;">
+      <div class="win-card" style="border-top:3px solid #c8980a;">
+        <div class="win-label win-label-instant">Instant win</div>
+        <div class="win-name">Destroy the Bird Council</div>
+        <div class="win-desc">The Riflemen find and destroy the hidden Bird Council deep in the scrublands. Every decision the mob ever made — gone. Game ends immediately.</div>
+      </div>
+      <div class="win-card" style="border-top:3px solid #6a9a30;">
+        <div class="win-label win-label-instant">Instant win</div>
+        <div class="win-name">Destroy the Grain Stash</div>
+        <div class="win-desc">The Emu Pack finds and raids the hidden Grain Stash. Everything Old Mick was protecting — gone. Game ends immediately.</div>
+      </div>
+    </div>
+
+    <div class="win-grid">
+      <div class="win-card" style="border-top:3px solid #c8980a;">
+        <div class="win-label win-label-attrition">Attrition win</div>
+        <div class="win-name">Wipe the Nests</div>
+        <div class="win-desc">Destroy enough emu nests that the mob can no longer sustain itself. No nests, no operation. The scrublands go quiet. The outback belongs to Old Mick.</div>
+      </div>
+      <div class="win-card" style="border-top:3px solid #6a9a30;">
+        <div class="win-label win-label-attrition">Attrition win</div>
+        <div class="win-name">Raze the Farms</div>
+        <div class="win-desc">Raid enough farms that Old Mick can no longer fund his operation. No grain, no fight. The farm collapses from the inside. The mob eats well tonight.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">The Wild Tokens</div>
+    <p class="prose" style="margin-bottom:14px;">Each side has one Wild Token. It unlocks when your cells reach a dangerously low count — a last resort, not an opening move. Once used it is gone. It cannot be reused. It bypasses perimeter defences entirely — whatever it hits is destroyed instantly, no layers. The catch: you place the 3×3 zone but you don't choose which 5 cells inside it get destroyed. That's down to chance. Keith might take out the Bird Council. He might not. The Ancestors might hit the Grain Stash. They might miss. That's the deal.</p>
+
+    <div class="nuke-card" style="margin-bottom: 12px;">
+      <div class="nuke-header">
+        <svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
+          <rect width="56" height="56" rx="10" fill="#f5ddb8"/>
+          <rect x="6" y="32" width="44" height="16" rx="3" fill="#c87820"/>
+          <rect x="22" y="20" width="24" height="16" rx="2" fill="#d89030"/>
+          <rect x="24" y="22" width="20" height="10" rx="1" fill="#b8d4e8" opacity="0.7"/>
+          <circle cx="15" cy="48" r="6" fill="#2a1808"/>
+          <circle cx="15" cy="48" r="3" fill="#4a3010"/>
+          <circle cx="41" cy="48" r="6" fill="#2a1808"/>
+          <circle cx="41" cy="48" r="3" fill="#4a3010"/>
+          <rect x="10" y="26" width="14" height="7" rx="2" fill="#6a6050"/>
+          <rect x="6" y="28" width="8" height="4" rx="1" fill="#5a5040"/>
+          <circle cx="48" cy="16" r="8" fill="#f0a020" opacity="0.6"/>
+          <circle cx="48" cy="16" r="5" fill="#f8c040" opacity="0.7"/>
+        </svg>
+        <div class="nuke-text">
+          <div class="nuke-title">Keith's Cannon</div>
+          <div class="nuke-sub">Old Mick's son. Nobody asks about Keith. When things get desperate enough, Old Mick opens the shed. Keith takes the ute, a cannon, and absolutely no plan. Place the zone anywhere in the scrublands. 5 cells destroyed at random within that 3×3. You don't pick which 5. Keith does not come back.</div>
+        </div>
+      </div>
+      <div class="nuke-v">
+        <div class="nuke-v-label v-mick">Farmer Wild Token — targets emu territory</div>
+        <div class="nuke-v-name">Keith Crosses the Fence</div>
+        <div class="nuke-v-desc">Place the 3×3 zone anywhere in the scrublands. Keith charges through and destroys 5 randomly selected cells — nests, terrain, Bird Council, Burrow, whatever is there. Perimeter means nothing. One use only.</div>
+        <div><span class="cost-tag cost-mick">One use only — Keith is gone</span></div>
+      </div>
+    </div>
+
+    <div class="nuke-card">
+      <div class="nuke-header">
+        <svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
+          <rect width="56" height="56" rx="10" fill="#c8e8c0"/>
+          <ellipse cx="30" cy="34" rx="14" ry="10" fill="#1a4010"/>
+          <line x1="36" y1="26" x2="42" y2="14" stroke="#1a4010" stroke-width="8" stroke-linecap="round"/>
+          <ellipse cx="44" cy="11" rx="9" ry="7" fill="#1a4010"/>
+          <path d="M40,8 Q48,10 50,16" stroke="#0a2808" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <line x1="43" y1="9" x2="43" y2="13" stroke="#f0f0e0" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="46" y1="9" x2="47" y2="13" stroke="#f0f0e0" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="24" y1="42" x2="18" y2="54" stroke="#143410" stroke-width="5" stroke-linecap="round"/>
+          <line x1="34" y1="43" x2="32" y2="54" stroke="#143410" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="46" cy="9" r="2.5" fill="#e8b800"/>
+          <circle cx="46" cy="9" r="1" fill="#0a0a08"/>
+        </svg>
+        <div class="nuke-text">
+          <div class="nuke-title">The Ancestors</div>
+          <div class="nuke-sub">The emus have been here longer than anyone. They remember things. They call on things. When losses reach a breaking point, the ritual begins. Something erupts from the scrublands that has no business being in 1932. Place the zone. 5 cells gone at random. No explanation given. None needed.</div>
+        </div>
+      </div>
+      <div class="nuke-v">
+        <div class="nuke-v-label v-emu">Emu Wild Token — targets farmer territory</div>
+        <div class="nuke-v-name">It Crosses the Fence</div>
+        <div class="nuke-v-desc">Place the 3×3 zone anywhere in Old Mick's paddock. The Ancestor charges through and destroys 5 randomly selected cells — farms, terrain, Grain Stash, Barn, whatever is there. Perimeter means nothing. One use only.</div>
+        <div><span class="cost-tag cost-emu">One use only — the Ancestors return to wherever they came from</span></div>
+      </div>
+    </div>
+    <p class="note">Both Wild Tokens unlock when your losses reach a critical point — but you choose when to deploy. There is no forced timing. Place the zone, accept the randomness, live with the result.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
+    <div class="section-title">Tone &amp; Aesthetic Direction</div>
+    <div class="board-section">
+      <p class="board-desc">Outback comedy with genuine menace underneath. The Emu War of 1932 is the lore — the Australian government deployed soldiers against emus, declared victory, and the emus won. The board looks like an aerial view of the Western Australian outback: red dirt on one side, dense scrub on the other, a rusted fence running through the middle. Damage animations scatter emu feathers and wheat chaff. Terrain tiles show visible wear as they take damage. Keith's Cannon plays a ute engine rev, a cannon blast, and then silence. The Ancestors plays nothing — just the sound of something very large moving through scrub.</p>
+      <p class="board-desc">Destroy the Grain Stash and Old Mick's screen fades to a single corrugated iron wall, one bullet hole through it. Destroy the Bird Council and the emu side goes quiet — a single cracked egg, dark scrublands. Find the Barn or the Burrow and it ends the same way — no fanfare, just silence and a result.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

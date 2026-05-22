@@ -1,169 +1,63 @@
 # Authoritative Actions v1
 
-This document defines the action messages sent from the browser frontend, tracker, or bridge to the authoritative Python model.
+This document describes the commands currently accepted by the live Python runtime.
 
-## Current status
+The current system uses two command styles:
 
-- The currently implemented authoritative gameplay actions are `end_turn`, `move_unit`, `attack_in_direction`, and `trigger_nuke`.
-- The live Old Mick setup flow also accepts `choose_side`, `set_hq_candidate`, `confirm_hq`, and the optional setup reset aliases `reset_setup` and `cancel_hq`.
-- The live path is primarily marker-driven during setup and battle.
-- `upgrade_unit` is out of scope for the current integration prototype.
-- `move_unit` intents may currently come from either the tracker flow or the browser frontend.
+- top-level transport/debug commands
+- action-envelope commands sent as `{ "type": "action", "data": { ... } }`
 
-## WebSocket message
+## Current Status
+
+- The main live path is marker-driven for setup and battle submission.
+- Browser and manual runtimes still send explicit commands for mode selection, manual controls, tutorial flow, replay, and optional debug/testing actions.
+- Older `move_unit` and `attack_in_direction` examples are not part of the current browser/runtime flow and should be treated as historical integration ideas rather than active commands.
+
+## Action Envelope Shape
 
 ```json
 {
   "type": "action",
   "data": {
-    "action": "end_turn"
+    "action": "select_mode",
+    "mode": "normal"
   }
 }
 ```
 
-## Implemented actions
+## Current Action Commands
 
-### `choose_side`
+### `select_mode`
 
-Purpose: choose which faction places its HQ first once the board scan is ready.
-
-```json
-{
-  "action": "choose_side",
-  "first_player_side": "old_mick"
-}
-```
-
-Python behavior:
-
-- Accepted only after the board scan is ready and before the runtime reaches `game`.
-- Stores `first_player_side`.
-- Records the first player and maintains or enters `hq_placement`.
-
-The mainline frontend can send this action from its side-selection flow.
-
-### `set_hq_candidate`
-
-Purpose: submit an HQ candidate for the currently active setup side.
+Purpose: lock the runtime into `normal` or `tutorial` mode.
 
 ```json
 {
-  "action": "set_hq_candidate",
-  "side": "p1",
-  "position": { "x": 3, "y": 4 }
+  "action": "select_mode",
+  "mode": "normal"
 }
 ```
 
-Python behavior:
+Behavior:
 
-- Validates that the HQ is on the correct side and not on the fence.
-- Stores the candidate in backend session state when valid.
-- Exposes only `has_candidate` and `confirmed` through the public payload.
+- accepted when the session is still at `mode_select`
+- starts a fresh session in the selected mode
 
-This action is mainly kept for fallback or debug paths. In the live marker flow, `ID11` and `ID21` update the active side's HQ candidate automatically, and the frontend does not show exact HQ coordinates in the side panel.
+### `return_to_mode_select`
 
-### `confirm_hq`
-
-Purpose: confirm the current side's HQ candidate.
+Purpose: reset the session back to the mode-selection screen.
 
 ```json
 {
-  "action": "confirm_hq",
-  "side": "p1"
+  "action": "return_to_mode_select"
 }
 ```
 
-Python behavior:
+Behavior:
 
-- Locks the HQ if that side already has a candidate.
-- Transfers setup control to the other side after the first confirmation.
-- Emits `hq_setup_complete` and enters `game` after both HQs are confirmed.
-- Keeps confirmed HQ coordinates hidden from normal gameplay payloads.
-
-This action is mainly kept for fallback or debug paths. In the live marker flow, `ID4` performs the equivalent confirmation when the active side has a valid HQ candidate.
-
-### `reset_setup`
-
-Purpose: reset the current pre-game HQ setup.
-
-```json
-{
-  "action": "reset_setup"
-}
-```
-
-The live frontend may expose this through fallback or debug setup controls during `hq_placement`.
-
-### `cancel_hq`
-
-Purpose: compatibility alias for `reset_setup`.
-
-```json
-{
-  "action": "cancel_hq"
-}
-```
-
-### `end_turn`
-
-Purpose: request authoritative turn progression and broadcast the latest `board_state`.
-
-```json
-{
-  "action": "end_turn"
-}
-```
-
-Expected result:
-
-- Python performs authoritative turn progression.
-- `turn`, `active_player`, `move_countdown`, and related state are updated in Python.
-- The new `board_state` is broadcast to the browser frontend.
-
-### `move_unit`
-
-Purpose: submit a unit destination and let Python validate and apply the move.
-
-```json
-{
-  "action": "move_unit",
-  "unit_id": "u0",
-  "position": { "x": 4, "y": 3 }
-}
-```
-
-Current status:
-
-- Implemented in the Python backend.
-- May be produced by tracker-derived move intent.
-- May also be sent directly by the browser frontend.
-
-Python behavior:
-
-- Validates `unit_id` and `position`.
-- Applies the movement through the authoritative live rules.
-- Broadcasts an updated `board_state` on success.
-- Updates `last_action` on failure.
-
-### `attack_in_direction`
-
-Purpose: perform a straight-line attack in one of eight directions, letting Python resolve the first valid target and terrain blocking.
-
-```json
-{
-  "action": "attack_in_direction",
-  "unit_id": "u0",
-  "direction": "up_right"
-}
-```
-
-Python behavior:
-
-- Validates `unit_id` and `direction`.
-- Applies the attack through the authoritative live rules.
-- Searches for the first valid enemy target along the chosen direction.
-- Stops if terrain blocks the line first. Soft terrain is destroyed after 2 hits; hard terrain is destroyed after 5 hits.
-- Updates HQ or resource-tile state and `last_action` on success.
+- clears the currently selected mode
+- resets setup, game, and tutorial session state
+- returns the public payload to `phase: "mode_select"`
 
 ### `trigger_nuke`
 
@@ -177,60 +71,174 @@ Purpose: submit a one-use nuke target for the active side.
 }
 ```
 
-Python behavior:
+Behavior:
 
-- Accepted only during `game`, only for the current `battle.active_side`, and only if that side's nuke is available.
-- The target must be in enemy territory.
-- Browser/manual commands set the pending nuke target for the active side.
-- In the live marker path, `ID19` for `p1` and `ID29` for `p2` set the same pending target from camera marker position.
-- The pending target is exposed to the frontend as `battle.pending_nuke` so the browser can render the nuke icon and `3x3` target preview.
-- The nuke resolves when `ID4` confirms the active side's turn. It affects the `3x3` area centered on the pending target, destroys terrain in that area, randomly destroys up to 5 resource cells, bypasses DEF protection, and does not destroy HQs.
+- accepted only during `game`
+- accepted only for the current active side
+- target must be inside enemy territory
+- in live tracker mode, marker-driven nuke targeting is still the primary path
 
-## Actions excluded from v1
+### `tutorial_dismiss`
 
-### `upgrade_unit`
+Purpose: advance or dismiss the current tutorial step when allowed.
 
-Reason:
+```json
+{
+  "action": "tutorial_dismiss"
+}
+```
 
-- The current prototype is focused on completing the authoritative integration path first.
-- Upgrade rules are intentionally deferred.
+### `tutorial_undo`
 
-Current policy:
+Purpose: move the tutorial backward when the current tutorial state allows undo.
 
-- The UI does not expose upgrade in the backend-driven path.
-- Python does not currently implement upgrade rules.
+```json
+{
+  "action": "tutorial_undo"
+}
+```
 
-## Tracker relationship
+## Manual-Only Or Browser-Manual Commands
 
-The tracker should produce gameplay intent, not directly overwrite authoritative state.
+These are meaningful in no-camera manual runtimes and are not part of the main marker-driven live tracker flow.
 
-Target flow:
+### `place_token`
 
-1. `tracker snapshot`
-2. derive `move_unit` or other action intent
-3. Python validates and applies the action
-4. Python emits a new `board_state`
+Purpose: place or clear a token in browser-manual mode.
 
-## Live marker battle flow
+```json
+{
+  "action": "place_token",
+  "side": "p1",
+  "role": "atk_a",
+  "col": 3,
+  "row": 5,
+  "direction": "E"
+}
+```
 
-The current live battle path does not primarily use browser-sent `end_turn` actions.
+### `rotate_token`
 
-- `ID10` and `ID20` open positioning for `p1` or `p2`.
-- The active side's token-marker positions and rotations become that turn's candidate state.
-- `ID19` and `ID29` optionally set a pending nuke target for the active side when the nuke is unlocked and the marker is in enemy territory.
-- `ID4` submits the active side and triggers authoritative attack resolution immediately.
-- If a pending nuke target exists, `ID4` also resolves the nuke after the active side's normal attacks.
-- After resolution, the runtime waits for the opposing side's `ID10` or `ID20`.
+Purpose: rotate an attacker token in browser-manual mode.
 
-In other words, the live marker path is currently marker-driven rather than explicit action-driven for turn submission.
+```json
+{
+  "action": "rotate_token",
+  "side": "p1",
+  "role": "atk_a",
+  "direction": "SE"
+}
+```
 
-## Setup flow note
+### `end_turn`
 
-Pre-game setup and the live tracker flow currently use a backend-first session state machine:
+Purpose: resolve the active side and hand control to the other side in manual/browser-manual play.
 
-- `scan`
-- `side_selection` for fallback or debug paths
-- `hq_placement`
-- `game`
+```json
+{
+  "action": "end_turn",
+  "player": 1
+}
+```
 
-During `game`, inactive-side token movement is ignored and surfaced as `inactive_side_token_changed` rather than mutating the authoritative state.
+## Fallback Or Debug Setup Commands
+
+These commands exist mainly for fallback flows or manual testing.
+
+### `choose_side`
+
+```json
+{
+  "action": "choose_side",
+  "first_player_side": "old_mick"
+}
+```
+
+### `set_hq_candidate`
+
+```json
+{
+  "action": "set_hq_candidate",
+  "side": "p1",
+  "position": { "x": 3, "y": 4 }
+}
+```
+
+### `confirm_hq`
+
+```json
+{
+  "action": "confirm_hq",
+  "side": "p1"
+}
+```
+
+### `reset_setup`
+
+```json
+{
+  "action": "reset_setup"
+}
+```
+
+### `cancel_hq`
+
+Compatibility alias for `reset_setup`.
+
+```json
+{
+  "action": "cancel_hq"
+}
+```
+
+## Top-Level Transport Commands
+
+These commands are not wrapped in the action envelope.
+
+### `new_map`
+
+```json
+{ "type": "new_map" }
+```
+
+Purpose:
+
+- regenerate terrain and reset session state within the current mode
+
+### `tier`
+
+```json
+{ "type": "tier", "player": 1, "delta": 1 }
+```
+
+Purpose:
+
+- development/testing helper for tier changes
+
+### `demo_next`
+
+```json
+{ "type": "demo_next" }
+```
+
+Purpose:
+
+- demo/experimental progression helper where supported
+
+## Runtime-Specific Notes
+
+### Live tracker path
+
+- setup is primarily driven by markers `ID10`, `ID11`, `ID20`, `ID21`, and `ID4`
+- battle positioning is opened by `ID10` or `ID20`
+- battle resolution is confirmed by `ID4`
+- browser-side setup actions are largely ignored in this path
+
+### Manual path
+
+- terminal commands drive setup and turn progression
+- browser commands mainly support UI helpers and browser-manual placement
+
+## Historical Note
+
+Earlier contract notes referenced `move_unit` and `attack_in_direction` as active authoritative gameplay commands. They are not part of the current live browser/runtime command surface and should not be treated as canonical for this repository version.

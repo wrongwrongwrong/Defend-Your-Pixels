@@ -64,11 +64,11 @@ export function buildHelpPopupTemplate() {
           </button>
         </div>
         <div class="help-rows">
-          ${row(card('farmer', 'assets/images/hq-mick.png', 'Grain Stash', 'Secret HQ - hidden'), winMechanic(), card('emu', 'assets/images/hq-emu.png', 'Bird Council', 'Secret HQ - hidden'))}
-          ${row(card('farmer', 'assets/images/atk-mick-rifleman.png', 'Riflemen x 2'), attackMechanic(), card('emu', 'assets/images/atk-emu.png', 'Emu Pack x 2'))}
-          ${row(card('farmer', 'assets/images/def-mick.png', 'Old Mick x 1'), defenseMechanic(), card('emu', 'assets/images/atk-emu-cassowary.png', 'Cassowary x 1'))}
-          ${row(card('farmer', 'assets/images/nuke-mick-keith.png', "Keith's Cannon", 'One use only'), wildMechanic(), card('emu', 'assets/images/nuke-emu-ancestors.png', 'The Ancestors', 'One use only'))}
-          ${row(card('farmer', 'assets/images/cell-mick-wheat fields.png', 'Farms', 'Your cells'), terrainMechanic(), card('emu', 'assets/images/cell-emu-feeding grounds.png', 'Nests', 'Your cells'))}
+          ${row(card('farmer', 'assets/images/tokens/hq-mick.png', 'Grain Stash', 'Secret HQ - hidden'), winMechanic(), card('emu', 'assets/images/tokens/hq-emu.png', 'Bird Council', 'Secret HQ - hidden'))}
+          ${row(card('farmer', 'assets/images/tokens/atk-m-1.png', 'Rifleman A / B x 2'), attackMechanic(), card('emu', 'assets/images/tokens/atk-e-1.png', 'Emu Pack A / B x 2'))}
+          ${row(card('farmer', 'assets/images/tokens/def-m-level1.png', 'Old Mick x 1'), defenseMechanic(), card('emu', 'assets/images/tokens/def-e-level1.png', 'Cassowary x 1'))}
+          ${row(card('farmer', 'assets/images/tokens/wild-token-m-keith.png', "Keith's Cannon", 'One use only'), wildMechanic(), card('emu', 'assets/images/tokens/wild-token-e-dino.png', 'Dino', 'One use only'))}
+          ${row(card('farmer', 'assets/images/tiles/cell-m-farm.png', 'Farms', 'Your cells'), terrainMechanic(), card('emu', 'assets/images/tiles/cell-e-nest.png', 'Nests', 'Your cells'))}
         </div>
       </div>
     </div>

@@ -5,14 +5,6 @@ REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 UI_URL="http://localhost:8080"
 VENV_PY="$REPO_ROOT/.venv/bin/python3"
 
-pause_on_exit() {
-  echo ""
-  read -r -p "Press Enter to close..." _
-}
-
-# Finder-launched .command windows often close immediately on error; pause so users can read it.
-trap 'echo ""; echo "[launch_live_demo] ERROR: launch failed."; pause_on_exit' ERR
-
 if [ ! -x "$VENV_PY" ]; then
   echo ""
   echo "[launch_live_demo] Missing .venv. Bootstrapping environment..."
@@ -22,7 +14,7 @@ if [ ! -x "$VENV_PY" ]; then
     echo "[launch_live_demo] ERROR: python3 not found on PATH."
     echo "Install Python 3.10+ and re-run."
     echo ""
-    pause_on_exit
+    read -r -p "Press Enter to close..."
     exit 1
   fi
 
@@ -54,8 +46,7 @@ if [ "${DYP_NO_CAMERA:-}" = "1" ] || [ "${DYP_NO_CAMERA:-}" = "true" ]; then
 fi
 
 echo "[launch_live_demo] Running:"
-# Avoid "unbound variable" with `set -u` when ARGS is empty.
-echo "  \"$VENV_PY\" -m runner.run_live_tracker ${ARGS[@]:-}"
+echo "  \"$VENV_PY\" -m runner.run_live_tracker ${ARGS[*]}"
 echo ""
 
 exec "$VENV_PY" -m runner.run_live_tracker "${ARGS[@]}"

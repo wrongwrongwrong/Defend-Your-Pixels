@@ -2,7 +2,7 @@ import { COLORS } from "../constants.js";
 import { preloadAll } from "../audio.js";
 
 /**
- * BootScene — preloads all assets, then starts GameScene.
+ * BootScene — preloads all assets, then starts IntroScene.
  * WebSocket is managed externally (main.js → registry).
  */
 export class BootScene extends Phaser.Scene {
@@ -12,28 +12,38 @@ export class BootScene extends Phaser.Scene {
     preloadAll(this);
 
     this.load.image("board",          "assets/images/board.png");
+    // Optional intro title — missing file is OK (IntroScene uses text fallback)
+    this.load.image("intro_title",    "assets/images/intro_title.png");
 
-    this.load.image("tok_mick_atk_a", "assets/images/atk-mick-a.png");
-    this.load.image("tok_mick_atk_b", "assets/images/atk-mick-b.png");
-    this.load.image("tok_mick_def",   "assets/images/def-mick.png");
-    this.load.image("tok_mick_nuke",  "assets/images/nuke-mick-keith.png");
+    // Attack tokens
+    this.load.image("tok_mick_atk_a", "assets/images/tokens/atk-m-1.png");
+    this.load.image("tok_mick_atk_b", "assets/images/tokens/atk-m-2.png");
+    this.load.image("tok_emu_atk_a",  "assets/images/tokens/atk-e-1.png");
+    this.load.image("tok_emu_atk_b",  "assets/images/tokens/atk-e-2.png");
 
-    this.load.image("tok_emu_atk_a",  "assets/images/atk-emu-a.png");
-    this.load.image("tok_emu_atk_b",  "assets/images/atk-emu-b.png");
-    this.load.image("tok_emu_def",    "assets/images/atk-emu-cassowary.png");
-    this.load.image("tok_emu_nuke",   "assets/images/nuke-emu-ancestors.png");
+    // Defense tokens (level 1 and level 2)
+    this.load.image("tok_mick_def",     "assets/images/tokens/def-m-level1.png");
+    this.load.image("tok_mick_def_2",   "assets/images/tokens/def-m-level2.png");
+    this.load.image("tok_emu_def",      "assets/images/tokens/def-e-level1.png");
+    this.load.image("tok_emu_def_2",    "assets/images/tokens/def-e-level2.png");
 
-    this.load.image("hq_grain_stash",      "assets/images/hq-mick.png");
-    this.load.image("hq_grain_stash_dead", "assets/images/hq-mick-destroyed.png");
-    this.load.image("hq_bird_council",     "assets/images/hq-emu.png");
-    this.load.image("hq_bird_council_dead","assets/images/hq-emu-destroyed.png");
+    // Nuke/wild tokens
+    this.load.image("tok_mick_nuke",  "assets/images/tokens/wild-token-m-keith.png");
+    this.load.image("tok_emu_nuke",   "assets/images/tokens/wild-token-e-dino.png");
 
-    this.load.image("cell_mick",      "assets/images/cell-mick-wheat fields.png");
-    this.load.image("cell_emu",       "assets/images/cell-emu-feeding grounds.png");
-    this.load.image("hard_mick",      "assets/images/hard-mick-v2.png");
-    this.load.image("hard_emu",       "assets/images/hard-emu-v1.png");
-    this.load.image("soft_mick",      "assets/images/soft-mick-v1.png");
-    this.load.image("soft_emu",       "assets/images/soft-emu-v1.png");
+    // HQ tokens
+    this.load.image("hq_grain_stash",      "assets/images/tokens/hq-mick.png");
+    this.load.image("hq_grain_stash_dead", "assets/images/tokens/hq-mick-destroyed.png");
+    this.load.image("hq_bird_council",     "assets/images/tokens/hq-emu.png");
+    this.load.image("hq_bird_council_dead","assets/images/tokens/hq-emu-destroyed.png");
+
+    // Terrain tiles
+    this.load.image("cell_mick",      "assets/images/tiles/cell-m-farm.png");
+    this.load.image("cell_emu",       "assets/images/tiles/cell-e-nest.png");
+    this.load.image("hard_mick",      "assets/images/tiles/hard-terrain.png");
+    this.load.image("hard_emu",       "assets/images/tiles/hard-terrain.png");
+    this.load.image("soft_mick",      "assets/images/tiles/soft-terrain1.png");
+    this.load.image("soft_emu",       "assets/images/tiles/soft-terrain2.png");
 
     this.load.on("loaderror", (file) => {
       console.warn(`[boot] missing: ${file.key} (${file.url})`);
@@ -61,13 +71,14 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     const WHITE_BG_KEYS = [
-      "tok_mick_atk_a", "tok_mick_atk_b", "tok_mick_def", "tok_mick_nuke",
-      "tok_emu_atk_a",  "tok_emu_atk_b",  "tok_emu_def",  "tok_emu_nuke",
+      "tok_mick_atk_a", "tok_mick_atk_b", "tok_mick_def", "tok_mick_def_2", "tok_mick_nuke",
+      "tok_emu_atk_a",  "tok_emu_atk_b",  "tok_emu_def",  "tok_emu_def_2",  "tok_emu_nuke",
       "hq_grain_stash", "hq_grain_stash_dead", "hq_bird_council", "hq_bird_council_dead",
       "cell_mick", "cell_emu", "hard_mick", "hard_emu", "soft_mick", "soft_emu",
     ];
     for (const key of WHITE_BG_KEYS) this._removeWhiteBg(key);
 
-    this.scene.start("Game");
+    const ws = this.game.registry.get("ws");
+    this.scene.start("Intro", { ws });
   }
 }

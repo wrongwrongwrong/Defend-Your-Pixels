@@ -1,85 +1,118 @@
 # Contributing Guide
 
-This guide keeps the repository consistent and professional across team members.
+This repository favors small, well-scoped changes, clear naming, and documentation that stays aligned with the actual runtime.
 
-## Core principles
+## Core Principles
 
-- Keep changes small and focused.
-- Prefer clear naming over short naming.
-- Avoid mixing unrelated concerns in one pull request.
-- Preserve backward compatibility when refactoring.
+- Keep changes focused on one responsibility.
+- Prefer explicit naming over short or clever naming.
+- Preserve clear separation between tracker, rules, transport, runner, and frontend responsibilities.
+- Update documentation whenever behavior, payload shape, setup flow, or supported runtime paths change.
 
-## Folder naming conventions
+## Naming Conventions
 
-- Use `kebab-case` for folder names: `react-frontend`, `tracker-service`.
-- Use meaningful names based on responsibility.
-- Avoid ambiguous names like `misc`, `temp`, or `stuff`.
-
-## Python naming conventions
+### Python
 
 - Files/modules: `snake_case.py`
 - Classes: `PascalCase`
-- Functions/variables: `snake_case`
+- Functions: `snake_case`
+- Variables: `snake_case`
 - Constants: `UPPER_SNAKE_CASE`
 
 Examples:
-- Good: `tracker_snapshot.py`, `model_action_dispatcher.py`
-- Avoid: `TrackerSnapshot.py`, `utils2.py`
 
-## JavaScript/React naming conventions
+- Good: `tracker_snapshot.py`, `websocket_transport.py`, `GameModel`
+- Avoid: `TrackerSnapshot.py`, `transportUtils.py`, `misc.py`
 
-- React components: `PascalCase.jsx` or `PascalCase.tsx`
-- Hooks: `useXxx.js` / `useXxx.ts`
-- Utility modules: choose one style and keep it consistent (`camelCase` recommended)
+### JavaScript
+
+- Scene files/classes: `PascalCase.js` with `PascalCase` exports for Phaser scenes
+- General utility/browser modules: `camelCase.js` or established short lowercase names such as `ui.js`, `audio.js`, `constants.js`
+- Functions/variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE` when truly constant
 
 Examples:
-- Good: `BoardView.jsx`, `useWebSocket.js`, `adaptBoardStateToUi.js`
-- Avoid: `board_view.jsx`, `websockethook.js`
 
-## File responsibility rules
+- Good: `IntroScene.js`, `GameScene.js`, `helpPopupTemplate.js`, `resolveWsUrl`
+- Avoid: `intro_scene.js` inside the scenes folder, `Utils.js`, `stuff.js`
 
-- One file should have one clear responsibility.
-- Do not put business logic in runner scripts.
-- Keep transport logic separate from game rules.
-- Keep pure logic separate from UI rendering.
+### Folders
 
-## Tests and validation
+- Use clear responsibility-based names.
+- Avoid generic buckets such as `misc`, `temp`, or `stuff`.
+- Keep archival or experimental material clearly separated from canonical runtime paths.
 
-- Add or update tests for behavior changes.
-- Use naming:
-  - Python: `test_<module>.py`
-  - Frontend: `<module>.test.js` or `<module>.spec.js`
-- Run relevant local checks before committing.
+## File Responsibility Rules
 
-## Documentation expectations
+- `backend/python_tracker/` owns vision and calibration logic.
+- `backend/live_rules/` owns gameplay truth.
+- `backend/bridge/` owns transport only.
+- `runner/` assembles runtime modes and session flow; it should not absorb core game logic.
+- `frontend/src/` owns browser presentation and interaction only.
+- `protocol/` owns shared browser transport helpers and protocol notes.
 
-For each meaningful change, update docs when needed:
-- Runtime behavior
-- Message schema/protocol
-- Setup/run instructions
+One file should have one clear responsibility. When in doubt, prefer smaller focused changes over broad mixed edits.
 
-Each major folder should have a short `README.md` with:
-- purpose
-- key files
-- how to run/test
+## Comment Expectations
 
-## Pull request checklist
+- Comment the reason for a decision, not the obvious mechanics of a line.
+- Use comments to explain non-obvious control flow, protocol assumptions, or tricky runtime constraints.
+- Keep comments short and factual.
+- Remove or update comments when behavior changes.
+- Do not leave comments that refer to outdated prototypes, removed flows, or no-longer-canonical behavior.
 
-Before opening a PR:
+Good examples:
 
-- [ ] Scope is focused (single topic)
-- [ ] Naming follows conventions
-- [ ] Tests/checks pass locally
-- [ ] Docs updated if behavior changed
-- [ ] No unrelated file changes included
+- explain why a payload field stays hidden
+- explain why a setup phase ignores a command path
+- explain why a transport queue exists instead of direct mutation
 
-## Commit message style
+Avoid comments that only restate code such as "set variable to value".
 
-Use concise, intent-focused messages.
+## Documentation Expectations
 
-Recommended pattern:
-- `feat: add tracker-frame adapter for UI`
-- `fix: prevent invalid move from stale marker input`
-- `docs: add architecture flow for bridge`
-- `refactor: extract board state serializer`
+The documentation set has a canonical path:
 
+- `README.md` for general setup and launch
+- `docs/README.md` for documentation routing
+- `docs/architecture.md` for system structure
+- `docs/board_state_v1.md` for payload shape
+- `docs/authoritative_actions_v1.md` for accepted actions
+- `docs/setup_flow_backend_v1.md` for marker-driven setup flow
+
+Update the relevant document whenever you change:
+
+- setup or launch instructions
+- supported runtime modes
+- payload or action contracts
+- architecture boundaries
+- naming or contribution rules
+
+If a document becomes historical, mark it clearly rather than leaving conflicting instructions in place.
+
+## Tests And Validation
+
+- Run the checks that make sense for your change.
+- For Python file changes, at minimum run syntax or type checks when available.
+- For documentation-only changes, check links, commands, and file references against the actual repository.
+
+This repository does not currently ship a formal test suite for all areas, so validation should be pragmatic and explicit.
+
+## Pull Request Checklist
+
+- [ ] Scope is focused
+- [ ] Naming follows repository conventions
+- [ ] Comments remain accurate and necessary
+- [ ] Documentation was updated if behavior, setup, contracts, or runtime paths changed
+- [ ] No unrelated files were changed
+
+## Commit Message Style
+
+Use concise, intent-focused commit messages.
+
+Examples:
+
+- `feat: add replay flow back to mode select`
+- `fix: prevent duplicate websocket listeners on scene restart`
+- `docs: reorganize onboarding and architecture references`
+- `refactor: isolate battle payload handling`

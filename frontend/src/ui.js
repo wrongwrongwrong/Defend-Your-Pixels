@@ -6,7 +6,6 @@
 const UPGRADE_1 = 4;
 const UPGRADE_2 = 8;
 const ACTIVE_TOTAL = 24;
-const ERROR_DISPLAY_DELAY_MS = 1200;
 
 function pad2(n) { return String(Math.max(0, n ?? 0)).padStart(2, "0"); }
 
@@ -54,7 +53,16 @@ function countProtectedResources(side, def, state, defTier) {
 
 function onState(s) {
   if (!s) return;
-  _updateModeOverlay(s);
+  if (s.phase === "mode_select") {
+    clearTimeout(_resultTimer);
+    _resultTimer = null;
+    _resultTimerActive = false;
+  }
+  if (document.body.classList.contains("intro-stage")) {
+    _setHelpVisible(!!s.help_visible);
+    _updateStatus(s, s.battle?.active_side ?? null, s.game || {});
+    return;
+  }
   _setHelpVisible(!!s.help_visible);
   const p1         = s.p1      || {};
   const p2         = s.p2      || {};
@@ -144,12 +152,6 @@ function _setHelpVisible(visible) {
   }
 }
 
-function _updateModeOverlay(state) {
-  const overlay = el("mode-overlay");
-  if (!overlay) return;
-  overlay.classList.toggle("hidden", state.mode != null || state.phase !== "mode_select");
-}
-
 // ── Score ──────────────────────────────────────────────────────────────────────
 
 function _setScore(side, remaining, total) {
@@ -228,100 +230,47 @@ let _resultTimer       = null;
 let _lastActiveSide    = null;
 let _lastGame          = {};
 let _lastState         = null;
+let _wsConnected       = false;
 
 function _updateStatus(state, activeSide, game) {
   _lastActiveSide = activeSide;
   _lastState = state || null;
   _lastGame = game || {};
 
-  _syncErrorState(state);
-  _renderFooter();
-}
-
-let _resultText        = "";
-let _resultSide        = null;
-let _connectionState   = "connecting";
-let _visibleError      = null;
-let _pendingError      = null;
-let _pendingErrorTimer = null;
-
-function _footerBaseClass(activeSide) {
-  return activeSide === "p1" ? "notif-bar turn-p1"
-    : activeSide === "p2" ? "notif-bar turn-p2"
-    : "notif-bar";
-}
-
-function _setFooterContent({ text, className, warning = false }) {
-  const bar = el("notif-bar");
-  const iconEl = el("notif-icon");
+  const bar    = el("notif-bar");
   const textEl = el("notif-text");
-  if (!bar || !iconEl || !textEl) return;
+  if (!bar || !textEl) return;
 
-  bar.className = warning ? `${className} notif-warning` : className;
-  iconEl.textContent = "[!]";
-  textEl.textContent = text;
-}
+  bar.className = activeSide === "p1" ? "notif-bar turn-p1"
+                : activeSide === "p2" ? "notif-bar turn-p2"
+                : "notif-bar";
 
-function _clearPendingErrorTimer() {
-  if (_pendingErrorTimer != null) {
-    clearTimeout(_pendingErrorTimer);
-    _pendingErrorTimer = null;
-  }
-}
-
-function _primaryError(state) {
-  if (!Array.isArray(state?.errors)) return null;
-  return state.errors.find((err) => err?.message) || null;
-}
-
-function _clearErrorState() {
-  _clearPendingErrorTimer();
-  _pendingError = null;
-  _visibleError = null;
-}
-
-function _syncErrorState(state) {
-  const nextError = _primaryError(state);
-
-  if (!nextError) {
-    const hadError = _visibleError != null || _pendingError != null;
-    _clearPendingErrorTimer();
-    _pendingError = null;
-    _visibleError = null;
-    if (hadError) _renderFooter();
+  if (state?.phase === "mode_select") {
+    textEl.textContent = "Choose START GAME or TUTORIAL to begin.";
     return;
   }
 
-  const sameVisible = _visibleError?.code === nextError.code && _visibleError?.message === nextError.message;
-  if (sameVisible) return;
-
-  const samePending = _pendingError?.code === nextError.code && _pendingError?.message === nextError.message;
-  if (samePending) return;
-
-  _clearPendingErrorTimer();
-  _pendingError = nextError;
-  _visibleError = null;
-  _pendingErrorTimer = setTimeout(() => {
-    _visibleError = _pendingError;
-    _pendingError = null;
-    _pendingErrorTimer = null;
-    _renderFooter();
-  }, ERROR_DISPLAY_DELAY_MS);
-}
-
-function _statusText(state, activeSide, game) {
   const setupMessage = state?.setup?.status_message;
   if (setupMessage && state?.phase !== "game") {
-    return setupMessage;
+    textEl.textContent = setupMessage;
+    return;
   }
 
   const battleMessage = state?.battle?.status_message;
   if (battleMessage) {
-    return battleMessage;
+    textEl.textContent = battleMessage;
+    return;
+  }
+
+  const primaryError = Array.isArray(state?.errors) ? state.errors.find((err) => err?.message) : null;
+  if (primaryError?.message) {
+    textEl.textContent = primaryError.message;
+    return;
   }
 
   if (!activeSide) {
-    return _connectionState === "connected" ? "CONNECTED - READY TO PLAY" : "Waiting for server...";
+    textEl.textContent = _wsConnected ? "CONNECTED - READY TO PLAY" : "Waiting for server...";
+    return;
   }
 
   const hints = [];
@@ -342,45 +291,23 @@ function _statusText(state, activeSide, game) {
     }
   }
 
-  return hints.join("   ·   ");
-}
-
-function _renderFooter() {
-  const activeSide = _lastActiveSide;
-  const state = _lastState;
-  const game = _lastGame;
-  const baseClass = _footerBaseClass(activeSide);
-
-  if (_connectionState === "disconnected") {
-    _setFooterContent({ text: "Disconnected - reconnecting...", className: "notif-bar" });
-    return;
-  }
-
-  if (_visibleError?.message) {
-    _setFooterContent({ text: _visibleError.message, className: baseClass, warning: true });
-    return;
-  }
-
-  if (_resultTimerActive && _resultText) {
-    _setFooterContent({ text: _resultText, className: `notif-bar result-${_resultSide}` });
-    return;
-  }
-
-  _setFooterContent({ text: _statusText(state, activeSide, game), className: baseClass });
+  textEl.textContent = hints.join("   ·   ");
 }
 
 function _showAttackResult(text, side) {
   clearTimeout(_resultTimer);
   _resultTimerActive = true;
-  _resultText = text;
-  _resultSide = side;
-  _renderFooter();
+
+  const bar    = el("notif-bar");
+  const textEl = el("notif-text");
+  if (!bar || !textEl) return;
+
+  bar.className      = `notif-bar result-${side}`;
+  textEl.textContent = text;
 
   _resultTimer = setTimeout(() => {
     _resultTimerActive = false;
-    _resultText = "";
-    _resultSide = null;
-    _renderFooter();
+    _updateStatus(_lastState, _lastActiveSide, _lastGame);
   }, 10_000);
 }
 
@@ -403,20 +330,18 @@ function onEvents(events) {
 // ─── Public init ──────────────────────────────────────────────────────────────
 
 export function initUI(ws) {
-  el("mode-normal")?.addEventListener("click", () => ws.send("select_mode", { mode: "normal" }));
-  el("mode-tutorial")?.addEventListener("click", () => ws.send("select_mode", { mode: "tutorial" }));
-
   ws.on("connected", () => {
-    _connectionState = "connected";
-    _renderFooter();
+    _wsConnected = true;
+    if (!_resultTimerActive) _updateStatus(_lastState, _lastActiveSide, _lastGame);
   });
 
   ws.on("state",  onState);
   ws.on("events", onEvents);
 
   ws.on("disconnected", () => {
-    _connectionState = "disconnected";
-    _clearErrorState();
-    _renderFooter();
+    _wsConnected = false;
+    const t = el("notif-text");
+    if (t) t.textContent = "Disconnected — reconnecting…";
+    el("notif-bar")?.classList.remove("turn-p1","turn-p2","result-p1","result-p2");
   });
 }

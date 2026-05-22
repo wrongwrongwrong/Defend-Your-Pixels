@@ -146,7 +146,7 @@ async def async_main() -> None:
     )
     start_frontend_http_server(HTTP_PORT, FRONTEND_DIR, ROOT_DIR / "protocol")
     print("=" * 55)
-    print("  Defend Your Pixels Demo Mode")
+    print("  Old Micks and The Emus Demo Mode")
     print(f"  ws://{WS_HOST}:{WS_PORT}")
     print(f"  http://localhost:{HTTP_PORT}")
     print("=" * 55)

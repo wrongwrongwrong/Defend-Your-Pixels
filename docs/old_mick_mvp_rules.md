@@ -1,5 +1,9 @@
 # Old Mick Against the Mob MVP Rules
 
+> Status: reference document.
+>
+> This file captures earlier MVP rule framing and background context. It is not the canonical description of the current live runtime. For current behavior, use `backend/live_rules/game_model.py`, `docs/board_state_v1.md`, and `docs/authoritative_actions_v1.md`.
+
 This file defines the minimum playable ruleset for the first `Old Mick Against the Mob`
 prototype. It is intentionally narrower than the full GDD. The goal is to lock the
 core loop before expanding into upgrades, hidden information, and Phaser-specific UI.

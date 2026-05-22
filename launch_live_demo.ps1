@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$uiUrl = "http://localhost:18080"
+$uiUrl = "http://localhost:8080"
 
 function Get-PythonCandidatePaths {
     $paths = New-Object System.Collections.Generic.List[string]
