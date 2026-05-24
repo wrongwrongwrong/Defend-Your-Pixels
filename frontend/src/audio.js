@@ -27,6 +27,10 @@ export const AUDIO_MANIFEST = {
   sfx_p1_defense:   ["assets/audio/mick_trigger.mp3"],
   sfx_p2_defense:   ["assets/audio/emu_trigger.mp3"],
 
+  // ── Nuke ──────────────────────────────────────────────────────────────
+  sfx_p1_nuke:      ["assets/audio/mick_nuke.mp3"],
+  sfx_p2_nuke:      ["assets/audio/emu_nuke.mp3"],
+
   // ── Destruction ────────────────────────────────────────────────────────
   sfx_explosion:    ["assets/audio/HQ_destroyed.mp3"],
   sfx_destroy:      ["assets/audio/HQ_destroyed.mp3"],  // cell destroyed (reuse)
@@ -187,6 +191,7 @@ export function stopBgm(scene) {
   _state.bgmKey = null;
   _state.bgmObj = null;
 }
+
 
 // ─── Mute / volume ────────────────────────────────────────────────────────────
 

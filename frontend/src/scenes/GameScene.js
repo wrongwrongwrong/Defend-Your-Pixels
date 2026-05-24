@@ -1876,7 +1876,7 @@ export class GameScene extends Phaser.Scene {
             });
             break;
           case "nuke_triggered":
-            playSfx(this, "sfx_explosion");
+            playSfx(this, ev.side === "p1" ? "sfx_p1_nuke" : "sfx_p2_nuke");
             this._animateNuke({ ...ev, cells: nukeCells });
             this.cameras.main.shake(500, 0.018);
             break;
