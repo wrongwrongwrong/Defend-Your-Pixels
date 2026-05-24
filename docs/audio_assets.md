@@ -1,62 +1,49 @@
-# Audio Assets
+# Audio Assets Reference
 
-Drop sound files into the active frontend audio assets folder. The Phaser loader
-should pick them up automatically on refresh.
+This document tracks the current frontend audio manifest.
 
-Missing files must not crash the game. They should only log warnings.
+Canonical runtime source:
 
-## Required filenames
+- `frontend/src/audio.js`
 
-The frontend audio manager looks for these specific names. Match the filenames
-exactly, or update the manifest in the frontend code.
+If this document and the code disagree, treat `frontend/src/audio.js` as authoritative and update this file.
 
-| File | Plays when | Notes |
-|------|------------|-------|
-| `bgm_outback.mp3` | First Intro click, loops during play | 1-2 minute loop is ideal |
-| `sfx_p1_attack.mp3` | Farmer-side attack fire | Short rifle shot |
-| `sfx_p2_attack.mp3` | Mob-side attack fire | Distinct emu-side attack cue |
-| `sfx_first_hit.mp3` | First hit on a protected cell | Light chip / impact |
-| `sfx_destroy.mp3` | Cell destroyed | Stronger destruction cue |
-| `sfx_block.mp3` | Terrain hit or soft-terrain destruction | Ricochet or thud |
-| `sfx_explosion.mp3` | HQ destroyed or nuke triggered | Large explosion |
-| `sfx_page.mp3` | Intro slide advance | Paper / typewriter cue |
-| `sfx_select.mp3` | Side selection click or confirm-style UI action | Soft confirm tone |
-| `sfx_marker_turn.mp3` | Marker rotation feedback | Optional until wired |
-| `sfx_p1_hq_select.mp3` | P1 HQ lock | Optional until wired |
-| `sfx_p2_hq_select.mp3` | P2 HQ lock | Optional until wired |
-| `sfx_p1_defense.mp3` | P1 defense placement | Optional until wired |
-| `sfx_p2_defense.mp3` | P2 defense placement | Optional until wired |
-| `sfx_tier_up.mp3` | Any tier increase | Shared tier-up stinger |
-| `sfx_victory.mp3` | Win | Short fanfare |
-| `sfx_defeat.mp3` | Loss | Sad horn / wind |
+## Current Manifest
 
-## Format
+| Audio key | File path(s) used by the frontend | Purpose |
+|-----------|-----------------------------------|---------|
+| `bgm_outback` | `assets/audio/bgm.mp3` | Main background music |
+| `sfx_p1_attack` | `assets/audio/mick_attack.wav` | Old Mick attack fire |
+| `sfx_p2_attack` | `assets/audio/emu_attack.wav` | Mob attack fire |
+| `sfx_p1_hq_select` | `assets/audio/mick_trigger.mp3` | P1 trigger/select family |
+| `sfx_p2_hq_select` | `assets/audio/emu_trigger.mp3` | P2 trigger/select family |
+| `sfx_p1_defense` | `assets/audio/mick_trigger.mp3` | P1 defense family |
+| `sfx_p2_defense` | `assets/audio/emu_trigger.mp3` | P2 defense family |
+| `sfx_explosion` | `assets/audio/HQ_destroyed.mp3` | HQ destruction / large explosion |
+| `sfx_destroy` | `assets/audio/HQ_destroyed.mp3` | Reused destruction cue |
+| `sfx_tier_up` | `assets/audio/level_up.mp3` | Tier increase |
+| `sfx_victory` | `assets/audio/win.mp3` | Win fanfare |
+| `sfx_select` | `assets/audio/place_HQ.mp3` | UI confirm / placement / end turn |
+| `sfx_page` | `assets/audio/intro.wav` | Intro/UI page cue |
 
-- MP3 is the safest cross-browser choice for desktop testing.
-- If you also have OGG, add both paths in the frontend audio manifest.
+## Synthesized Fallback Sound
 
-Example:
+The runtime also synthesizes one sound in code instead of loading a file:
 
-```js
-bgm_outback: ["assets/audio/bgm_outback.mp3", "assets/audio/bgm_outback.ogg"]
-```
+| Audio key | Source | Purpose |
+|-----------|--------|---------|
+| `sfx_marker_turn` | Web Audio synth in `frontend/src/audio.js` | Token rotation feedback |
 
-## Sources
+## Declared But Not Yet Backed By Files
 
-Useful places to source or create files:
+The current code leaves these commented out as future additions:
 
-- `freesound.org`
-- `incompetech.com`
-- `opengameart.org`
-- `mixkit.co/free-sound-effects`
-- AI-generated music or SFX tools if the team wants original audio
+- `sfx_block`
+- `sfx_first_hit`
+- `sfx_defeat`
 
-## Volume and mute
+Missing files should not crash the game. The frontend is intentionally tolerant of absent audio assets.
 
-- The top-right of the game canvas includes a mute toggle.
-- Default levels are controlled in the frontend audio manager.
+## Provenance Gap
 
-## Browser autoplay note
-
-Browsers block autoplay until the user interacts. BGM should start on the first
-player interaction in the Intro scene.
+The repository does not yet include a complete provenance and license record for every audio file in `frontend/assets/audio/`. See `docs/dependencies_and_licenses.md` for the current known gaps.

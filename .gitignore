@@ -13,12 +13,6 @@ venv/
 # Local environment artifacts (not source)
 dyp/
 
-# Legacy pre-backend/ package dirs (stale __pycache__ only; breaks pip install -e .)
-/bridge/
-/python_tracker/
-/live_rules/
-/model_backend/
-
 # macOS
 .DS_Store
 
@@ -34,3 +28,16 @@ node_modules/
 
 # Generated markers (可選：如果不想上傳印好的圖片就取消註解)
 # markers/
+
+
+# psd
+*.psd
+
+.DS_Store
+.vscode/
+node_modules/
+dist/
+build/
+.cache/
+__pycache__/
+*.pyc

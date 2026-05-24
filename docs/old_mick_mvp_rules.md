@@ -1,5 +1,9 @@
 # Old Mick Against the Mob MVP Rules
 
+> Status: reference document.
+>
+> This file captures earlier MVP rule framing and background context. It is not the canonical description of the current live runtime. For current behavior, use `backend/live_rules/game_model.py`, `docs/board_state_v1.md`, and `docs/authoritative_actions_v1.md`.
+
 This file defines the minimum playable ruleset for the first `Old Mick Against the Mob`
 prototype. It is intentionally narrower than the full GDD. The goal is to lock the
 core loop before expanding into upgrades, hidden information, and Phaser-specific UI.
@@ -108,8 +112,8 @@ Each side has one DEF token that acts as a defensive anchor.
 - In practice, a tile that normally takes 1 hit now takes 2 hits.
 - No stacking.
 - No special exceptions.
-- Current backend implementation applies this as a passive aura. Protected tiles gain one
-  guard layer automatically while they remain inside the defender zone.
+- Current backend implementation treats the guard layer as per-cell protection tied to the current DEF anchor. The first hit against a protected cell consumes that cell's DEF layer. That cell is no longer protected while the DEF token remains at the same anchor.
+- Moving the DEF token changes the anchor and resets the consumed protection cells for that side.
 
 For the first MVP pass, DEF protection only needs to apply to friendly destructible
 resource tiles. HQ protection can be added later if desired, but is not required for
@@ -143,6 +147,7 @@ DEF progression:
 
 - DEF starts with a `3x3` protection zone.
 - When a side has 12 or fewer resource cells remaining, that side's DEF zone expands to `5x5`.
+- The frontend draws the DEF area cell-by-cell. Consumed protection cells appear as holes with a broken-protection marker, while destroyed cells use the normal destroyed-cell treatment.
 
 ATK progression:
 
@@ -159,6 +164,8 @@ Nuke progression:
 - When a side has 8 or fewer resource cells remaining, that side's one-use nuke unlocks.
 - P1 triggers nuke with marker `ID19`; P2 triggers nuke with marker `ID29`.
 - The nuke marker only works during that side's active turn and must be placed in enemy territory.
+- A valid marker creates a pending nuke target that is previewed on the frontend with the nuke icon and `3x3` area.
+- The pending nuke resolves when `ID4` confirms the active side's turn.
 - Nuke affects a `3x3` area centered on the marker.
 - All terrain in the area is destroyed.
 - Up to 5 resource cells in the area are randomly destroyed.

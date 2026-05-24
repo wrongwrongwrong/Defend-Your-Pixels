@@ -10,6 +10,7 @@ import asyncio
 import json
 from typing import Any
 
+from websockets.exceptions import ConnectionClosed
 from websockets.server import serve
 
 # Default local host/port for the live browser frontend.
@@ -36,6 +37,8 @@ async def ws_handler(websocket: Any) -> None:
     addr = websocket.remote_address
     print(f"[WS] Client connected: {addr}  (total: {len(connected_clients)})")
 
+    close_code: int | None = None
+    close_reason: str | None = None
     try:
         # Read messages until the client disconnects.
         async for message in websocket:
@@ -47,10 +50,19 @@ async def ws_handler(websocket: Any) -> None:
 
             # Push into the queue; game loop will validate and apply via dispatcher.
             await incoming_actions.put(command)
+    except ConnectionClosed as exc:
+        close_code = exc.code
+        close_reason = exc.reason
     finally:
         # Ensure we always remove the client, even if handler errors.
         connected_clients.discard(websocket)
-        print(f"[WS] Client disconnected: {addr}  (total: {len(connected_clients)})")
+        if close_code is not None:
+            print(
+                f"[WS] Client disconnected: {addr} code={close_code} "
+                f"reason={close_reason!r}  (total: {len(connected_clients)})"
+            )
+        else:
+            print(f"[WS] Client disconnected: {addr}  (total: {len(connected_clients)})")
 
 
 def _extract_command(message: str) -> ActionPayload | None:
@@ -64,7 +76,7 @@ def _extract_command(message: str) -> ActionPayload | None:
     if payload_type == "action":
         action = payload.get("data")
         return action if isinstance(action, dict) else None
-    if payload_type in {"new_map", "tier"}:
+    if payload_type in {"new_map", "tier", "demo_next"}:
         return payload if isinstance(payload, dict) else None
     return None
 

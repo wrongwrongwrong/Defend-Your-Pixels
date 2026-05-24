@@ -1,5 +1,9 @@
 # Interaction Flow v1
 
+> Status: reference document.
+>
+> Parts of this file describe earlier interaction ideas that are no longer the primary implementation path for the current live frontend. Use `docs/setup_flow_backend_v1.md`, `docs/manual_play.md`, `docs/board_state_v1.md`, and `docs/authoritative_actions_v1.md` as the canonical current references.
+
 This document defines the current MVP interaction flow for `Old Mick Against the Mob`.
 
 This is not a visual design spec. It describes how players operate the prototype and how
@@ -157,11 +161,9 @@ The frontend should make it clear that:
   - invalid click -> `Act mode only accepts straight or diagonal lines from the selected token.`
   - valid click -> `Attack queued: Riflemen -> up right`
 
-### MVP limitation
+### Current frontend behavior
 
-Current frontend UI does not yet render a dedicated attack-line overlay.
-
-This is acceptable for the current validation pass, but should be improved in later frontend work.
+The frontend renders attack-line previews from the active token positions and directions. The preview tints path cells, highlights the first target or terrain blocker, and the resolved `ray_complete` events animate the final path after `ID4` confirmation.
 
 ### Validation goal
 
@@ -176,26 +178,26 @@ The DEF zone starts as `3x3`. When that side has 12 or fewer resource cells rema
 The frontend should communicate that:
 
 - defenders are passive anchors
-- each defender protects a `3x3` area
+- each defender protects a `3x3` area, expanding to `5x5` after the DEF upgrade threshold
 - protected resource tiles require one extra hit
+- cells whose DEF layer has already been consumed are no longer protected until the DEF token moves and resets the zone
 
 ### Current frontend behavior
 
-- Defender meaning is currently explained via:
-  - HUD labels
-  - validation summary
-  - footer / role text
-- The frontend does **not** yet draw a dedicated DEF-zone overlay.
+- The board draws a DEF-zone overlay around each visible DEF token.
+- The overlay is drawn cell-by-cell so consumed DEF cells appear as holes in the protection area.
+- Consumed cells keep a broken-protection marker so players can distinguish "protection spent" from "resource destroyed".
+- The DEF card's protected-cell count excludes destroyed cells and consumed DEF cells.
 
-### MVP limitation
+### Nuke target preview
 
-Current frontend state does not yet expose a dedicated protection overlay payload.
+When a side's one-use nuke is unlocked, `ID19` for `p1` or `ID29` for `p2` can be placed in enemy territory during that side's active turn. The backend exposes the valid target as `battle.pending_nuke`.
 
-For now, the prototype validates understanding through:
+The frontend renders:
 
-- rules text
-- HUD wording
-- backend result text
+- the side-specific nuke icon on the center cell
+- a `3x3` orange/red target preview around that center
+- the existing explosion animation after `ID4` confirms and the backend resolves the nuke
 
 ### Validation goal
 
@@ -263,9 +265,8 @@ The interaction flow is good enough for MVP testing if players can do the follow
 
 The following are still known gaps, not blockers:
 
-- the frontend does not yet draw a dedicated attack-line overlay
-- the frontend does not yet draw a dedicated defender-zone overlay
-- resource tiles are not yet surfaced as first-class frontend objects
+- resource tiles are still rendered from the live terrain payload rather than a normalized `resource_tiles[]` contract shape
+- invalid nuke marker placement currently fails silently instead of drawing an invalid target marker
 - HQ setup still depends on backend validation; browser-side previews are temporary and non-authoritative
 
 These should be treated as later refinements, not blockers for MVP validation.

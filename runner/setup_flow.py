@@ -45,6 +45,7 @@ ALLOWED_DIRECTIONS_BY_SIDE = {
 ERROR_MESSAGES = {
     "camera_unavailable": "Cannot detect the camera. Check the camera connection and configured camera index.",
     "marker_map_scan_failed": "Cannot locate the board markers. Make sure all four board corner markers are visible and readable.",
+    "board_not_scanned": "Board not scanned. Show all 4 corner markers to continue.",
     "token_detection_failed": "Cannot detect one or more attack or defence tokens. Reposition the markers and try again.",
     "hq_wrong_side": "HQ must be placed on that side's own territory and not on the fence.",
     "hq_setup_complete": "Both HQ locations are confirmed. Starting the game.",
@@ -330,7 +331,7 @@ class SetupState:
 
         self.active_setup_side = "p2" if side == "p1" else "p1"
         self.status_code = "waiting_for_hq_candidate"
-        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must show that side's turn marker, then place the hidden HQ marker while the other player looks away."
+        self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} must scan that side's turn marker (ID{10 if self.active_setup_side == 'p1' else 20}), place the hidden HQ marker, then scan ID4 to confirm."
         return False, None
 
     def reset_hq_setup(self) -> None:
@@ -379,7 +380,7 @@ class SetupState:
             self.status_code = "waiting_for_hq_candidate"
             marker_id = 10 if self.active_setup_side == "p1" else 20
             hq_marker_id = 11 if self.active_setup_side == "p1" else 21
-            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} is placing a hidden HQ. Keep ID{marker_id} visible and position ID{hq_marker_id} on a valid cell."
+            self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} is placing a hidden HQ. Position ID{hq_marker_id} on a valid cell, then scan ID4 to confirm."
             return
         self.status_code = "waiting_for_hq_confirmation"
         self.status_message = f"{SIDE_DISPLAY_NAME[self.active_setup_side]} HQ marker is stable on a valid cell. Scan ID4 to confirm and hide it."

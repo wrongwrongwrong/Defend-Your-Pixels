@@ -4,18 +4,19 @@ export const CELL       = 60;             // pixels per grid cell
 export const BOARD_PX   = GRID_SIZE * CELL; // 720 — board width = height
 
 // ─── Canvas layout ─────────────────────────────────────────────────────────────
-// [ LEFT PANEL | BOARD (720×720) | RIGHT PANEL ]
-// [              TOP BAR (top)                 ]
-// [              BOT BAR (bottom)              ]
-export const PANEL_W    = 230;            // side panel width (each side)
-export const TOP_BAR_H  = 55;            // status bar above board
-export const BOT_BAR_H  = 52;            // warning bar below board
+// Phaser renders ONLY the board (720×720 + axis label padding).
+// All panels / notification bar / game log live in HTML/CSS.
+export const PANEL_W    = 260;           // HTML side panel width — reference only
+export const TOP_BAR_H  = 44;           // HTML header height — reference only
+export const BOT_BAR_H  = 116;          // HTML game log height — reference only
 
-export const BOARD_OFF_X = PANEL_W;      // board starts at x = 230
-export const BOARD_OFF_Y = TOP_BAR_H;    // board starts at y = 55
+const LABEL_PAD         = 32;           // space for A–L / 1–12 axis labels
 
-export const CANVAS_W   = PANEL_W * 2 + BOARD_PX;  // 1180
-export const CANVAS_H   = TOP_BAR_H + BOARD_PX + BOT_BAR_H; // 827
+export const BOARD_OFF_X = LABEL_PAD;   // board image starts at x = 24
+export const BOARD_OFF_Y = LABEL_PAD;   // board image starts at y = 24
+
+export const CANVAS_W   = 2 * LABEL_PAD + BOARD_PX;  // 784
+export const CANVAS_H   = 2 * LABEL_PAD + BOARD_PX;  // 784
 
 // ─── Board image calibration ──────────────────────────────────────────────────
 // If the grid in board1.png doesn't perfectly fill the image edge-to-edge,
@@ -82,6 +83,6 @@ export const COLORS = {
 // ─── Fonts ─────────────────────────────────────────────────────────────────────
 // Loaded via Google Fonts in index.html.
 // Change these strings if you swap the font in the <link> tag.
-export const FONT_TITLE  = "'Special Elite', serif";       // dramatic headers
-export const FONT_LABEL  = "'Oswald', sans-serif";         // bold labels / numbers
-export const FONT_MONO   = "'Share Tech Mono', monospace"; // coordinates / tech info
+export const FONT_TITLE  = "'Press Start 2P', system-ui";  // dramatic headers
+export const FONT_LABEL  = "'Press Start 2P', system-ui";  // bold labels / numbers
+export const FONT_MONO   = "'Press Start 2P', system-ui";  // coordinates / tech info

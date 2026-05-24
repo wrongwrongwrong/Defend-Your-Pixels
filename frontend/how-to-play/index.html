@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How to Play — Old Mick Against the Whole Bloody Lot</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="screen">
+
+  <div class="topbar">
+    <span class="topbar-title">How to Play</span>
+    <button class="topbar-close" id="closeBtn" aria-label="Close">
+      <svg viewBox="0 0 14 14" fill="none"><line x1="1" y1="1" x2="13" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="13" y1="1" x2="1" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <div class="rows">
+
+    <!-- WIN CONDITION -->
+    <div class="row">
+      <div class="card farmer">
+        <div class="card-thumb"><img src="../assets/images/tokens/hq-mick.png" alt="Grain Stash"></div>
+        <div class="card-name">Grain Stash</div>
+        <div class="card-sub">Secret HQ — hidden</div>
+      </div>
+      <div class="center">
+        <div class="mechanic">
+          <div class="mechanic-title">Win Condition</div>
+          <ul class="mechanic-list">
+            <li>Destroy the enemy's secret HQ — instant win</li>
+            <li>Wipe all enemy cells — destroy every Farm or every Nest</li>
+          </ul>
+        </div>
+        <div class="gif">
+          <span class="gif-label">GIF — HQ cell hit and destroyed</span>
+        </div>
+      </div>
+      <div class="card emu">
+        <div class="card-thumb"><img src="../assets/images/tokens/hq-emu.png" alt="Bird Council"></div>
+        <div class="card-name">Bird Council</div>
+        <div class="card-sub">Secret HQ — hidden</div>
+      </div>
+    </div>
+
+    <!-- ATTACK TOKEN -->
+    <div class="row">
+      <div class="card farmer">
+        <div class="card-thumb"><img src="../assets/images/tokens/atk-m-1.png" alt="Rifleman A"></div>
+        <div class="card-name">Rifleman A / B &times; 2</div>
+      </div>
+      <div class="center">
+        <div class="mechanic">
+          <div class="mechanic-title">Attack</div>
+          <p class="mechanic-text">Fires in a straight line — horizontal, vertical, or diagonal. Hits the first enemy cell it reaches.</p>
+          <div class="pills">
+            <span class="pill">Lv 1 — 1 cell</span>
+            <span class="pill-arrow">&rarr;</span>
+            <span class="pill">Lv 2 — 2 cells</span>
+            <span class="pill-arrow">&rarr;</span>
+            <span class="pill">Lv 3 — 3 cells</span>
+          </div>
+          <span class="upgrade-note">Each token levels up independently.</span>
+        </div>
+        <div class="gif">
+          <span class="gif-label">GIF — Token firing straight line, H / V / diagonal</span>
+        </div>
+      </div>
+      <div class="card emu">
+        <div class="card-thumb"><img src="../assets/images/tokens/atk-e-1.png" alt="Emu Pack A"></div>
+        <div class="card-name">Emu Pack A / B &times; 2</div>
+      </div>
+    </div>
+
+    <!-- DEFENCE TOKEN -->
+    <div class="row">
+      <div class="card farmer">
+        <div class="card-thumb"><img src="../assets/images/tokens/def-m-level1.png" alt="Old Mick"></div>
+        <div class="card-name">Old Mick &times; 1</div>
+      </div>
+      <div class="center">
+        <div class="mechanic">
+          <div class="mechanic-title">Defence</div>
+          <p class="mechanic-text">Projects a perimeter zone around itself. Break the perimeter first — then the cell. Move the token and the perimeter resets.</p>
+          <div class="pills">
+            <span class="pill">Default — 3&times;3</span>
+            <span class="pill-arrow">&rarr;</span>
+            <span class="pill">Upgraded — 5&times;5</span>
+          </div>
+          <span class="upgrade-note">Upgrades when your own cells reach roughly half.</span>
+        </div>
+        <div class="gif">
+          <span class="gif-label">GIF — Perimeter zone, tile break, cell destroy, token move resets</span>
+        </div>
+      </div>
+      <div class="card emu">
+        <div class="card-thumb"><img src="../assets/images/tokens/def-e-level1.png" alt="Cassowary"></div>
+        <div class="card-name">Cassowary &times; 1</div>
+      </div>
+    </div>
+
+    <!-- WILD TOKEN -->
+    <div class="row">
+      <div class="card farmer">
+        <div class="card-thumb"><img src="../assets/images/tokens/wild-token-m-keith.png" alt="Keith's Cannon"></div>
+        <div class="card-name">Keith's Cannon</div>
+        <div class="card-sub">One use only</div>
+      </div>
+      <div class="center">
+        <div class="mechanic">
+          <div class="mechanic-title">Wild</div>
+          <p class="mechanic-text">Place a 3&times;3 zone in enemy territory. 5 random cells destroyed. Bypasses perimeter. One use only.</p>
+          <span class="upgrade-note">Unlocks when your own cells reach critically low.</span>
+        </div>
+        <div class="gif">
+          <span class="gif-label">GIF — 3&times;3 zone, 5 random cells pop</span>
+        </div>
+      </div>
+      <div class="card emu">
+        <div class="card-thumb"><img src="../assets/images/tokens/wild-token-e-dino.png" alt="Dino"></div>
+        <div class="card-name">Dino</div>
+        <div class="card-sub">One use only</div>
+      </div>
+    </div>
+
+    <!-- TERRAIN & CELLS -->
+    <div class="row">
+      <div class="card farmer">
+        <div class="card-thumb"><img src="../assets/images/tiles/cell-m-farm.png" alt="Farms"></div>
+        <div class="card-name">Farms</div>
+        <div class="card-sub">Your cells</div>
+      </div>
+      <div class="center no-gif">
+        <div class="mechanic">
+          <div class="mechanic-title">Terrain &amp; Cells</div>
+          <ul class="mechanic-list">
+            <li><strong>Terrain</strong> — Rocks and Termite Mounds appear on both sides. Blocks attacks. Hit it enough and it breaks.</li>
+            <li><strong>Cells</strong> — Farms and Nests are what you're fighting over. Destroy theirs. Protect yours.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card emu">
+        <div class="card-thumb"><img src="../assets/images/tiles/cell-e-nest.png" alt="Nests"></div>
+        <div class="card-name">Nests</div>
+        <div class="card-sub">Your cells</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+document.getElementById('closeBtn').addEventListener('click', function () {
+  if (window.parent !== window) {
+    window.parent.postMessage('closeHowToPlay', '*');
+    return;
+  }
+});
+</script>
+
+</body>
+</html>

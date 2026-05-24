@@ -57,7 +57,15 @@ def start_frontend_http_server(port: int, root: Path, protocol_root: Path | None
         protocol_root=str(protocol_root.resolve()) if protocol_root else None,
     )
     socketserver.TCPServer.allow_reuse_address = True
-    httpd = socketserver.TCPServer(("", port), handler)
+    try:
+        httpd = socketserver.TCPServer(("", port), handler)
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"Cannot bind HTTP port {port}: {exc}\n"
+            "Try another port with --http-port <port>."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"Cannot bind HTTP port {port}: {exc}") from exc
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     print(f"[HTTP] Serving {root} at http://localhost:{port}")
     return httpd
